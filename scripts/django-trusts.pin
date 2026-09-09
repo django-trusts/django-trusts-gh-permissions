@@ -1,0 +1,3 @@
+# Reviewed django-trusts kernel head required by GH #1.
+# Kernel S5 merge (django-trusts#52). Never pin django-trusts-zero.
+ref=4d09045db0094cc40811af87c7783fa8f85acd90
