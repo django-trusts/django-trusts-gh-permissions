@@ -72,4 +72,4 @@ jobs:
         python -m pip install dist/django_trusts_gh_permissions-*.whl
         WORK="$(mktemp -d)"
         cd "$WORK"
-        python -c "import gh_permissions, gh_permissions.models, gh_permissions.policy"
+        python "${GITHUB_WORKSPACE}/scripts/verify-wheel-install.py" --checkout "${GITHUB_WORKSPACE}"
