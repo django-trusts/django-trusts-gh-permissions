@@ -10,7 +10,7 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import AppConfig, implementation_configs, implementation_for_path
+from trusts.apps import implementation_configs, implementation_for_path
 from trusts.query import AuthorizedManager
 
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
@@ -29,9 +29,12 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts.zero', names)
 
     def test_core_appconfig_is_not_installed(self):
+        import trusts.apps as trusts_apps
+
+        self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         self.assertNotIn('trusts_core', apps.app_configs)
-        for config in apps.get_app_configs():
-            self.assertFalse(type(config) is AppConfig)
+        names = [config.name for config in apps.get_app_configs()]
+        self.assertNotIn('trusts', names)
 
     def test_gh_config_is_the_sole_implementation_owner(self):
         owners = implementation_configs()
@@ -40,20 +43,24 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertIs(owners[0], gh_config())
         self.assertIs(implementation_for_path(CANONICAL_BACKEND), owners[0])
 
-    def test_kernel_config_raises_without_core_appconfig(self):
-        from trusts.apps import kernel_config
+    def test_kernel_config_is_not_importable(self):
+        import trusts.apps as trusts_apps
 
-        with self.assertRaises(LookupError):
-            kernel_config()
+        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
+        with self.assertRaises(ImportError):
+            from trusts.apps import kernel_config  # noqa: F401
 
     def test_no_trustmodelbackend_and_mixin_only_handle(self):
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
             ('gh_permissions.backends.GhAuthorizationBackend',),
         )
-        from trusts.backends import TrustModelBackend, TrustModelBackendMixin
+        import trusts.backends as core_backends
+        from trusts.backends import TrustModelBackendMixin
         self.assertTrue(issubclass(GhAuthorizationBackend, TrustModelBackendMixin))
-        self.assertFalse(issubclass(GhAuthorizationBackend, TrustModelBackend))
+        self.assertFalse(hasattr(core_backends, 'TrustModelBackend'))
+        with self.assertRaises(ImportError):
+            from trusts.backends import TrustModelBackend  # noqa: F401
 
     def test_repository_uses_authorized_manager(self):
         self.assertIsInstance(Repository.objects, AuthorizedManager)
@@ -83,25 +90,24 @@ class ModelsShimTest(SimpleTestCase):
         self.assertIs(sys.modules['trusts.models'], module)
         self.assertNotIn('trusts.zero', sys.modules)
         self.assertNotIn('Trust', module.__dict__)
+        self.assertNotIn('Content', module.__dict__)
 
-    def test_legacy_trust_import_raises_documented_error(self):
+    def test_legacy_trust_import_does_not_load_zero(self):
         import importlib.util
 
         if importlib.util.find_spec('trusts.zero') is not None:
             self.skipTest('Zero is present on this interpreter; CI pair is GH-only')
         self.assertNotIn('trusts.zero', sys.modules)
-        with self.assertRaises(ImportError) as ctx:
+        with self.assertRaises(ImportError):
             from trusts.models import Trust  # noqa: F401
-        self.assertIn('django-trusts-zero', str(ctx.exception))
-        self.assertIn("trusts.zero.apps.ZeroConfig", str(ctx.exception))
         self.assertNotIn('trusts.zero', sys.modules)
 
     def test_dir_hasattr_and_unknown_name_do_not_import_zero(self):
         self.assertNotIn('trusts.zero', sys.modules)
         module = import_module('trusts.models')
         names = dir(module)
-        self.assertIn('Trust', names)
-        self.assertIn('Content', names)
+        self.assertNotIn('Trust', names)
+        self.assertNotIn('Content', names)
         self.assertNotIn('trusts.zero', sys.modules)
         self.assertFalse(hasattr(module, 'anything'))
         self.assertFalse(hasattr(module, 'NotALegacyModel'))
