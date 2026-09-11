@@ -3,22 +3,32 @@
 import inspect
 from pathlib import Path
 
+from django.apps import apps
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import (
-    Account,
-    AccountRepoGrant,
     Operation,
     Organization,
-    PermissionBundle,
     Repository,
     Team,
-    TeamRepoGrant,
+    TeamRepositoryPermission,
+    UserRepositoryPermission,
 )
 
 
 FORBIDDEN_PUBLIC_RELATIONS = (
     'trusts', 'trustees', 'contexts', 'roles', 'groups',
+)
+
+REMOVED_MODELS = (
+    'Account',
+    'AccountRepoGrant',
+    'GhAuthorizedManager',
+    'GhAuthorizedQuerySet',
+    'PermissionBundle',
+    'TeamRepoGrant',
 )
 
 
@@ -76,30 +86,37 @@ class GhNamingTest(SimpleTestCase):
         self.assertIn('Equal', source)
         self.assertIn('All', source)
 
+    def test_obsolete_queryset_and_account_names_are_gone(self):
+        import gh_permissions.models as models
+        for name in REMOVED_MODELS:
+            self.assertFalse(hasattr(models, name), name)
+
 
 class GhRelationTest(TestCase):
     def test_advertised_public_relations(self):
-        self.assertEqual(Account._meta.get_field('teams').related_model, Team)
+        User = get_user_model()
+        self.assertEqual(Team._meta.get_field('members').related_model, User)
         self.assertEqual(
-            Account._meta.get_field('organizations').related_model,
-            Organization,
-        )
-        self.assertEqual(
-            Team._meta.get_field('permission_bundles').related_model,
-            PermissionBundle,
+            Team._meta.get_field('allowed_operations').related_model,
+            Operation,
         )
         self.assertEqual(
             Repository._meta.get_field('organization').related_model,
             Organization,
         )
-        self.assertTrue(hasattr(Account, 'teams'))
-        self.assertTrue(hasattr(Account, 'organizations'))
-        self.assertTrue(hasattr(Team, 'permission_bundles'))
+        self.assertIs(
+            UserRepositoryPermission._meta.get_field('user').related_model,
+            apps.get_model(settings.AUTH_USER_MODEL),
+        )
+        self.assertIs(User, apps.get_model(settings.AUTH_USER_MODEL))
+        self.assertTrue(hasattr(Team, 'members'))
+        self.assertTrue(hasattr(Team, 'allowed_operations'))
+        self.assertFalse(hasattr(Organization, 'members'))
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
-            Account, Organization, Team, PermissionBundle, Operation,
-            Repository, TeamRepoGrant, AccountRepoGrant,
+            Organization, Team, Operation, Repository,
+            TeamRepositoryPermission, UserRepositoryPermission,
         ):
             leaked = _related_accessor_names(model).intersection(
                 FORBIDDEN_PUBLIC_RELATIONS,

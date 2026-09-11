@@ -62,7 +62,8 @@ class KernelIdentityTest(SimpleTestCase):
         with self.assertRaises(ImportError):
             from trusts.backends import TrustModelBackend  # noqa: F401
 
-    def test_repository_uses_authorized_manager(self):
+    def test_repository_uses_stock_authorized_manager(self):
+        self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIsInstance(Repository.objects, AuthorizedManager)
         self.assertFalse(hasattr(Repository.objects, 'permitted'))
         self.assertFalse(hasattr(Repository.objects, 'get_permission'))
