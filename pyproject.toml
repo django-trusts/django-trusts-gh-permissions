@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-trusts-gh-permissions"
+version = "0.1.0.dev0"
+description = "Bounded GH-style organization, team, and repository authorization on django-trusts"
+readme = "README.md"
+license = "BSD-2-Clause"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=6.1,<6.2",
+    "django-trusts @ git+https://github.com/django-trusts/django-trusts.git@db5a41ed66478b79e10b0a066c8c0bca8fbe7882",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Django",
+    "Framework :: Django :: 6.1",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+]
+keywords = ["django", "authorization", "permissions", "gh"]
+
+[project.urls]
+Homepage = "https://github.com/django-trusts/django-trusts-gh-permissions"
+Repository = "https://github.com/django-trusts/django-trusts-gh-permissions"
+Issues = "https://github.com/django-trusts/django-trusts-gh-permissions/issues"
+
+[project.optional-dependencies]
+test = [
+    "coverage>=7.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["gh_permissions*"]
+exclude = ["tests*", "docs*", "scripts*"]

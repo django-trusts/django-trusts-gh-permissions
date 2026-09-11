@@ -1,0 +1,3 @@
+# Reviewed django-trusts C2 merge required by GH #3 (G1).
+# Never pin django-trusts-zero.
+ref=db5a41ed66478b79e10b0a066c8c0bca8fbe7882
