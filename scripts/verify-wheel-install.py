@@ -96,7 +96,7 @@ def main() -> int:
         Repository,
         TeamRepoGrant,
     )
-    from trusts.apps import AppConfig, implementation_configs, kernel_config
+    from trusts.apps import implementation_configs
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -114,15 +114,13 @@ def main() -> int:
 
     if 'trusts_core' in django_apps.app_configs:
         raise SystemExit('core AppConfig is installed')
-    for installed in django_apps.get_app_configs():
-        if type(installed) is AppConfig:
-            raise SystemExit('core AppConfig is installed as %r' % installed)
-    try:
-        kernel_config()
-    except LookupError:
-        pass
-    else:
-        raise SystemExit('kernel_config() must raise LookupError under IIb')
+    labels = {config.label for config in django_apps.get_app_configs()}
+    names = {config.name for config in django_apps.get_app_configs()}
+    if 'trusts' in labels or 'trusts' in names:
+        raise SystemExit('core must not be listed in INSTALLED_APPS')
+    import trusts.apps as trusts_apps
+    if hasattr(trusts_apps, 'kernel_config'):
+        raise SystemExit('final core must not export kernel_config()')
 
     owners = implementation_configs()
     if len(owners) != 1 or not isinstance(owners[0], GhPermissionsConfig):
