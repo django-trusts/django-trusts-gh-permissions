@@ -117,12 +117,12 @@ class GhRelationTest(TestCase):
         self.assertTrue(hasattr(User, 'teams'))
         self.assertTrue(hasattr(Team, 'allowed_operations'))
         self.assertEqual(
-            UserRepositoryPermission._meta.get_field('user').deconstruct()[3]['to'],
-            settings.AUTH_USER_MODEL,
+            UserRepositoryPermission._meta.get_field('user').deconstruct()[3]['to'].lower(),
+            settings.AUTH_USER_MODEL.lower(),
         )
         self.assertEqual(
-            Team._meta.get_field('members').deconstruct()[3]['to'],
-            settings.AUTH_USER_MODEL,
+            Team._meta.get_field('members').deconstruct()[3]['to'].lower(),
+            settings.AUTH_USER_MODEL.lower(),
         )
         with self.assertRaises(FieldDoesNotExist):
             User._meta.get_field('organizations')
