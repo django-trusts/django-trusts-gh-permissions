@@ -70,25 +70,31 @@ The optional direct account/repository grant is the three-FK
 ## Authorize
 
 Object decisions and authorized listings share the same compiled
-policy. Callers pass `Account` and `Operation` instances:
+policy. Callers pass `Account` and `Operation` instances. The object
+call uses the supported owner/registry lookup:
 
 ```python
+from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import Repository
+from trusts.apps import implementation_for_path
 
-Repository.objects.filter(pk=repository.pk).authorized(
-    account, operation,
-).exists()
+registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
+    CANONICAL_BACKEND,
+).registry
+registry.has_permission(account, repository, operation)
 Repository.objects.authorized(account, operation)
 ```
 
 ## Install
 
 This is a development reference implementation, not a declared stable
-1.0, and not a published PyPI release. Install from a local checkout
-or a built sdist/wheel. `django-trusts` 1.x arrives as a dependency.
+1.0, and not a published PyPI release. `django-trusts` 1.x is also
+unpublished, so a clean environment cannot resolve it from PyPI.
+Install a local core checkout or artifact first, then this package:
 
 ```
 python -m pip install "Django>=6.1,<6.2"
+python -m pip install ../django-trusts
 python -m pip install .
 ```
 

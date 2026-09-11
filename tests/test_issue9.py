@@ -1,16 +1,25 @@
 """#9: user-facing README and package metadata for GH on final core.
 
 Executable README spellings are the verified test settings, the
-accepted team ``Ref`` registration, and object/listing calls already
-exercised by the acceptance suite.
+accepted team ``Ref`` registration, the owner/registry object call,
+and the two-checkout install sequence.
 """
 
+import sys
+import types
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import (
+    CANONICAL_BACKEND,
+    CORE_REQUIREMENT,
+    FLOOR_MESSAGE,
+    _load_implementation_config,
+)
 from gh_permissions.models import Repository, TeamRepoGrant
 from gh_permissions.policy import register_direct, register_team
 from tests.fixtures import GhFixtureMixin
@@ -80,12 +89,26 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn('permission_in(t.team.permission_bundles.operations)', readme)
         self.assertIn('Equal(t.team.organization, t.repository.organization)', readme)
         self.assertIn('AccountRepoGrant', readme)
+        self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
+        self.assertIn('from trusts.apps import implementation_for_path', readme)
         self.assertIn(
-            'Repository.objects.filter(pk=repository.pk).authorized(',
+            'registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(',
+            readme,
+        )
+        self.assertIn(
+            'registry.has_permission(account, repository, operation)',
             readme,
         )
         self.assertIn('Repository.objects.authorized(account, operation)', readme)
-        self.assertIn('python -m pip install .', readme)
+        self.assertNotIn('.exists()', readme)
+        self.assertIn(
+            'python -m pip install "Django>=6.1,<6.2"\n'
+            'python -m pip install ../django-trusts\n'
+            'python -m pip install .',
+            readme,
+        )
+        self.assertNotIn('git+https://', readme)
+        self.assertNotIn('@', readme.split('Copyright')[0])
         self.assertIn('BeeDesk, Inc., 2026 (BSD-2-Clause)', readme)
         self.assertIn('DEV.md', readme)
         self.assertIn('no implicit permission-level', readme.lower())
@@ -141,6 +164,32 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             __import__('gh_permissions.policy', fromlist=['register_gh_policy']),
             'register_gh_policy',
         ))
+        ci = (ROOT / '.github' / 'workflows' / 'ci.yml').read_text()
+        self.assertIn('python -m pip install -e .deps/django-trusts', ci)
+        self.assertIn('python -m pip install -e .', ci)
+        self.assertLess(
+            ci.index('python -m pip install -e .deps/django-trusts'),
+            ci.index('python -m pip install -e . --config-settings editable_mode=compat'),
+        )
+
+
+class FloorMessageTest(SimpleTestCase):
+    def test_floor_message_names_final_core(self):
+        source = (ROOT / 'gh_permissions' / 'apps.py').read_text()
+        self.assertEqual(CORE_REQUIREMENT, 'django-trusts>=1.0.0.dev3,<2')
+        self.assertIn(CORE_REQUIREMENT, FLOOR_MESSAGE)
+        self.assertIn('TrustsImplementationConfig', FLOOR_MESSAGE)
+        self.assertIn('raise ImproperlyConfigured(FLOOR_MESSAGE)', source)
+        self.assertNotIn('1.0.0.dev2', source)
+        self.assertNotIn('1.0.0.dev2', FLOOR_MESSAGE)
+
+    def test_missing_implementation_config_raises_floor_message(self):
+        fake = types.ModuleType('trusts.apps')
+        with patch.dict(sys.modules, {'trusts.apps': fake}):
+            with self.assertRaises(ImproperlyConfigured) as ctx:
+                _load_implementation_config()
+        self.assertEqual(str(ctx.exception), FLOOR_MESSAGE)
+        self.assertIn('django-trusts>=1.0.0.dev3,<2', str(ctx.exception))
 
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
@@ -169,21 +218,31 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_documented_object_and_listing_share_compiled_policy(self):
-        via_exists = Repository.objects.filter(pk=self.repo_a.pk).authorized(
-            self.member, self.read,
-        ).exists()
-        via_list = list(
-            Repository.objects.authorized(self.member, self.read)
-            .order_by('pk')
+        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
+            CANONICAL_BACKEND,
+        ).registry
+        self.assertTrue(
+            registry.has_permission(self.member, self.repo_a, self.read),
         )
-        self.assertTrue(via_exists)
-        self.assertEqual(via_list, [self.repo_a])
-        via_exists = Repository.objects.filter(pk=self.repo_b.pk).authorized(
-            self.collaborator, self.write,
-        ).exists()
-        via_list = list(
-            Repository.objects.authorized(self.collaborator, self.write)
-            .order_by('pk')
+        self.assertEqual(
+            list(
+                Repository.objects.authorized(self.member, self.read)
+                .order_by('pk')
+            ),
+            [self.repo_a],
         )
-        self.assertTrue(via_exists)
-        self.assertEqual(via_list, [self.repo_b])
+        self.assertTrue(
+            registry.has_permission(
+                self.collaborator, self.repo_b, self.write,
+            ),
+        )
+        self.assertEqual(
+            list(
+                Repository.objects.authorized(self.collaborator, self.write)
+                .order_by('pk')
+            ),
+            [self.repo_b],
+        )
+        self.assertFalse(
+            registry.has_permission(self.member, self.repo_b, self.read),
+        )

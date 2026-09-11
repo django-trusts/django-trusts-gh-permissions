@@ -1,13 +1,23 @@
 from django.core.exceptions import ImproperlyConfigured
 
-try:
-    from trusts.apps import TrustsImplementationConfig
-except ImportError:
-    raise ImproperlyConfigured(
-        'django-trusts-gh-permissions 0.1.0.dev0 requires '
-        'django-trusts>=1.0.0.dev2,<2 (TrustsImplementationConfig). '
-        'Upgrade django-trusts; do not rely on a missing import.'
-    )
+CORE_REQUIREMENT = 'django-trusts>=1.0.0.dev3,<2'
+FLOOR_MESSAGE = (
+    'django-trusts-gh-permissions 0.1.0.dev0 requires '
+    '%s (TrustsImplementationConfig). '
+    'Upgrade django-trusts; do not rely on a missing import.'
+    % CORE_REQUIREMENT
+)
+
+
+def _load_implementation_config():
+    try:
+        from trusts.apps import TrustsImplementationConfig as imported
+    except ImportError:
+        raise ImproperlyConfigured(FLOOR_MESSAGE)
+    return imported
+
+
+TrustsImplementationConfig = _load_implementation_config()
 
 
 CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
