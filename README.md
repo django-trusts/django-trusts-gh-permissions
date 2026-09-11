@@ -1,8 +1,8 @@
 # django-trusts-gh-permissions
 
 `django-trusts-gh-permissions` is a **bounded reference implementation**
-that shows how permissions can emerge from persisted account,
-organization, team, and repository relationships on
+that shows how permissions can emerge from persisted user, organization,
+team, and repository relationships on
 [django-trusts](https://github.com/django-trusts/django-trusts) 1.x.
 
 It is **not affiliated with GitHub** and is **not** a complete GitHub
@@ -15,17 +15,20 @@ library, not a Django app.
 
 Authorization is compiled from stored rows. A complete path needs:
 
-- account membership in an organization
-- account membership in a team
+- user membership in a team
 - team ownership by an organization
 - repository ownership by an organization
-- a team/repository grant plus a permission bundle/operation
-- optionally, a direct account/repository grant
+- a team/repository permission row whose operation is in the team's
+  allowed operations
+- optionally, a direct user/repository permission row
 
-Organization alignment and bundle membership constrain a complete team
-path. Direct and team paths OR together. Deleting any required
-persisted relationship removes that path. Malformed, incomplete, or
-revoked paths fail closed.
+Organization alignment and the team's allowed-operation ceiling
+constrain a complete team path. Direct and team paths OR together.
+Deleting any required persisted relationship removes that path.
+Malformed, incomplete, or revoked paths fail closed.
+
+Organization membership is application domain data, not a Trusts grant
+edge. This consumer does not persist an organization-members relation.
 
 ## Configure
 
@@ -50,27 +53,27 @@ registration (contributed at startup) is:
 ```python
 from trusts.core import All, Equal, Ref, permission_in
 
-from gh_permissions.models import TeamRepoGrant
+from gh_permissions.models import TeamRepositoryPermission
 
-t = Ref(TeamRepoGrant)
+t = Ref(TeamRepositoryPermission)
 registry.register(
     content=t.repository,
     user=t.team.members,
     permission=t.operation,
     condition=All(
-        permission_in(t.team.permission_bundles.operations),
+        permission_in(t.team.allowed_operations),
         Equal(t.team.organization, t.repository.organization),
     ),
 )
 ```
 
-The optional direct account/repository grant is the three-FK
-`AccountRepoGrant` relation registered beside that team path.
+The optional direct user/repository grant is the three-FK
+`UserRepositoryPermission` relation registered beside that team path.
 
 ## Authorize
 
 Object decisions and authorized listings share the same compiled
-policy. Callers pass `Account` and `Operation` instances. The object
+policy. Callers pass user-model and `Operation` instances. The object
 call uses the supported owner/registry lookup:
 
 ```python
@@ -81,9 +84,12 @@ from trusts.apps import implementation_for_path
 registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
     CANONICAL_BACKEND,
 ).registry
-registry.has_permission(account, repository, operation)
-Repository.objects.authorized(account, operation)
+registry.has_permission(user, repository, operation)
+Repository.objects.authorized(user, operation)
 ```
+
+`Repository.objects` is core `AuthorizedManager`. Listings resolve
+through the implementation's registered handles.
 
 ## Install
 
