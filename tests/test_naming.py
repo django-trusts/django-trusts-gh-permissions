@@ -3,6 +3,7 @@
 import inspect
 from pathlib import Path
 
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import FieldDoesNotExist
@@ -97,6 +98,8 @@ class GhNamingTest(SimpleTestCase):
 class GhRelationTest(TestCase):
     def test_advertised_public_relations(self):
         User = get_user_model()
+        configured = apps.get_model(settings.AUTH_USER_MODEL)
+        self.assertIs(User, configured)
         self.assertEqual(User._meta.get_field('teams').related_model, Team)
         self.assertEqual(
             Team._meta.get_field('allowed_operations').related_model,
@@ -116,13 +119,23 @@ class GhRelationTest(TestCase):
         )
         self.assertTrue(hasattr(User, 'teams'))
         self.assertTrue(hasattr(Team, 'allowed_operations'))
-        self.assertEqual(
-            UserRepositoryPermission._meta.get_field('user').deconstruct()[3]['to'].lower(),
-            settings.AUTH_USER_MODEL.lower(),
+        user_kwargs = UserRepositoryPermission._meta.get_field('user').deconstruct()[3]
+        member_kwargs = Team._meta.get_field('members').deconstruct()[3]
+        self.assertIs(
+            apps.get_model(user_kwargs['to']),
+            configured,
+        )
+        self.assertIs(
+            apps.get_model(member_kwargs['to']),
+            configured,
         )
         self.assertEqual(
-            Team._meta.get_field('members').deconstruct()[3]['to'].lower(),
-            settings.AUTH_USER_MODEL.lower(),
+            UserRepositoryPermission._meta.get_field('user').remote_field.swappable,
+            'AUTH_USER_MODEL',
+        )
+        self.assertEqual(
+            Team._meta.get_field('members').remote_field.swappable,
+            'AUTH_USER_MODEL',
         )
         with self.assertRaises(FieldDoesNotExist):
             User._meta.get_field('organizations')
