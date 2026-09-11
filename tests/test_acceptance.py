@@ -7,7 +7,11 @@ from trusts.apps import implementation_for_path
 from trusts.core import TrustsConfigurationError
 
 from gh_permissions.apps import CANONICAL_BACKEND
-from gh_permissions.models import AccountRepoGrant, Repository, TeamRepoGrant
+from gh_permissions.models import (
+    Repository,
+    TeamRepositoryPermission,
+    UserRepositoryPermission,
+)
 from tests.fixtures import GhFixtureMixin
 
 
@@ -52,7 +56,7 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         else:
             self.assertNotIn(operation.pk, enumerated)
 
-    def test_direct_account_can_perform_granted_operation(self):
+    def test_direct_user_can_perform_granted_operation(self):
         self._object_list_agree(
             self.collaborator, self.write, self.repo_b, True,
         )
@@ -60,7 +64,7 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             self.collaborator, self.read, self.repo_b, False,
         )
 
-    def test_team_member_grant_bundle_and_same_org_allows(self):
+    def test_team_member_grant_ceiling_and_same_org_allows(self):
         self._object_list_agree(self.member, self.read, self.repo_a, True)
         self._object_list_agree(self.member, self.write, self.repo_a, False)
         self._object_list_agree(self.member, self.read, self.repo_b, False)
@@ -70,14 +74,14 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         self._object_list_agree(self.stranger, self.read, self.repo_other, False)
         self._object_list_agree(self.member, self.read, self.repo_b, False)
 
-    def test_org_membership_alone_grants_nothing(self):
+    def test_user_without_team_or_direct_permission_gets_nothing(self):
         self._object_list_agree(self.org_only, self.read, self.repo_a, False)
 
     def test_attachment_without_grant_grants_nothing(self):
         self._object_list_agree(self.stranger, self.read, self.repo_other, False)
 
     def test_cross_organization_team_grant_denies(self):
-        TeamRepoGrant.objects.create(
+        TeamRepositoryPermission.objects.create(
             team=self.writers, repository=self.repo_other, operation=self.read,
         )
         self._object_list_agree(self.member, self.read, self.repo_other, False)
@@ -89,8 +93,8 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             self.collaborator, self.write, self.repo_b, True,
         )
 
-    def test_removing_team_grant_denies_only_that_branch(self):
-        TeamRepoGrant.objects.filter(
+    def test_removing_team_permission_denies_only_that_branch(self):
+        TeamRepositoryPermission.objects.filter(
             team=self.writers, repository=self.repo_a, operation=self.read,
         ).delete()
         self._object_list_agree(self.member, self.read, self.repo_a, False)
@@ -98,8 +102,8 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             self.collaborator, self.write, self.repo_b, True,
         )
 
-    def test_removing_bundle_operation_denies_only_that_branch(self):
-        self.bundle.operations.remove(self.read)
+    def test_removing_team_allowed_operation_denies_only_that_branch(self):
+        self.writers.allowed_operations.remove(self.read)
         self._object_list_agree(self.member, self.read, self.repo_a, False)
         self._object_list_agree(
             self.collaborator, self.write, self.repo_b, True,
@@ -114,8 +118,8 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
 
     def test_direct_and_team_roots_or_compose(self):
-        AccountRepoGrant.objects.create(
-            account=self.member, repository=self.repo_b, operation=self.read,
+        UserRepositoryPermission.objects.create(
+            user=self.member, repository=self.repo_b, operation=self.read,
         )
         self._object_list_agree(self.member, self.read, self.repo_a, True)
         self._object_list_agree(self.member, self.read, self.repo_b, True)
@@ -125,16 +129,16 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
                 .order_by('pk').values_list('pk', flat=True)
             )
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
-        TeamRepoGrant.objects.filter(
+        TeamRepositoryPermission.objects.filter(
             team=self.writers, repository=self.repo_a, operation=self.read,
         ).delete()
         self._object_list_agree(self.member, self.read, self.repo_a, False)
         self._object_list_agree(self.member, self.read, self.repo_b, True)
 
-    def test_multiple_direct_grant_rows_combine(self):
-        """Two AccountRepoGrant rows under the one direct registration."""
-        AccountRepoGrant.objects.create(
-            account=self.collaborator, repository=self.repo_a,
+    def test_multiple_direct_permission_rows_combine(self):
+        """Two UserRepositoryPermission rows under the one direct registration."""
+        UserRepositoryPermission.objects.create(
+            user=self.collaborator, repository=self.repo_a,
             operation=self.write,
         )
         self._object_list_agree(
@@ -150,16 +154,16 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             )
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
 
-    def test_removing_a_direct_grant_row_revokes_only_that_row(self):
-        AccountRepoGrant.objects.create(
-            account=self.collaborator, repository=self.repo_a,
+    def test_removing_a_direct_permission_row_revokes_only_that_row(self):
+        UserRepositoryPermission.objects.create(
+            user=self.collaborator, repository=self.repo_a,
             operation=self.write,
         )
         self._object_list_agree(
             self.collaborator, self.write, self.repo_a, True,
         )
-        AccountRepoGrant.objects.filter(
-            account=self.collaborator, repository=self.repo_a,
+        UserRepositoryPermission.objects.filter(
+            user=self.collaborator, repository=self.repo_a,
             operation=self.write,
         ).delete()
         self._object_list_agree(
@@ -187,7 +191,7 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
         combined = (exists_sql + list_sql).lower().replace('_', '').replace('"', '')
         self.assertIn('exists', combined)
-        self.assertIn('accountrepogrant', combined)
+        self.assertIn('userrepositorypermission', combined)
 
     def test_team_listing_is_sql_and_fixed_query_count(self):
         with self.assertNumQueries(1):
@@ -207,7 +211,7 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
         combined = (exists_sql + list_sql).lower().replace('_', '').replace('"', '')
         self.assertIn('exists', combined)
-        self.assertIn('teamrepogrant', combined)
+        self.assertIn('teamrepositorypermission', combined)
 
     def test_query_construction_is_lazy_and_filters_before_pagination(self):
         registry = _registry()
