@@ -1,26 +1,21 @@
-"""GH Issue #6 Step IIb proofs.
-
-Locks the IIb contract against Step I core (``1.0.0.dev2`` /
-merge ``39f1f961``):
+"""GH Issue #6 owner-lifecycle proofs against final core.
 
 * ``GhPermissionsConfig`` is the sole implementation owner
-* mixin / ready / list execution never call ``kernel_config()``
+* mixin / ready / list execution do not need ``kernel_config()``
 * missing canonical backend path fails at startup
-* no dependency on installed core AppConfig, ``trusts.core_backends``,
-  the core historical backend, or Zero
+* no dependency on an installed core AppConfig, ``trusts.core_backends``,
+  the removed core historical backend, or Zero
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from trusts.apps import (
-    AppConfig as CoreAppConfig,
     TrustsImplementationConfig,
     implementation_configs,
     implementation_for_path,
@@ -41,8 +36,9 @@ class Issue6StepIIbProofs(SimpleTestCase):
         self.assertIsInstance(owners[0], TrustsImplementationConfig)
         self.assertIs(owners[0], gh_config())
         self.assertNotIn('trusts_core', apps.app_configs)
-        for config in apps.get_app_configs():
-            self.assertFalse(type(config) is CoreAppConfig)
+        import trusts.apps as trusts_apps
+        self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
+        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
 
     def test_canonical_backend_resolves_only_through_owner(self):
         owner = implementation_for_path(CANONICAL_BACKEND)
@@ -56,25 +52,21 @@ class Issue6StepIIbProofs(SimpleTestCase):
         )
 
     def test_mixin_resolves_owner_without_kernel_config(self):
-        def explode(*_args, **_kwargs):
-            raise AssertionError('kernel_config() must not run when an owner is present')
-
-        with patch('trusts.apps.kernel_config', side_effect=explode):
-            backend = GhAuthorizationBackend()
-            self.assertIs(backend._trusts_config(), gh_config())
+        import trusts.apps as trusts_apps
+        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
+        backend = GhAuthorizationBackend()
+        self.assertIs(backend._trusts_config(), gh_config())
 
     def test_ready_resolves_owner_without_kernel_config(self):
-        def explode(*_args, **_kwargs):
-            raise AssertionError('kernel_config() must not run from GhPermissionsConfig.ready()')
-
-        with patch('trusts.apps.kernel_config', side_effect=explode):
-            owner = implementation_for_path(CANONICAL_BACKEND)
-            self.assertIs(owner, gh_config())
-            roots = [
-                record.root
-                for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
-            ]
-            self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])
+        import trusts.apps as trusts_apps
+        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
+        owner = implementation_for_path(CANONICAL_BACKEND)
+        self.assertIs(owner, gh_config())
+        roots = [
+            record.root
+            for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
+        ]
+        self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
         config = apps.get_app_config('gh_permissions')
@@ -127,11 +119,9 @@ class Issue6StepIIbAuthorizationProofs(TestCase):
             account=account, repository=repo, operation=write,
         )
 
-        def explode(*_args, **_kwargs):
-            raise AssertionError('kernel_config() must not run from GH authorized()')
-
-        with patch('trusts.apps.kernel_config', side_effect=explode):
-            backend = GhAuthorizationBackend()
-            self.assertIs(backend._trusts_config(), gh_config())
-            listed = list(Repository.objects.authorized(account, write))
+        import trusts.apps as trusts_apps
+        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
+        backend = GhAuthorizationBackend()
+        self.assertIs(backend._trusts_config(), gh_config())
+        listed = list(Repository.objects.authorized(account, write))
         self.assertIn(repo, listed)
