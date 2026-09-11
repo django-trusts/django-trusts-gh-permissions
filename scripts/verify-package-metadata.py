@@ -54,6 +54,14 @@ def _core_floor_ok(requires: list[str]) -> bool:
     )
 
 
+def _long_description(meta_text: str) -> str:
+    """RFC 822 payload after the header block (the user README)."""
+    parts = meta_text.split('\n\n', 1)
+    if len(parts) == 2:
+        return parts[1]
+    return ''
+
+
 def _check_metadata(meta_text: str, origin: str) -> None:
     meta = Parser().parsestr(meta_text)
     if meta.get('Name') != EXPECTED_NAME:
@@ -68,7 +76,7 @@ def _check_metadata(meta_text: str, origin: str) -> None:
     license_expr = meta.get('License-Expression') or meta.get('License') or ''
     if 'BSD-2-Clause' not in license_expr:
         raise SystemExit('%s license is %r, expected BSD-2-Clause' % (origin, license_expr))
-    description = meta.get('Description') or meta_text
+    description = meta.get('Description') or _long_description(meta_text)
     if 'bounded reference implementation' not in description:
         raise SystemExit('%s long description is not the user README' % origin)
     if "Do **not** list `'trusts'` in `INSTALLED_APPS`" not in description:

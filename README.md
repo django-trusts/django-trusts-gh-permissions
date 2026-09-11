@@ -6,8 +6,7 @@ organization, team, and repository relationships on
 [django-trusts](https://github.com/django-trusts/django-trusts) 1.x.
 
 It is **not affiliated with GitHub** and is **not** a complete GitHub
-authorization clone. Treat it as a worked example, not a migration
-target.
+authorization clone. Treat it as a worked example, not a migration target.
 
 Do **not** list `'trusts'` in `INSTALLED_APPS`. Core is a Python
 library, not a Django app.
