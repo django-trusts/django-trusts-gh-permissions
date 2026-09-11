@@ -1,28 +1,66 @@
-from django.apps import AppConfig
+from django.core.exceptions import ImproperlyConfigured
+
+try:
+    from trusts.apps import TrustsImplementationConfig
+except ImportError:
+    raise ImproperlyConfigured(
+        'django-trusts-gh-permissions 0.1.0.dev0 requires '
+        'django-trusts>=1.0.0.dev2,<2 (TrustsImplementationConfig). '
+        'Upgrade django-trusts; do not rely on a missing import.'
+    )
 
 
-class GhPermissionsConfig(AppConfig):
-    """Contribute GH registrations onto the kernel store during ready()."""
+CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
+
+
+def gh_config(apps_registry=None):
+    """Return the installed ``GhPermissionsConfig`` by class identity."""
+    from django.apps import apps as django_apps
+
+    registry = django_apps if apps_registry is None else apps_registry
+    matches = [
+        config for config in registry.get_app_configs()
+        if type(config) is GhPermissionsConfig
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ImproperlyConfigured(
+            'No installed gh_permissions.apps.GhPermissionsConfig.'
+        )
+    raise ImproperlyConfigured(
+        'Multiple GhPermissionsConfig instances: %r' % (matches,)
+    )
+
+
+class GhPermissionsConfig(TrustsImplementationConfig):
+    """GH implementation owner. Core is a library, not an installed app.
+
+    Owns the exact path ``gh_permissions.backends.GhAuthorizationBackend``.
+    ``ready()`` donates through ``implementation_for_path`` and never
+    calls ``kernel_config()`` or silently skips.
+    """
 
     name = 'gh_permissions'
     label = 'gh_permissions'
     verbose_name = 'GH permissions'
     default_auto_field = 'django.db.models.AutoField'
     default = True
+    trusts_backend_paths = (CANONICAL_BACKEND,)
 
     def ready(self):
-        if getattr(self, 'apps', None) is None or not self.apps.is_installed('trusts'):
-            return
-        from trusts.apps import kernel_config
-        from trusts.core import TrustsConfigurationError
+        from trusts.apps import implementation_for_path
 
-        try:
-            registry = kernel_config(self.apps).configured_backend().registry
-        except (LookupError, TrustsConfigurationError):
-            return
+        from gh_permissions.policy import register_direct, register_team
+
+        super(GhPermissionsConfig, self).ready()
+
+        owner = implementation_for_path(
+            CANONICAL_BACKEND, apps_registry=getattr(self, 'apps', None),
+        )
+        registry = owner.configured_backend(CANONICAL_BACKEND).registry
         if getattr(self, '_gh_policy_registry_id', None) is registry:
             return
-        from gh_permissions.policy import register_direct, register_team
         register_direct(registry)
         register_team(registry)
         self._gh_policy_registry_id = registry

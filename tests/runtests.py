@@ -15,6 +15,7 @@ SUITE = [
     'tests.test_acceptance',
     'tests.test_fail_closed',
     'tests.test_team_mapping',
+    'tests.test_issue6',
 ]
 
 
