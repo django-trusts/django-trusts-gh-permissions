@@ -11,7 +11,7 @@ license = "BSD-2-Clause"
 requires-python = ">=3.12"
 dependencies = [
     "Django>=6.1,<6.2",
-    "django-trusts>=1.0.0.dev2,<2",
+    "django-trusts>=1.0.0.dev3,<2",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

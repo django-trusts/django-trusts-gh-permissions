@@ -3,7 +3,7 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 ALLOWED_HOSTS = ['testserver', 'localhost']
 
-# IIb: core is a library, not an installed app. Zero stays absent.
+# Core is a library, not an installed app. Zero stays absent.
 INSTALLED_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.auth',

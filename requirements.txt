@@ -1,2 +1,2 @@
 Django>=6.1,<6.2
-django-trusts @ git+https://github.com/django-trusts/django-trusts.git@39f1f9611e214193aec4e97526cf9b54ee689967
+django-trusts @ git+https://github.com/django-trusts/django-trusts.git@1e19b5d464c067186aada58943c3ee67c44b2aa0

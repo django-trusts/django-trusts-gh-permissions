@@ -1,5 +1,4 @@
-# Reviewed django-trusts kernel head required by GH IIb.
-# Core Step I merge (django-trusts#109) from reviewed head
-# 5a7cf4fd66011048ae11621d8b524e9d558d361f.
+# Reviewed django-trusts head required by this package.
+# Final core library/documentation merge (django-trusts#116).
 # Never pin django-trusts-zero.
-ref=39f1f9611e214193aec4e97526cf9b54ee689967
+ref=1e19b5d464c067186aada58943c3ee67c44b2aa0
