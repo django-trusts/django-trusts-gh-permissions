@@ -1,14 +1,14 @@
 """Accepted team mapping is expressible on public C2 after #98.
 
-django-trusts#54 r7 / issue #3 accepted team registration::
+django-trusts#54 r7 / issue #12 accepted team registration::
 
-    t = Ref(TeamRepoGrant)
+    t = Ref(TeamRepositoryPermission)
     registry.register(
         content=t.repository,
         user=t.team.members,
         permission=t.operation,
         condition=All(
-            permission_in(t.team.permission_bundles.operations),
+            permission_in(t.team.allowed_operations),
             Equal(t.team.organization, t.repository.organization),
         ),
     )
@@ -24,7 +24,7 @@ from django.test import TestCase
 
 from trusts.core import All, Equal, PermissionIn, TrustsRegistry, permission_in
 
-from gh_permissions.models import Repository, TeamRepoGrant
+from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import register_team
 
 
@@ -44,7 +44,7 @@ class TeamMappingRegistrationTest(TestCase):
         with self.assertNumQueries(0):
             record = register_team(registry)
         self.assertEqual(len(registry.records), 1)
-        self.assertIs(record.root, TeamRepoGrant)
+        self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('team', 'members'))
         self.assertEqual(record.user_field, 'team__members')
