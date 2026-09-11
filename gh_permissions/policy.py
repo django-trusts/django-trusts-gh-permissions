@@ -3,7 +3,7 @@
 Direct is the C2 atom (three FKs). Team is the accepted django-trusts#54
 r7 mapping: terminal membership hop, bundle ceiling, and organization
 alignment. ``GhPermissionsConfig.ready`` contributes both independent
-roots. There is no aggregate ``register_gh_policy()``.
+roots as separate calls, not one aggregate helper.
 """
 
 from trusts.core import All, Equal, Ref, permission_in
