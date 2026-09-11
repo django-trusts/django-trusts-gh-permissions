@@ -5,7 +5,7 @@ try:
 except ImportError:
     raise ImproperlyConfigured(
         'django-trusts-gh-permissions 0.1.0.dev0 requires '
-        'django-trusts>=1.0.0.dev2,<2 (TrustsImplementationConfig). '
+        'django-trusts>=1.0.0.dev3,<2 (TrustsImplementationConfig). '
         'Upgrade django-trusts; do not rely on a missing import.'
     )
 

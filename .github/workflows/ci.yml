@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 env:
-  COMPANION_KERNEL_SHA: 39f1f9611e214193aec4e97526cf9b54ee689967
+  COMPANION_KERNEL_SHA: 1e19b5d464c067186aada58943c3ee67c44b2aa0
 
 jobs:
   tests:
-    name: tests vs Step I core (Python ${{ matrix.python-version }})
+    name: tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -35,7 +35,7 @@ jobs:
       run: |
         test ! -e trusts/zero
         ! grep -R --include='*.py' -n 'from trusts\.zero\|import trusts\.zero\|django-trusts-zero' gh_permissions
-    - name: Install Step I kernel then GH
+    - name: Install final core then GH
       run: |
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
@@ -46,7 +46,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '39f1f9611e214193aec4e97526cf9b54ee689967' in pin, pin
+        assert '1e19b5d464c067186aada58943c3ee67c44b2aa0' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
@@ -60,8 +60,8 @@ jobs:
     - name: makemigrations --check
       run: python -m django makemigrations gh_permissions --check --settings=tests.settings
 
-  pair-step-i:
-    name: pair with merged Step I core
+  pair-final-core:
+    name: pair with final core
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -75,7 +75,7 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Matrix on exact Step I merge
+    - name: Matrix on exact final-core merge
       run: |
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
@@ -109,6 +109,8 @@ jobs:
         python -m pip install -e .
         python -m build
         twine check dist/*
+    - name: Package metadata (README, LICENSE, BSD-2-Clause)
+      run: python scripts/verify-package-metadata.py
     - name: Import wheel from outside the checkout
       env:
         PYTHONPATH: ""
