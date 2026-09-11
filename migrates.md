@@ -1,21 +1,21 @@
-# migrates.md — django-trusts-gh-permissions Step IIb
+# migrates.md — django-trusts-gh-permissions
 
-This file is the mechanical checklist for Step IIb: GH-owned
-`GhPermissionsConfig` against merged core Step I. It does **not**
-implement core Step III / tombstone, Zero changes, examples, or Windows.
+This file is the mechanical checklist for the GH-owned
+`GhPermissionsConfig` settings cutover. It does **not** add a new
+public GH API or change stored identity. Examples and Windows stay
+out of scope.
 
-Implemented revision: **Step IIb** for
-[django-trusts-gh-permissions#6](https://github.com/django-trusts/django-trusts-gh-permissions/issues/6).
-Authorized by [django-trusts#102 r5](https://github.com/django-trusts/django-trusts/issues/102#issuecomment-5639018377)
-and the #93 baton.
+Implemented revision: GH-owned owner lifecycle for
+[django-trusts-gh-permissions#6](https://github.com/django-trusts/django-trusts-gh-permissions/issues/6),
+now paired with final core.
 
 ## Companion kernel
 
 | Item | Value |
 | --- | --- |
 | GH package | `0.1.0.dev0` (unchanged) |
-| Core requirement | `django-trusts>=1.0.0.dev2,<2` |
-| Paired Step I core | [django-trusts#109](https://github.com/django-trusts/django-trusts/pull/109) merge [`39f1f9611e214193aec4e97526cf9b54ee689967`](https://github.com/django-trusts/django-trusts/commit/39f1f9611e214193aec4e97526cf9b54ee689967) |
+| Core requirement | `django-trusts>=1.0.0.dev3,<2` |
+| Paired final core | [django-trusts#116](https://github.com/django-trusts/django-trusts/pull/116) merge [`1e19b5d464c067186aada58943c3ee67c44b2aa0`](https://github.com/django-trusts/django-trusts/commit/1e19b5d464c067186aada58943c3ee67c44b2aa0) |
 | Zero | **absent** (not a dependency) |
 
 ## Public changes
@@ -25,11 +25,11 @@ Stored GH schema and authorization **data** stay compatible. Public
 
 | Surface | Old (G1 on C2 + #98) | New (IIb) |
 | --- | --- |
-| Core pin | git `@595e2f9f` | `django-trusts>=1.0.0.dev2,<2` (pair SHA `39f1f961`) |
+| Core pin | git `@595e2f9f` / `>=1.0.0.dev2,<2` | `django-trusts>=1.0.0.dev3,<2` (pair SHA `1e19b5d`) |
 | `INSTALLED_APPS` | `'trusts'` then `'gh_permissions'` | **`'gh_permissions.apps.GhPermissionsConfig'` only** (no `'trusts'`) |
 | Core AppConfig | installed (`label='trusts_core'`) | **not installed** |
 | Registry owner | `kernel_config().configured_backend()` | `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')` |
-| Missing kernel / path | `ready()` silently returned | `ImproperlyConfigured` / Step I lifecycle fail-loud |
+| Missing kernel / path | `ready()` silently returned | `ImproperlyConfigured` / owner lifecycle fail-loud |
 | Backend | `gh_permissions.backends.GhAuthorizationBackend` | **unchanged** mixin-only path |
 | Models / migrations | `gh_permissions.0001_initial` | **unchanged** |
 | Tables / content types | `gh_permissions_*` | **unchanged** |
@@ -72,10 +72,10 @@ implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')
 | Situation | IIb behavior |
 | --- | --- |
 | Supported settings above | populate succeeds; `GhPermissionsConfig` is the sole `TrustsImplementationConfig` |
-| `'trusts'` listed | not the supported IIb install |
+| `'trusts'` listed | not the supported install |
 | Canonical backend path missing | `ImproperlyConfigured` from `_validate_ownership` (no silent return) |
-| Core below `1.0.0.dev2` / missing helper | `ImproperlyConfigured` at import / ready |
-| `kernel_config()` under supported IIb | `LookupError` (no kernel `AppConfig`) |
+| Core below `1.0.0.dev3` / missing helper | `ImproperlyConfigured` at import / ready |
+| `kernel_config()` on final core | **absent** (`ImportError`); do not restore it |
 
 ## Unchanged identity
 
@@ -109,7 +109,7 @@ Then:
 - [ ] Keep `'gh_permissions.backends.GhAuthorizationBackend'`. Do not list `'trusts.backends.TrustModelBackend'`.
 - [ ] Replace `kernel_config()` donations with `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`.
 - [ ] Confirm `ready()` no longer returns silently when the owner/path is missing.
-- [ ] Pin `django-trusts>=1.0.0.dev2,<2`. Pair CI uses merge `39f1f961`.
+- [ ] Pin `django-trusts>=1.0.0.dev3,<2`. Pair CI uses merge `1e19b5d`.
 - [ ] Do not add `django-trusts-zero`. Do not import `trusts.zero` or `trusts.core_backends`.
 - [ ] Keep `register_direct` and `register_team` as separate functions. Do not add `register_gh_policy()`.
 - [ ] `python -m django migrate --plan` — no GH operations on an already-current database.
@@ -117,12 +117,10 @@ Then:
 - [ ] Confirm GH content types, table names, and representative rows are unchanged.
 - [ ] Confirm object / list / enumeration still OR both roots and fail closed with the same query counts.
 - [ ] Leave package version at `0.1.0.dev0`.
-- [ ] Do not begin core Step III / `1.0.0.dev3` / `1.0.0.dev4`, Zero changes, Windows #17, or examples.
+- [ ] Do not begin Windows #17 or examples.
 
 ## Out of scope
 
-- Core Step III failure-only `kernel_config` tombstone / `1.0.0.dev3`
-- Tombstone removal (`1.0.0.dev4`)
-- Zero IIa follow-up
+- Zero follow-up
 - Windows #17
 - Examples
