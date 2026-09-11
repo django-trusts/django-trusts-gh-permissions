@@ -23,12 +23,10 @@ CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
 
 
 class GhAuthorizedQuerySet(AuthorizedQuerySet):
-    """Owner-present list filter. Does not call ``kernel_config()``.
+    """Owner-present list filter through ``implementation_for_path``.
 
-    Core ``AuthorizedQuerySet.authorized`` still reads the transitional
-    kernel AppConfig. IIb does not install that config, so GH listings
-    resolve handles through ``implementation_for_path``. ``granted``
-    stays in core.
+    GH listings resolve handles from the implementation owner.
+    ``granted`` stays in core.
     """
 
     def authorized(self, user, permission, extra_q=None):
