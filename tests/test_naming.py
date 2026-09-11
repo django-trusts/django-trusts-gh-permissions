@@ -119,24 +119,14 @@ class GhRelationTest(TestCase):
         )
         self.assertTrue(hasattr(User, 'teams'))
         self.assertTrue(hasattr(Team, 'allowed_operations'))
-        user_kwargs = UserRepositoryPermission._meta.get_field('user').deconstruct()[3]
-        member_kwargs = Team._meta.get_field('members').deconstruct()[3]
-        self.assertIs(
-            apps.get_model(user_kwargs['to']),
-            configured,
-        )
-        self.assertIs(
-            apps.get_model(member_kwargs['to']),
-            configured,
-        )
-        self.assertEqual(
-            UserRepositoryPermission._meta.get_field('user').remote_field.swappable,
-            'AUTH_USER_MODEL',
-        )
-        self.assertEqual(
-            Team._meta.get_field('members').remote_field.swappable,
-            'AUTH_USER_MODEL',
-        )
+        user_field = UserRepositoryPermission._meta.get_field('user')
+        member_field = Team._meta.get_field('members')
+        self.assertIs(apps.get_model(user_field.deconstruct()[3]['to']), configured)
+        self.assertIs(apps.get_model(member_field.deconstruct()[3]['to']), configured)
+        self.assertTrue(user_field.swappable)
+        self.assertEqual(user_field.swappable_setting, 'AUTH_USER_MODEL')
+        self.assertTrue(member_field.swappable)
+        self.assertEqual(member_field.swappable_setting, 'AUTH_USER_MODEL')
         with self.assertRaises(FieldDoesNotExist):
             User._meta.get_field('organizations')
         self.assertFalse(hasattr(Organization, 'members'))
