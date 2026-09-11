@@ -24,7 +24,11 @@ from trusts.apps import (
 )
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
-from gh_permissions.models import AccountRepoGrant, Repository, TeamRepoGrant
+from gh_permissions.models import (
+    Repository,
+    TeamRepositoryPermission,
+    UserRepositoryPermission,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +76,7 @@ class Issue6OwnerProofs(SimpleTestCase):
             record.root
             for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
         ]
-        self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])
+        self.assertEqual(roots, [UserRepositoryPermission, TeamRepositoryPermission])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
         config = apps.get_app_config('gh_permissions')
@@ -116,18 +120,20 @@ class Issue6OwnerProofs(SimpleTestCase):
 class Issue6AuthorizationProofs(TestCase):
     def test_list_authorized_resolves_owner_without_removed_core_surfaces(self):
         import trusts.apps as trusts_apps
-        from gh_permissions.models import Account, Operation, Organization
+        from django.contrib.auth import get_user_model
+
+        from gh_permissions.models import Operation, Organization
 
         org = Organization.objects.create(name='iib-org')
         repo = Repository.objects.create(organization=org, title='iib-repo')
-        account = Account.objects.create(name='iib-account')
+        user = get_user_model().objects.create(username='iib-account')
         write = Operation.objects.create(code='iib-write')
-        AccountRepoGrant.objects.create(
-            account=account, repository=repo, operation=write,
+        UserRepositoryPermission.objects.create(
+            user=user, repository=repo, operation=write,
         )
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
         backend = GhAuthorizationBackend()
         self.assertIs(backend._trusts_config(), gh_config())
-        listed = list(Repository.objects.authorized(account, write))
+        listed = list(Repository.objects.authorized(user, write))
         self.assertIn(repo, listed)

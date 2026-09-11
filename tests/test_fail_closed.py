@@ -7,9 +7,9 @@ from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
 
 from gh_permissions import policy as gh_policy
 from gh_permissions.models import (
-    AccountRepoGrant,
     Organization,
-    TeamRepoGrant,
+    TeamRepositoryPermission,
+    UserRepositoryPermission,
 )
 from gh_permissions.policy import register_direct, register_team
 from tests.fixtures import GhFixtureMixin
@@ -17,7 +17,7 @@ from tests.fixtures import GhFixtureMixin
 
 # Intentionally unsupported GH behaviors (not defects of this consumer):
 UNSUPPORTED_GH_BEHAVIORS = (
-    'permission levels do not imply lower levels unless the bundle lists them',
+    'permission levels do not imply lower levels unless the team lists them',
     'no org-owner implicit admin on every repository',
     'no public-repository anonymous read',
     'no nested teams',
@@ -63,31 +63,31 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
 
     def test_malformed_direct_path_rejected_with_zero_sql(self):
         registry = TrustsRegistry()
-        d = Ref(AccountRepoGrant)
+        d = Ref(UserRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=d.repository.title,
-                    user=d.account,
+                    user=d.user,
                     permission=d.operation,
                 )
         self.assertEqual(registry.records, ())
 
     def test_extra_multi_valued_user_path_rejected_with_zero_sql(self):
         registry = TrustsRegistry()
-        t = Ref(TeamRepoGrant)
+        t = Ref(TeamRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=t.repository,
-                    user=t.team.members.organizations,
+                    user=t.team.members.teams,
                     permission=t.operation,
                 )
         self.assertEqual(registry.records, ())
 
     def test_non_none_untyped_condition_rejected_with_zero_sql(self):
         registry = TrustsRegistry()
-        t = Ref(TeamRepoGrant)
+        t = Ref(TeamRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
@@ -107,7 +107,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
             CANONICAL_BACKEND,
         ).registry
         self.assertTrue(registry.frozen)
-        d = Ref(AccountRepoGrant)
+        d = Ref(UserRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 register_direct(registry)
@@ -118,7 +118,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=d.repository,
-                    user=d.account,
+                    user=d.user,
                     permission=d.operation,
                 )
 
@@ -138,20 +138,20 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         with self.assertNumQueries(0):
             record = register_team(registry)
         self.assertEqual(len(registry.records), 1)
-        self.assertIs(record.root, TeamRepoGrant)
+        self.assertIs(record.root, TeamRepositoryPermission)
 
     def test_register_team_adds_independent_root_beside_direct(self):
         registry = TrustsRegistry()
         register_direct(registry)
         before = registry.records
         self.assertEqual(len(before), 1)
-        self.assertEqual(before[0].root, AccountRepoGrant)
+        self.assertEqual(before[0].root, UserRepositoryPermission)
         with self.assertNumQueries(0):
             record = register_team(registry)
         self.assertEqual(len(registry.records), 2)
-        self.assertIs(registry.records[0].root, AccountRepoGrant)
-        self.assertIs(record.root, TeamRepoGrant)
-        self.assertIs(registry.records[1].root, TeamRepoGrant)
+        self.assertIs(registry.records[0].root, UserRepositoryPermission)
+        self.assertIs(record.root, TeamRepositoryPermission)
+        self.assertIs(registry.records[1].root, TeamRepositoryPermission)
 
     def test_startup_registers_direct_and_team_roots(self):
         from trusts.apps import implementation_for_path
@@ -162,4 +162,4 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
             CANONICAL_BACKEND,
         ).registry
         roots = [record.root for record in registry.records]
-        self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])
+        self.assertEqual(roots, [UserRepositoryPermission, TeamRepositoryPermission])
