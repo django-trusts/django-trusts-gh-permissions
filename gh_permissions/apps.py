@@ -20,8 +20,9 @@ class GhPermissionsConfig(AppConfig):
             registry = kernel_config(self.apps).configured_backend().registry
         except (LookupError, TrustsConfigurationError):
             return
-        if getattr(self, '_gh_direct_registry_id', None) is registry:
+        if getattr(self, '_gh_policy_registry_id', None) is registry:
             return
-        from gh_permissions.policy import register_direct
+        from gh_permissions.policy import register_direct, register_team
         register_direct(registry)
-        self._gh_direct_registry_id = registry
+        register_team(registry)
+        self._gh_policy_registry_id = registry

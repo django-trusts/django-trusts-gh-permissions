@@ -40,6 +40,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
     def test_unregistered_resource_fails_closed(self):
         registry = TrustsRegistry()
         register_direct(registry)
+        register_team(registry)
         self.assertFalse(
             registry.has_permission(self.member, self.org_a, self.read),
         )
@@ -53,6 +54,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
     def test_wrong_requester_model_and_raw_pk_fail_closed(self):
         registry = TrustsRegistry()
         register_direct(registry)
+        register_team(registry)
         self.assertFalse(
             registry.has_permission(self.repo_a, self.repo_b, self.write),
         )
@@ -71,14 +73,14 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 )
         self.assertEqual(registry.records, ())
 
-    def test_m2m_user_path_rejected_with_zero_sql(self):
+    def test_extra_multi_valued_user_path_rejected_with_zero_sql(self):
         registry = TrustsRegistry()
         t = Ref(TeamRepoGrant)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=t.repository,
-                    user=t.team.members,
+                    user=t.team.members.organizations,
                     permission=t.operation,
                 )
         self.assertEqual(registry.records, ())
@@ -107,6 +109,9 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 register_direct(registry)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
+                register_team(registry)
+        with self.assertNumQueries(0):
+            with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=d.repository,
                     user=d.account,
@@ -124,28 +129,29 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
     def test_no_aggregate_register_gh_policy_helper(self):
         self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
-    def test_register_team_fails_before_any_registry_mutation(self):
+    def test_register_team_adds_one_record_with_zero_sql(self):
         registry = TrustsRegistry()
         with self.assertNumQueries(0):
-            with self.assertRaises((ImportError, AttributeError, TrustsConfigurationError)):
-                register_team(registry)
-        self.assertEqual(registry.records, ())
+            record = register_team(registry)
+        self.assertEqual(len(registry.records), 1)
+        self.assertIs(record.root, TeamRepoGrant)
 
-    def test_register_team_does_not_mutate_an_existing_direct_root(self):
+    def test_register_team_adds_independent_root_beside_direct(self):
         registry = TrustsRegistry()
         register_direct(registry)
         before = registry.records
         self.assertEqual(len(before), 1)
         self.assertEqual(before[0].root, AccountRepoGrant)
         with self.assertNumQueries(0):
-            with self.assertRaises((ImportError, AttributeError, TrustsConfigurationError)):
-                register_team(registry)
-        self.assertEqual(registry.records, before)
+            record = register_team(registry)
+        self.assertEqual(len(registry.records), 2)
+        self.assertIs(registry.records[0].root, AccountRepoGrant)
+        self.assertIs(record.root, TeamRepoGrant)
+        self.assertIs(registry.records[1].root, TeamRepoGrant)
 
-    def test_startup_registers_only_the_direct_root(self):
+    def test_startup_registers_direct_and_team_roots(self):
         from trusts.apps import kernel_config
 
         registry = kernel_config().configured_backend().registry
         roots = [record.root for record in registry.records]
-        self.assertEqual(roots, [AccountRepoGrant])
-        self.assertNotIn(TeamRepoGrant, roots)
+        self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])

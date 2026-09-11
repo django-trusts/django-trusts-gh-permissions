@@ -90,7 +90,12 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
-    from gh_permissions.models import Account, Repository
+    from gh_permissions.models import (
+        Account,
+        AccountRepoGrant,
+        Repository,
+        TeamRepoGrant,
+    )
     from trusts.apps import AppConfig, kernel_config
 
     gh_file = Path(gh_permissions.__file__).resolve()
@@ -125,12 +130,20 @@ def main() -> int:
     else:
         raise SystemExit('GH-only populate must not own label trusts')
 
+    registry = config.configured_backend().registry
+    roots = [record.root for record in registry.records]
+    if roots != [AccountRepoGrant, TeamRepoGrant]:
+        raise SystemExit(
+            'GH-only populate must register direct and team roots: %r' % roots
+        )
+
     print('wheel import ok')
     print('django', django.get_version())
     print('gh_permissions.__file__', gh_file)
     print('Account', Account)
     print('Repository', Repository)
     print('kernel_config', config, config.label)
+    print('startup roots', [root.__name__ for root in roots])
     print('absent zero modules', ' '.join(ABSENT_ZERO_MODULES))
     return 0
 

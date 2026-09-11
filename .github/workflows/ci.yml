@@ -25,7 +25,7 @@ jobs:
       run: |
         test ! -e trusts/zero
         ! grep -R --include='*.py' -n 'from trusts\.zero\|import trusts\.zero\|django-trusts-zero' gh_permissions
-    - name: Install Django 6.1 and pinned django-trusts C2
+    - name: Install Django 6.1 and pinned django-trusts (#98)
       run: |
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
@@ -35,12 +35,10 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert 'db5a41ed66478b79e10b0a066c8c0bca8fbe7882' in pin, pin
+        assert '595e2f9f0cc97f8744c1178f3e384dba5787773c' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
-      env:
-        GH_SUITE: expressible
       run: |
         coverage run -m tests.runtests
         coverage report
@@ -48,25 +46,6 @@ jobs:
       run: python -m django migrate --noinput --settings=tests.settings
     - name: System checks
       run: python -m django check --settings=tests.settings
-
-  missing-core:
-    name: G1 missing-core stop
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-    - name: Install Django 6.1 and pinned django-trusts C2
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install "Django>=6.1,<6.2"
-        python -m pip install -e .
-    - name: Accepted team mapping (fails on current C2)
-      env:
-        GH_SUITE: missing-core
-      run: python -m tests.runtests
 
   package:
     name: package

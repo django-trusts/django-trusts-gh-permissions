@@ -1,3 +1,5 @@
 # Reviewed django-trusts kernel head required by GH #3 / G1.
-# Core C2 merge (django-trusts#97). Never pin django-trusts-zero.
-ref=db5a41ed66478b79e10b0a066c8c0bca8fbe7882
+# Core C2 + #98 merge (django-trusts#99) from reviewed head
+# 5df5eab643d1da39c2ff86bc838b409377590da5.
+# Never pin django-trusts-zero.
+ref=595e2f9f0cc97f8744c1178f3e384dba5787773c

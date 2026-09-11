@@ -14,13 +14,8 @@ SUITE = [
     'tests.test_kernel',
     'tests.test_acceptance',
     'tests.test_fail_closed',
-    'tests.test_missing_core',
+    'tests.test_team_mapping',
 ]
-
-if os.environ.get('GH_SUITE') == 'missing-core':
-    SUITE = ['tests.test_missing_core']
-elif os.environ.get('GH_SUITE') == 'expressible':
-    SUITE = [name for name in SUITE if name != 'tests.test_missing_core']
 
 
 def runtests():

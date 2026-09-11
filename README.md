@@ -14,8 +14,10 @@ authorization glue in this repository is **zero**.
 
 ## Dependency
 
-Pin `django-trusts` only, at C2 merge
-[`db5a41ed66478b79e10b0a066c8c0bca8fbe7882`](https://github.com/django-trusts/django-trusts/commit/db5a41ed66478b79e10b0a066c8c0bca8fbe7882).
+Pin `django-trusts` only, at C2 + #98 merge
+[`595e2f9f0cc97f8744c1178f3e384dba5787773c`](https://github.com/django-trusts/django-trusts/commit/595e2f9f0cc97f8744c1178f3e384dba5787773c)
+(reviewed head
+[`5df5eab643d1da39c2ff86bc838b409377590da5`](https://github.com/django-trusts/django-trusts/commit/5df5eab643d1da39c2ff86bc838b409377590da5)).
 Never `django-trusts-zero`. Package version is `0.1.0.dev0`.
 
 ```
@@ -37,9 +39,9 @@ AUTHENTICATION_BACKENDS = (
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
 `TrustModelBackend`. GH does not use Django auth Permission strings.
 
-`GhPermissionsConfig.ready()` registers the direct-account relation on
-the kernel store. The kernel app label is `trusts_core`. There is no
-`trusts` schema or migration.
+`GhPermissionsConfig.ready()` registers the direct-account relation and
+the accepted team relation on the kernel store. The kernel app label is
+`trusts_core`. There is no `trusts` schema or migration.
 
 ## Bounded policy
 
@@ -49,18 +51,36 @@ the kernel store. The kernel app label is `trusts_core`. There is no
 - `Repository` belongs to an organization
 - A `Team` can receive a repository-scoped `PermissionBundle`
 - An `Account` may receive a direct `AccountRepoGrant`
-- Complete relation roots are intended to OR-compose once the team
-  root is expressible; a partial membership or attachment grants
-  nothing. This stop PR registers only the direct root.
-  Independent-root OR is unproven (see [migrates.md](migrates.md) §5).
+- Complete relation roots OR-compose (direct + team). A partial
+  membership or attachment grants nothing.
 - Team grants are capped by grant-row organization equality and by
-  permission-bundle membership (accepted C2 typed predicates; see
-  [MISSING_CORE.md](MISSING_CORE.md))
+  permission-bundle membership (`All` / `permission_in` / `Equal` on
+  public C2)
 - Revocation and malformed configuration fail closed
 
 Public relations used to authorize: `account.teams`,
 `team.permission_bundles`, `repository.organization`. Callers pass
 `Account` and `Operation` **instances**.
+
+The accepted team registration is:
+
+```python
+from trusts.core import All, Equal, Ref, permission_in
+
+t = Ref(TeamRepoGrant)
+registry.register(
+    content=t.repository,
+    user=t.team.members,
+    permission=t.operation,
+    condition=All(
+        permission_in(t.team.permission_bundles.operations),
+        Equal(t.team.organization, t.repository.organization),
+    ),
+)
+```
+
+That spelling is `gh_permissions.policy.register_team`. Direct is
+`register_direct`. There is no aggregate `register_gh_policy()`.
 
 ## Usage
 
@@ -74,15 +94,6 @@ Object authorization, authorized listings, and permission enumeration
 are projections of the same registrations. Supported object decisions
 and listings are SQL-filtered with a fixed query count, before
 pagination.
-
-## G1 missing-core stop
-
-The accepted team registration (membership hop + `All` /
-`permission_in` / `Equal`) is **not** expressible on public C2
-`db5a41ed`. Direct grants are. This tree does not invent a
-consumer-local dialect. Details and the failing minimal test are in
-[MISSING_CORE.md](MISSING_CORE.md) and
-`tests.test_missing_core`.
 
 ## Intentionally unsupported GH behaviors
 
@@ -114,11 +125,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Lines/files | Why consumer-owned |
 |---|---:|---|
 | Domain models | 137 + 98 generated migration / 2 files | Account, Organization, Team, Repository, PermissionBundle, Operation, TeamRepoGrant, AccountRepoGrant |
-| Policy registrations | 47 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`); no aggregate helper |
+| Policy registrations | 35 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`); no aggregate helper |
 | Registry host | 14 / `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | 27 / `apps.py` | `register_direct` only |
+| Ready contribution | 28 / `apps.py` | `register_direct` then `register_team` |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized`, checks |
-| Tests/fixtures/docs | remaining / this tree | Direct acceptance, fail-closed, kernel topology, missing-core stop, `migrates.md` |
+| Tests/fixtures/docs | remaining / this tree | Direct+team acceptance, fail-closed, kernel topology, `migrates.md` |
 
 Public APIs added by this reconstitution are recorded in
 [migrates.md](migrates.md) (old behavior is README-only / unavailable).

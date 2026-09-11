@@ -1,16 +1,18 @@
 # Migration record (0.1.0.dev0 G1 reconstitution)
 
 This record covers public APIs and methods introduced by reconstituting
-the GH consumer on django-trusts C2
-(`db5a41ed66478b79e10b0a066c8c0bca8fbe7882`). The previous default-branch
+the GH consumer on django-trusts C2 + #98
+(`595e2f9f0cc97f8744c1178f3e384dba5787773c`, reviewed head
+`5df5eab643d1da39c2ff86bc838b409377590da5`). The previous default-branch
 HEAD `dba78890451bca37f475e5cfe429302c2cd814a9` was README-only. Those
 surfaces were unavailable; they are not exempt from this record.
 
-G1 is a **partial** consumer: the direct-account root is registered at
-startup; the accepted team root is declared as `register_team` and is
-not invoked at startup. Independent-root OR is unproven until core
-gains the typed predicates and membership hop. Do not merge this as a
-complete G1 until that core slice lands and this record is updated.
+G1 is a **complete** consumer on that kernel: both independent roots
+are registered at startup. Direct is the three-FK atom. Team is the
+accepted django-trusts#54 r7 spelling (`All` / `permission_in` /
+`Equal` plus `user=t.team.members`). Independent-root OR is proven.
+Do not add a consumer-local Q, lookup-string, tuple, or callable
+dialect.
 
 ## Changes
 
@@ -35,18 +37,18 @@ Migration-bot checklist:
 
 | | |
 | --- | --- |
-| Previous | README-only / unavailable. Abandoned proof used `Context.register_identity` + `Trustee.register` (not reconstituted). |
-| New | `gh_permissions.policy.register_direct(registry)` registers `Ref(AccountRepoGrant)` (`content=repository`, `user=account`, `permission=operation`). `register_team(registry)` is the accepted team spelling (`user=t.team.members`, `condition=All(permission_in(...), Equal(...))`). `GhPermissionsConfig.ready()` calls **only** `register_direct`. There is no aggregate `register_gh_policy()`. |
-| Replacement | Contribute with `register_direct(handle.registry)` from `AppConfig.ready()` via `kernel_config().configured_backend()`. Do not sequence `register_direct` then `register_team` as one helper: on current C2 `register_team` raises before `register()`, but an aggregate that registered direct first would leave a partial policy if that exception were caught. |
+| Previous | README-only / unavailable. Abandoned proof used `Context.register_identity` + `Trustee.register` (not reconstituted). The parked missing-core stop declared `register_team` but did not invoke it at startup. |
+| New | `gh_permissions.policy.register_direct(registry)` registers `Ref(AccountRepoGrant)` (`content=repository`, `user=account`, `permission=operation`). `register_team(registry)` is the accepted team spelling (`user=t.team.members`, `condition=All(permission_in(...), Equal(...))`). `GhPermissionsConfig.ready()` calls **both**, in that order, on the kernel store. There is no aggregate `register_gh_policy()`. |
+| Replacement | Contribute with `register_direct(handle.registry)` and `register_team(handle.registry)` from `AppConfig.ready()` via `kernel_config().configured_backend()`. Do not sequence them as one helper that mutates then catches. |
 | Affected | Hosts wiring GH policy. Isolated tests may pass a standalone `TrustsRegistry()`. |
-| Authorization | Direct grants are SQL `EXISTS` through `AccountRepoGrant`. Team grants are **not** live. Independent-root OR is unproven. |
+| Authorization | Direct grants are SQL `EXISTS` through `AccountRepoGrant`. Team grants are SQL `EXISTS` through `TeamRepoGrant` with membership, bundle ceiling, and organization alignment AND-correlated on that row. Independent roots OR. |
 
 Migration-bot checklist:
 
 - [ ] Do not import `trusts.context` / `trusts.trustee` / alignment-path tuples from the abandoned proof.
-- [ ] Do not call `register_team` from `ready()` until public C2 accepts that mapping (see `MISSING_CORE.md`).
-- [ ] Do not add `register_gh_policy()` that mutates then fails.
-- [ ] On current C2, `register_team` fails before `registry.register` (`ImportError` for `All` / `Equal` / `permission_in`); stored records stay unchanged.
+- [ ] Pin django-trusts at #98 merge `595e2f9f0cc97f8744c1178f3e384dba5787773c` (or a later published revision that includes it).
+- [ ] Call both `register_direct` and `register_team` from `ready()`. Do not add `register_gh_policy()`.
+- [ ] Import `All`, `Equal`, and `permission_in` from `trusts.core` only. Do not add a consumer-local condition dialect.
 
 ### 3. `GhAuthorizationBackend`
 
@@ -71,30 +73,29 @@ Migration-bot checklist:
 | New | `Repository.objects = AuthorizedManager()`. Instance-only `.authorized(account, operation_instance)`. Strings raise `TrustsConfigurationError` with zero SQL. The same registration drives `registry.has_permission`, `registry.filter_authorized`, `registry.permissions_for`, and the manager. |
 | Replacement | Resolve `Operation` yourself (`Operation.objects.get(code=...)`) then pass the instance. |
 | Affected | Object checks, authorized listings, enumeration. |
-| Authorization | Direct-root only on this stop PR. Multiple `AccountRepoGrant` **rows** OR in SQL; that is not independent-root OR. |
+| Authorization | Direct and team roots OR in SQL. Object, queryset, manager, and enumeration agree. |
 
 Migration-bot checklist:
 
 - [ ] Replace string operations with `Operation` instances.
 - [ ] Paginate only after `.authorized(...)`.
 - [ ] Do not attach `.permitted` or `.get_permission` to `Repository` / `Operation`.
-- [ ] Do not claim object/list agreement across direct **and** team roots until `register_team` is live.
 
-### 5. Independent-root OR is unproven on this stop
+### 5. Independent-root OR (direct + team)
 
 | | |
 | --- | --- |
-| Previous | Issue #3 / preserved proof required multiple complete relation roots to OR-compose (direct + team). |
-| New | Only the direct root is registered. Tests that create two `AccountRepoGrant` rows prove multiple **grant rows** under one registration, not OR-composition of independent relation roots. Independent-root OR remains unproven until the team root is expressible. |
-| Replacement | Keep both `register_direct` and `register_team` as separate functions. Re-prove OR after core ships `All` / `Equal` / `permission_in` and the membership hop. |
-| Affected | Acceptance evidence and any host that expected team+direct listing in one queryset. |
-| Authorization | Team membership, bundle ceiling, and cross-org alignment are **not** enforced by a live team registration on this PR. |
+| Previous | Issue #3 / preserved proof required multiple complete relation roots to OR-compose (direct + team). The parked missing-core stop registered only the direct root; independent-root OR was unproven. |
+| New | Startup registers both roots. A principal who holds a complete team path and a complete direct path sees both resources in one authorized queryset. Removing any required edge of one root (membership, grant row, bundle operation, organization alignment, or direct grant row) removes only that branch. |
+| Replacement | Keep both `register_direct` and `register_team` as separate functions. Treat `test_multiple_direct_grant_rows_combine` as same-root grant-row OR, distinct from `test_direct_and_team_roots_or_compose`. |
+| Affected | Acceptance evidence and hosts that list repositories across direct and team grants. |
+| Authorization | Team membership, bundle ceiling, and cross-org alignment are enforced at read time on the team root. Direct three-FK grants remain unconstrained by those predicates. |
 
 Migration-bot checklist:
 
-- [ ] Do not treat `test_multiple_direct_grant_rows_combine` as independent-root OR evidence.
-- [ ] Do not ship a consumer-local extra dialect to fake the team root.
-- [ ] After the core predicate/membership slice, update this section and add a two-root OR test.
+- [ ] Do not treat multiple `AccountRepoGrant` rows as independent-root OR evidence.
+- [ ] Do not ship a consumer-local extra dialect.
+- [ ] Expect one SQL `EXISTS` plan that OR-composes both roots; paginate only after filtering.
 
 ## No change to these project-wide rules
 
