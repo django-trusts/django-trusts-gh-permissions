@@ -49,8 +49,10 @@ the kernel store. The kernel app label is `trusts_core`. There is no
 - `Repository` belongs to an organization
 - A `Team` can receive a repository-scoped `PermissionBundle`
 - An `Account` may receive a direct `AccountRepoGrant`
-- Complete relation roots OR-compose; a partial membership or
-  attachment grants nothing
+- Complete relation roots are intended to OR-compose once the team
+  root is expressible; a partial membership or attachment grants
+  nothing. This stop PR registers only the direct root.
+  Independent-root OR is unproven (see [migrates.md](migrates.md) §5).
 - Team grants are capped by grant-row organization equality and by
   permission-bundle membership (accepted C2 typed predicates; see
   [MISSING_CORE.md](MISSING_CORE.md))
@@ -112,13 +114,13 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Lines/files | Why consumer-owned |
 |---|---:|---|
 | Domain models | 137 + 98 generated migration / 2 files | Account, Organization, Team, Repository, PermissionBundle, Operation, TeamRepoGrant, AccountRepoGrant |
-| Policy registrations | 60 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`) |
+| Policy registrations | 47 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`); no aggregate helper |
 | Registry host | 14 / `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | 27 / `apps.py` | `configured_backend().registry.register(...)` |
+| Ready contribution | 27 / `apps.py` | `register_direct` only |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized`, checks |
-| Tests/fixtures/docs | remaining / this tree | Direct acceptance, fail-closed, kernel topology, missing-core stop |
+| Tests/fixtures/docs | remaining / this tree | Direct acceptance, fail-closed, kernel topology, missing-core stop, `migrates.md` |
 
-This reconstitution does not change a prior shipped public API (the
-active baseline was README-only). There is no `migrates.md` in this PR.
+Public APIs added by this reconstitution are recorded in
+[migrates.md](migrates.md) (old behavior is README-only / unavailable).
 
 Package version is **0.1.0.dev0**.

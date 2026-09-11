@@ -66,7 +66,12 @@ class GhDirectAuthorizationTest(GhFixtureMixin, TransactionTestCase):
     def test_attachment_without_direct_grant_grants_nothing(self):
         self._object_list_agree(self.stranger, self.read, self.repo_other, False)
 
-    def test_multiple_direct_roots_or_compose(self):
+    def test_multiple_direct_grant_rows_combine(self):
+        """Two AccountRepoGrant rows under the one direct registration.
+
+        This is not independent-root OR (direct vs team). That remains
+        unproven until ``register_team`` is expressible on public C2.
+        """
         AccountRepoGrant.objects.create(
             account=self.member, repository=self.repo_a, operation=self.read,
         )
@@ -82,7 +87,7 @@ class GhDirectAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             )
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
 
-    def test_removing_a_direct_grant_revokes_only_that_branch(self):
+    def test_removing_a_direct_grant_row_revokes_only_that_row(self):
         AccountRepoGrant.objects.create(
             account=self.member, repository=self.repo_a, operation=self.read,
         )

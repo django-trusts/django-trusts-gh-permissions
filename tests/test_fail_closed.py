@@ -5,12 +5,13 @@ from django.test import SimpleTestCase, TestCase
 
 from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
 
+from gh_permissions import policy as gh_policy
 from gh_permissions.models import (
     AccountRepoGrant,
     Organization,
     TeamRepoGrant,
 )
-from gh_permissions.policy import register_direct
+from gh_permissions.policy import register_direct, register_team
 from tests.fixtures import GhFixtureMixin
 
 
@@ -119,3 +120,32 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 if getattr(m, 'id', '').startswith('trusts.E')
             ]
         self.assertEqual(messages, [])
+
+    def test_no_aggregate_register_gh_policy_helper(self):
+        self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
+
+    def test_register_team_fails_before_any_registry_mutation(self):
+        registry = TrustsRegistry()
+        with self.assertNumQueries(0):
+            with self.assertRaises((ImportError, AttributeError, TrustsConfigurationError)):
+                register_team(registry)
+        self.assertEqual(registry.records, ())
+
+    def test_register_team_does_not_mutate_an_existing_direct_root(self):
+        registry = TrustsRegistry()
+        register_direct(registry)
+        before = registry.records
+        self.assertEqual(len(before), 1)
+        self.assertEqual(before[0].root, AccountRepoGrant)
+        with self.assertNumQueries(0):
+            with self.assertRaises((ImportError, AttributeError, TrustsConfigurationError)):
+                register_team(registry)
+        self.assertEqual(registry.records, before)
+
+    def test_startup_registers_only_the_direct_root(self):
+        from trusts.apps import kernel_config
+
+        registry = kernel_config().configured_backend().registry
+        roots = [record.root for record in registry.records]
+        self.assertEqual(roots, [AccountRepoGrant])
+        self.assertNotIn(TeamRepoGrant, roots)

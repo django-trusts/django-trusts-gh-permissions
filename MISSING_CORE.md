@@ -31,7 +31,8 @@ registry.register(
 
 That spelling is `gh_permissions.policy.register_team`. Startup
 (`GhPermissionsConfig.ready`) registers only the direct root so Django
-populate still succeeds.
+populate still succeeds. There is no aggregate `register_gh_policy()`.
+Independent-root OR is unproven until this mapping is expressible.
 
 ## What public C2 actually ships
 
@@ -57,7 +58,8 @@ bounded reachability, not membership/ceiling/alignment.
   `.authorized(account, operation_instance)`.
 - Object / queryset / manager / enumeration agreement on the direct
   root; SQL `EXISTS`; fixed query counts; fail-closed malformed paths
-  with zero SQL.
+  with zero SQL. Multiple **direct grant rows** combine; that is not
+  independent-root OR.
 - GH-only populate `trusts` + `gh_permissions`: kernel label
   `trusts_core`, no `trusts` schema/migrations, `trusts.zero` absent,
   inert `trusts.models`.

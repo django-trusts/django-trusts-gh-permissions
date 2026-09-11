@@ -71,6 +71,7 @@ class GhNamingTest(SimpleTestCase):
         self.assertNotIn('TrustModelBackend', source)
         self.assertIn('register_direct', source)
         self.assertIn('register_team', source)
+        self.assertNotIn('register_gh_policy', source)
         self.assertIn('permission_in', source)
         self.assertIn('Equal', source)
         self.assertIn('All', source)
