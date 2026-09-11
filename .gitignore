@@ -45,3 +45,6 @@ db.sqlite3
 # Sphinx
 docs/_build/
 docs/build/
+
+# Local companion kernel checkout (CI clones to .deps/django-trusts)
+.deps/

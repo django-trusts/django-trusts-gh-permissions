@@ -1,5 +1,6 @@
 """Shared GH fixtures. Not authorization policy."""
 
+from gh_permissions.apps import CANONICAL_BACKEND_PATH
 from gh_permissions.models import (
     Account,
     AccountRepoGrant,
@@ -10,6 +11,16 @@ from gh_permissions.models import (
     Team,
     TeamRepoGrant,
 )
+
+
+def gh_registry(apps_registry=None):
+    """Live GH registry via the public Step I owner surface."""
+    from trusts.apps import implementation_for_path
+
+    owner = implementation_for_path(
+        CANONICAL_BACKEND_PATH, apps_registry=apps_registry,
+    )
+    return owner.configured_backend(CANONICAL_BACKEND_PATH).registry
 
 
 class GhFixtureMixin(object):

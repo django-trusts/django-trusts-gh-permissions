@@ -14,20 +14,19 @@ authorization glue in this repository is **zero**.
 
 ## Dependency
 
-Pin `django-trusts` only, at C2 + #98 merge
-[`595e2f9f0cc97f8744c1178f3e384dba5787773c`](https://github.com/django-trusts/django-trusts/commit/595e2f9f0cc97f8744c1178f3e384dba5787773c)
-(reviewed head
-[`5df5eab643d1da39c2ff86bc838b409377590da5`](https://github.com/django-trusts/django-trusts/commit/5df5eab643d1da39c2ff86bc838b409377590da5)).
+Pin `django-trusts` only, at Step I (`1.0.0.dev2`) merge
+[`39f1f9611e214193aec4e97526cf9b54ee689967`](https://github.com/django-trusts/django-trusts/commit/39f1f9611e214193aec4e97526cf9b54ee689967)
+(django-trusts#109). Metadata is exactly `django-trusts>=1.0.0.dev2,<2`.
 Never `django-trusts-zero`. Package version is `0.1.0.dev0`.
 
 ```
 python -m pip install "Django>=6.1,<6.2"
+python -m pip install "django-trusts @ git+https://github.com/django-trusts/django-trusts.git@39f1f9611e214193aec4e97526cf9b54ee689967"
 python -m pip install -e .
 ```
 
 ```python
 INSTALLED_APPS = [
-    'trusts',
     'gh_permissions',
 ]
 AUTHENTICATION_BACKENDS = (
@@ -35,13 +34,18 @@ AUTHENTICATION_BACKENDS = (
 )
 ```
 
+Do **not** list `'trusts'`. Core is a Python dependency only.
+
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
 `TrustModelBackend`. GH does not use Django auth Permission strings.
 
-`GhPermissionsConfig.ready()` registers the direct-account relation and
-the accepted team relation on the kernel store. The kernel app label is
-`trusts_core`. There is no `trusts` schema or migration.
+`GhPermissionsConfig` subclasses `TrustsImplementationConfig` and owns
+`gh_permissions.backends.GhAuthorizationBackend`. `ready()` registers
+the direct-account relation and the accepted team relation on this
+owner's store through `implementation_for_path`. Missing or duplicate
+owner/path configuration fails loud. There is no installed core
+AppConfig and no `trusts` schema or migration.
 
 ## Bounded policy
 
@@ -85,15 +89,28 @@ That spelling is `gh_permissions.policy.register_team`. Direct is
 ## Usage
 
 ```python
+from gh_permissions.apps import CANONICAL_BACKEND_PATH
 from gh_permissions.models import Repository
+from trusts.apps import implementation_for_path
 
-Repository.objects.authorized(account, operation)
+registry = implementation_for_path(
+    CANONICAL_BACKEND_PATH,
+).configured_backend(CANONICAL_BACKEND_PATH).registry
+
+registry.filter_authorized(Repository.objects.all(), account, operation)
+registry.has_permission(account, repository, operation)
+registry.permissions_for(account, repository)
 ```
 
-Object authorization, authorized listings, and permission enumeration
-are projections of the same registrations. Supported object decisions
+`Repository.objects` remains `AuthorizedManager()`. Object
+authorization, authorized listings, and permission enumeration are
+projections of the same registrations. Supported object decisions
 and listings are SQL-filtered with a fixed query count, before
 pagination.
+
+Step I `AuthorizedQuerySet.authorized` still reads the kernel
+accessor. IIb hosts evaluate through the owner registry above until
+core Step III retargets `.authorized()` at `configured_handles()`.
 
 ## Intentionally unsupported GH behaviors
 
@@ -107,15 +124,19 @@ org default repository permission.
 
 ```
 python -m pip install "Django>=6.1,<6.2" coverage
+python -m pip install "django-trusts @ git+https://github.com/django-trusts/django-trusts.git@39f1f9611e214193aec4e97526cf9b54ee689967"
 python -m pip install -e .
 python -m tests.runtests
 python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1: tests, fresh migrate, `manage.py check`, and an
-sdist/wheel import from outside the checkout. Job names:
-`tests (Python 3.12)`, `tests (Python 3.13)`, `tests (Python 3.14)`,
+with Django 6.1 against exact core Step I
+`39f1f9611e214193aec4e97526cf9b54ee689967`: tests, fresh migrate,
+`manage.py check`, `makemigrations --check`, missing-path startup,
+and an sdist/wheel import from outside the checkout. Job names:
+`tests vs Step I (Python 3.12)`, `tests vs Step I (Python 3.13)`,
+`tests vs Step I (Python 3.14)`, `pair with merged core Step I`,
 `package`.
 
 ## Code-budget inventory
@@ -125,13 +146,13 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Lines/files | Why consumer-owned |
 |---|---:|---|
 | Domain models | 137 + 98 generated migration / 2 files | Account, Organization, Team, Repository, PermissionBundle, Operation, TeamRepoGrant, AccountRepoGrant |
-| Policy registrations | 35 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`); no aggregate helper |
-| Registry host | 14 / `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | 28 / `apps.py` | `register_direct` then `register_team` |
+| Policy registrations | 37 / 1 file (`policy.py`) | Direct `Ref` registration; accepted team spelling (`All` / `permission_in` / `Equal`); no aggregate helper |
+| Registry host | 19 / `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
+| Ready contribution | 88 / `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` via `implementation_for_path` |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized`, checks |
-| Tests/fixtures/docs | remaining / this tree | Direct+team acceptance, fail-closed, kernel topology, `migrates.md` |
+| Tests/fixtures/docs | remaining / this tree | Direct+team acceptance, fail-closed, IIb owner lifecycle, `migrates.md` |
 
-Public APIs added by this reconstitution are recorded in
-[migrates.md](migrates.md) (old behavior is README-only / unavailable).
+Public APIs added or changed by this revision are recorded in
+[migrates.md](migrates.md).
 
 Package version is **0.1.0.dev0**.

@@ -3,7 +3,8 @@
 
 Must not run with the repository root as cwd or on sys.path. A passing
 result means GH modules loaded from the installed distribution after
-Django setup, and ``trusts.zero`` is absent.
+Django setup, ``trusts.zero`` is absent, and the IIb owner donated both
+roots without a core AppConfig.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ ABSENT_ZERO_MODULES = [
     'trusts.zero.models',
     'trusts.zero.backends',
 ]
+CANONICAL_BACKEND_PATH = 'gh_permissions.backends.GhAuthorizationBackend'
 
 
 def find_shipped_modules(names):
@@ -73,11 +75,10 @@ def main() -> int:
         INSTALLED_APPS=[
             'django.contrib.contenttypes',
             'django.contrib.auth',
-            'trusts',
             'gh_permissions',
         ],
         AUTHENTICATION_BACKENDS=[
-            'gh_permissions.backends.GhAuthorizationBackend',
+            CANONICAL_BACKEND_PATH,
         ],
         DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
     )
@@ -90,13 +91,23 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
+    from gh_permissions.apps import (
+        CANONICAL_BACKEND_PATH as owned_path,
+        GhPermissionsConfig,
+        gh_config,
+    )
     from gh_permissions.models import (
         Account,
         AccountRepoGrant,
         Repository,
         TeamRepoGrant,
     )
-    from trusts.apps import AppConfig, kernel_config
+    from trusts.apps import (
+        AppConfig as KernelAppConfig,
+        implementation_configs,
+        implementation_for_path,
+        kernel_config,
+    )
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -112,25 +123,30 @@ def main() -> int:
     if 'trusts.zero' in _sys.modules:
         raise SystemExit('GH wheel populate imported trusts.zero')
 
-    config = kernel_config()
-    if type(config) is not AppConfig:
-        raise SystemExit('kernel_config() is not trusts.apps.AppConfig: %r' % (config,))
-    if config.label != 'trusts_core' or config.name != 'trusts':
-        raise SystemExit('C2 kernel name/label must be trusts/trusts_core: %r/%r' % (
-            config.name, config.label,
-        ))
-    if list(config.get_models()):
-        raise SystemExit('C2 kernel must expose no concrete models: %r' % (
-            list(config.get_models()),
-        ))
+    owner = gh_config()
+    if type(owner) is not GhPermissionsConfig:
+        raise SystemExit('gh_config() is not GhPermissionsConfig: %r' % (owner,))
+    if owner.label != 'gh_permissions' or owner.name != 'gh_permissions':
+        raise SystemExit('GH name/label drifted: %r/%r' % (owner.name, owner.label))
+    owners = implementation_configs()
+    if owners != (owner,) or len(owners) != 1:
+        raise SystemExit('expected exactly one implementation owner, got %r' % (owners,))
+    if implementation_for_path(owned_path) is not owner:
+        raise SystemExit('canonical path does not resolve to GhPermissionsConfig')
+    kernelish = [
+        config for config in django_apps.get_app_configs()
+        if type(config) is KernelAppConfig
+    ]
+    if kernelish:
+        raise SystemExit('core AppConfig is installed: %r' % (kernelish,))
     try:
-        django_apps.get_app_config('trusts')
+        kernel_config()
     except LookupError:
         pass
     else:
-        raise SystemExit('GH-only populate must not own label trusts')
+        raise SystemExit('kernel_config() succeeded without a core AppConfig')
 
-    registry = config.configured_backend().registry
+    registry = owner.configured_backend(CANONICAL_BACKEND_PATH).registry
     roots = [record.root for record in registry.records]
     if roots != [AccountRepoGrant, TeamRepoGrant]:
         raise SystemExit(
@@ -142,9 +158,10 @@ def main() -> int:
     print('gh_permissions.__file__', gh_file)
     print('Account', Account)
     print('Repository', Repository)
-    print('kernel_config', config, config.label)
+    print('owner', owner, owner.label)
     print('startup roots', [root.__name__ for root in roots])
     print('absent zero modules', ' '.join(ABSENT_ZERO_MODULES))
+    print('no core AppConfig; one GhPermissionsConfig owner')
     return 0
 
 

@@ -11,4 +11,9 @@ from trusts.backends import TrustModelBackendMixin
 
 
 class GhAuthorizationBackend(TrustModelBackendMixin, BaseBackend):
-    """Instance-only registry host. Not ``TrustModelBackend``."""
+    """Instance-only registry host. Not ``TrustModelBackend``.
+
+    Owned by ``GhPermissionsConfig.trusts_backend_paths``. Resolve this
+    class through ``implementation_for_path`` /
+    ``implementation_for_class``, not the kernel accessor.
+    """

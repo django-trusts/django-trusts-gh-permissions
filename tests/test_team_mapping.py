@@ -13,9 +13,9 @@ django-trusts#54 r7 / issue #3 accepted team registration::
         ),
     )
 
-Exact kernel ``595e2f9f0cc97f8744c1178f3e384dba5787773c`` exports
-``All``, ``Equal``, and ``permission_in`` from ``trusts.core`` and
-accepts the terminal M2M membership hop. Django 6.1 defines
+Exact kernel ``39f1f9611e214193aec4e97526cf9b54ee689967`` (Step I)
+exports ``All``, ``Equal``, and ``permission_in`` from ``trusts.core``
+and accepts the terminal M2M membership hop. Django 6.1 defines
 ``assertNumQueries`` on ``TransactionTestCase`` (and therefore
 ``TestCase``), not ``SimpleTestCase``.
 """

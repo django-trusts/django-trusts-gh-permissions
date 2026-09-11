@@ -1,29 +1,24 @@
-"""Acceptance matrix for the bounded GH policy on public C2 + #98."""
+"""Acceptance matrix for the bounded GH policy on public C2 + IIb."""
 
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.apps import kernel_config
 from trusts.core import TrustsConfigurationError
 
 from gh_permissions.models import AccountRepoGrant, Repository, TeamRepoGrant
-from tests.fixtures import GhFixtureMixin
-
-
-def _registry():
-    return kernel_config().configured_backend().registry
+from tests.fixtures import GhFixtureMixin, gh_registry
 
 
 class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
     reset_sequences = True
 
     def _object_list_agree(self, principal, operation, obj, expected):
-        registry = _registry()
+        registry = gh_registry()
         with self.assertNumQueries(1):
             via_obj = registry.has_permission(principal, obj, operation)
         with self.assertNumQueries(1):
-            via_exists = Repository.objects.filter(pk=obj.pk).authorized(
-                principal, operation,
+            via_exists = registry.filter_authorized(
+                Repository.objects.filter(pk=obj.pk), principal, operation,
             ).exists()
         with self.assertNumQueries(1):
             via_list = obj in list(
@@ -33,7 +28,8 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             )
         with self.assertNumQueries(1):
             via_manager = obj in list(
-                Repository.objects.filter(pk=obj.pk).authorized(
+                registry.filter_authorized(
+                    Repository.objects.filter(pk=obj.pk).all(),
                     principal, operation,
                 )
             )
@@ -118,8 +114,9 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         self._object_list_agree(self.member, self.read, self.repo_b, True)
         with self.assertNumQueries(1):
             listed = list(
-                Repository.objects.authorized(self.member, self.read)
-                .order_by('pk').values_list('pk', flat=True)
+                gh_registry().filter_authorized(
+                    Repository.objects.all(), self.member, self.read,
+                ).order_by('pk').values_list('pk', flat=True)
             )
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
         TeamRepoGrant.objects.filter(
@@ -142,8 +139,9 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
         with self.assertNumQueries(1):
             listed = list(
-                Repository.objects.authorized(self.collaborator, self.write)
-                .order_by('pk').values_list('pk', flat=True)
+                gh_registry().filter_authorized(
+                    Repository.objects.all(), self.collaborator, self.write,
+                ).order_by('pk').values_list('pk', flat=True)
             )
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
 
@@ -167,47 +165,55 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
 
     def test_authorized_listing_is_sql_and_fixed_query_count(self):
+        registry = gh_registry()
         with self.assertNumQueries(1):
             listed = list(
-                Repository.objects.authorized(
-                    self.collaborator, self.write,
+                registry.filter_authorized(
+                    Repository.objects.all(), self.collaborator, self.write,
                 ).order_by('pk').values_list('pk', flat=True)
             )
         self.assertEqual(listed, [self.repo_b.pk])
         exists_sql = str(
-            Repository.objects.filter(pk=self.repo_b.pk).authorized(
+            registry.filter_authorized(
+                Repository.objects.filter(pk=self.repo_b.pk),
                 self.collaborator, self.write,
             ).query
         )
         list_sql = str(
-            Repository.objects.authorized(self.collaborator, self.write).query
+            registry.filter_authorized(
+                Repository.objects.all(), self.collaborator, self.write,
+            ).query
         )
         combined = (exists_sql + list_sql).lower().replace('_', '').replace('"', '')
         self.assertIn('exists', combined)
         self.assertIn('accountrepogrant', combined)
 
     def test_team_listing_is_sql_and_fixed_query_count(self):
+        registry = gh_registry()
         with self.assertNumQueries(1):
             listed = list(
-                Repository.objects.authorized(
-                    self.member, self.read,
+                registry.filter_authorized(
+                    Repository.objects.all(), self.member, self.read,
                 ).order_by('pk').values_list('pk', flat=True)
             )
         self.assertEqual(listed, [self.repo_a.pk])
         exists_sql = str(
-            Repository.objects.filter(pk=self.repo_a.pk).authorized(
+            registry.filter_authorized(
+                Repository.objects.filter(pk=self.repo_a.pk),
                 self.member, self.read,
             ).query
         )
         list_sql = str(
-            Repository.objects.authorized(self.member, self.read).query
+            registry.filter_authorized(
+                Repository.objects.all(), self.member, self.read,
+            ).query
         )
         combined = (exists_sql + list_sql).lower().replace('_', '').replace('"', '')
         self.assertIn('exists', combined)
         self.assertIn('teamrepogrant', combined)
 
     def test_query_construction_is_lazy_and_filters_before_pagination(self):
-        registry = _registry()
+        registry = gh_registry()
         with self.assertNumQueries(0):
             qs = registry.filter_authorized(
                 Repository.objects.all(), self.member, self.read,

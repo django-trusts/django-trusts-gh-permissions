@@ -62,6 +62,9 @@ class GhNamingTest(SimpleTestCase):
             self.assertNotIn('github', source.lower())
             self.assertNotIn('trusts.zero', source)
             self.assertNotIn('django-trusts-zero', source)
+            self.assertNotIn('trusts.core_backends', source)
+            self.assertNotIn('from trusts.apps import kernel_config', source)
+            self.assertNotIn('kernel_config(', source)
 
     def test_no_abandoned_framework_glue_imports(self):
         import gh_permissions.policy as policy

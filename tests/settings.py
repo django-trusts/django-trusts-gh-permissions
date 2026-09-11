@@ -3,12 +3,12 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 ALLOWED_HOSTS = ['testserver', 'localhost']
 
-# GH-only Trusts install: kernel + this consumer. Django contrib is the
-# populate minimum (auth Permission class body on the mixin). No Zero.
+# GH IIb: implementation owner only. Core is a Python dependency, not an
+# installed AppConfig. Django contrib is the populate minimum (auth
+# Permission class body on the mixin). No Zero.
 INSTALLED_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.auth',
-    'trusts',
     'gh_permissions',
 )
 

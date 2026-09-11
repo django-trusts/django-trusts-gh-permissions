@@ -1,2 +1,6 @@
+# Runtime requirements. pyproject.toml is authoritative.
+# django-trusts>=1.0.0.dev2,<2 does not match PyPI 0.10.x. Until 1.x is
+# published, install the Step I kernel first (path/git) or use a
+# companion wheel. Pair pin is django-trusts#109 merge 39f1f961.
 Django>=6.1,<6.2
-django-trusts @ git+https://github.com/django-trusts/django-trusts.git@595e2f9f0cc97f8744c1178f3e384dba5787773c
+django-trusts @ git+https://github.com/django-trusts/django-trusts.git@39f1f9611e214193aec4e97526cf9b54ee689967

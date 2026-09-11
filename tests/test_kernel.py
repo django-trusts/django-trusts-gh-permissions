@@ -1,4 +1,4 @@
-"""GH-only kernel topology: trusts_core, no Zero, inert trusts.models."""
+"""GH IIb topology: one implementation owner, no core AppConfig, no Zero."""
 
 import sys
 from importlib import import_module
@@ -10,41 +10,66 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import AppConfig, kernel_config
+from trusts.apps import (
+    AppConfig as KernelAppConfig,
+    TrustsImplementationConfig,
+    implementation_configs,
+    implementation_for_class,
+    implementation_for_path,
+    kernel_config,
+)
 from trusts.query import AuthorizedManager
 
+from gh_permissions.apps import (
+    CANONICAL_BACKEND_PATH,
+    GhPermissionsConfig,
+    gh_config,
+)
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 
 
 class KernelIdentityTest(SimpleTestCase):
-    def test_installed_apps_are_trusts_and_gh_permissions(self):
+    def test_installed_apps_are_gh_permissions_only(self):
         labels = [config.label for config in apps.get_app_configs()]
-        self.assertIn('trusts_core', labels)
         self.assertIn('gh_permissions', labels)
+        self.assertNotIn('trusts_core', labels)
         self.assertNotIn('trusts', labels)
         names = [config.name for config in apps.get_app_configs()]
-        self.assertIn('trusts', names)
         self.assertIn('gh_permissions', names)
+        self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
 
-    def test_kernel_config_is_class_identity_with_trusts_core_label(self):
-        config = kernel_config()
-        self.assertIs(type(config), AppConfig)
-        self.assertEqual(config.name, 'trusts')
-        self.assertEqual(config.label, 'trusts_core')
-        self.assertIs(config, kernel_config())
-        self.assertIs(config, apps.get_app_config('trusts_core'))
-        with self.assertRaises(LookupError):
-            apps.get_app_config('trusts')
+    def test_exactly_one_implementation_owner_and_no_core_appconfig(self):
+        self.assertTrue(issubclass(GhPermissionsConfig, TrustsImplementationConfig))
+        owners = implementation_configs()
+        self.assertEqual(len(owners), 1)
+        self.assertIs(owners[0], gh_config())
+        self.assertIs(owners[0], apps.get_app_config('gh_permissions'))
+        self.assertEqual(
+            owners[0].trusts_backend_paths, (CANONICAL_BACKEND_PATH,),
+        )
+        kernelish = [
+            config for config in apps.get_app_configs()
+            if type(config) is KernelAppConfig
+        ]
+        self.assertEqual(kernelish, [])
+        with self.assertRaises(LookupError) as ctx:
+            kernel_config()
+        self.assertIn('No installed Trusts kernel AppConfig', str(ctx.exception))
 
-    def test_kernel_exposes_no_concrete_models(self):
-        config = kernel_config()
-        self.assertEqual(list(config.get_models()), [])
+    def test_gh_authorization_backend_resolves_only_through_owner(self):
+        owner = implementation_for_path(CANONICAL_BACKEND_PATH)
+        self.assertIs(type(owner), GhPermissionsConfig)
+        self.assertIs(owner, gh_config())
+        self.assertIs(implementation_for_class(GhAuthorizationBackend), owner)
+        handle = owner.configured_backend(CANONICAL_BACKEND_PATH)
+        self.assertEqual(handle.path, CANONICAL_BACKEND_PATH)
+        self.assertIs(handle.registry, owner.registries[CANONICAL_BACKEND_PATH])
+
+    def test_no_trust_model_and_mixin_only_handle(self):
         trusts = [m for m in apps.get_models() if m.__name__ == 'Trust']
         self.assertEqual(trusts, [])
-
-    def test_no_trustmodelbackend_and_mixin_only_handle(self):
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
             ('gh_permissions.backends.GhAuthorizationBackend',),
@@ -116,9 +141,8 @@ class GhStartupWithoutZeroTest(TestCase):
             Repository,
         )
         self.assertTrue(apps.is_installed('gh_permissions'))
+        self.assertFalse(apps.is_installed('trusts'))
         self.assertNotIn('trusts.zero', sys.modules)
-        config = kernel_config()
-        self.assertEqual(list(config.get_models()), [])
 
     def test_system_checks_are_clean_and_zero_sql(self):
         self.assertNotIn('trusts.zero', sys.modules)
