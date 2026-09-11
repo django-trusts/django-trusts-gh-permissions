@@ -8,16 +8,26 @@ on:
 permissions:
   contents: read
 
+env:
+  COMPANION_KERNEL_SHA: 39f1f9611e214193aec4e97526cf9b54ee689967
+
 jobs:
   tests:
-    name: tests (Python ${{ matrix.python-version }})
+    name: tests vs Step I core (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    env:
+      KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: django-trusts/django-trusts
+        ref: ${{ env.COMPANION_KERNEL_SHA }}
+        path: .deps/django-trusts
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
@@ -25,17 +35,18 @@ jobs:
       run: |
         test ! -e trusts/zero
         ! grep -R --include='*.py' -n 'from trusts\.zero\|import trusts\.zero\|django-trusts-zero' gh_permissions
-    - name: Install Django 6.1 and pinned django-trusts (#98)
+    - name: Install Step I kernel then GH
       run: |
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
-        python -m pip install -e .
+        python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
+        python -m pip install -e . --config-settings editable_mode=compat
     - name: Pin guard
       run: |
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '595e2f9f0cc97f8744c1178f3e384dba5787773c' in pin, pin
+        assert '39f1f9611e214193aec4e97526cf9b54ee689967' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
@@ -46,12 +57,47 @@ jobs:
       run: python -m django migrate --noinput --settings=tests.settings
     - name: System checks
       run: python -m django check --settings=tests.settings
+    - name: makemigrations --check
+      run: python -m django makemigrations gh_permissions --check --settings=tests.settings
+
+  pair-step-i:
+    name: pair with merged Step I core
+    runs-on: ubuntu-latest
+    env:
+      KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: django-trusts/django-trusts
+        ref: ${{ env.COMPANION_KERNEL_SHA }}
+        path: .deps/django-trusts
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Matrix on exact Step I merge
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "Django>=6.1,<6.2" coverage
+        python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
+        python -m pip install -e . --config-settings editable_mode=compat
+        coverage run -m tests.runtests
+        python -m django migrate --noinput --settings=tests.settings
+        python -m django check --settings=tests.settings
+        python -m django makemigrations gh_permissions --check --settings=tests.settings
 
   package:
     name: package
     runs-on: ubuntu-latest
+    env:
+      KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: django-trusts/django-trusts
+        ref: ${{ env.COMPANION_KERNEL_SHA }}
+        path: .deps/django-trusts
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
@@ -59,6 +105,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip build twine
         python -m pip install "Django>=6.1,<6.2"
+        python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e .
         python -m build
         twine check dist/*
@@ -67,6 +114,7 @@ jobs:
         PYTHONPATH: ""
       run: |
         python -m pip install "Django>=6.1,<6.2"
+        python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install dist/django_trusts_gh_permissions-*.whl
         WORK="$(mktemp -d)"
         cd "$WORK"
