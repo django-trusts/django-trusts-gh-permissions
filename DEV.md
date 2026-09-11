@@ -28,8 +28,14 @@ Final core ships no Django `AppConfig`, no `kernel_config()`, and no
 
 `Requires-Dist`: `django-trusts>=1.0.0.dev3,<2`.
 
-Persisted identity is unchanged: app label `gh_permissions`, migration
-`gh_permissions.0001_initial`, tables and content types stay GH-owned.
+[#12](https://github.com/django-trusts/django-trusts-gh-permissions/issues/12)
+reset the unpublished GH schema: `Account` became `AUTH_USER_MODEL`,
+`PermissionBundle` flattened to `Team.allowed_operations`, grant rows
+were renamed to `UserRepositoryPermission` /
+`TeamRepositoryPermission`, unused `Organization.members` was removed,
+and listings use stock `AuthorizedManager`. App label stays
+`gh_permissions`; `0001_initial` was regenerated for a clean-database
+reset.
 
 ## What the archived Step IIb README got wrong
 
@@ -44,21 +50,22 @@ and never installs `'trusts'`.
 
 ## Bounded policy (still true)
 
-- `Account` membership in an `Organization` (`account.organizations`)
-- `Account` membership in a `Team` (`account.teams`); teams belong to
-  an organization
+- Configured user membership in a `Team` (`user.teams`); teams belong
+  to an organization
 - `Repository` belongs to an organization
-- A `Team` can receive a repository-scoped `PermissionBundle`
-- An `Account` may receive a direct `AccountRepoGrant`
+- A `Team` has a direct `allowed_operations` ceiling
+- A user may receive a direct `UserRepositoryPermission`
+- A team may receive a repository-scoped `TeamRepositoryPermission`
 - Complete relation roots OR-compose (direct + team). A partial
   membership or attachment grants nothing.
-- Team grants are capped by grant-row organization equality and by
-  permission-bundle membership (`All` / `permission_in` / `Equal`)
+- Team permissions are capped by grant-row organization equality and by
+  the team operation ceiling (`All` / `permission_in` / `Equal`)
 - Revocation and malformed configuration fail closed
+- Organization membership is not modeled and is not a Trusts grant edge
 
-Public relations used to authorize: `account.teams`,
-`team.permission_bundles`, `repository.organization`. Callers pass
-`Account` and `Operation` **instances**.
+Public relations used to authorize: `user.teams`,
+`team.allowed_operations`, `repository.organization`. Callers pass
+`AUTH_USER_MODEL` and `Operation` **instances**.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct is `register_direct`. There is no aggregate `register_gh_policy()`.
@@ -102,9 +109,9 @@ package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
 `trusts.backends.TrustModelBackend`.
 
-Public APIs and the IIb settings cutover are recorded in
-[migrates.md](migrates.md). That file is a contributor checklist, not
-a user migration product.
+Public APIs and the IIb settings cutover plus the #12 schema reset are
+recorded in [migrates.md](migrates.md). That file is a contributor
+checklist, not a user migration product.
 
 ## Code-budget inventory
 
@@ -112,7 +119,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` | Account, Organization, Team, Repository, PermissionBundle, Operation, TeamRepoGrant, AccountRepoGrant |
+| Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
 | Policy registrations | `policy.py` | Direct `Ref` registration; accepted team spelling; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
 | Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` |

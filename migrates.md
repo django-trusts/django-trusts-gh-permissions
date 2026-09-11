@@ -1,14 +1,22 @@
 # migrates.md — django-trusts-gh-permissions contributor checklist
 
 This file is the mechanical checklist for the GH-owned
-`GhPermissionsConfig` settings cutover. It is **not** a user migration
-product and does **not** describe a path from GitHub.com. It does
-**not** implement core tombstones, Zero changes, examples, or Windows.
+`GhPermissionsConfig` settings cutover and the #12 consumer-model
+cleanup. It is **not** a user migration product and does **not**
+describe a path from GitHub.com. It does **not** implement core
+tombstones, Zero changes, examples, or Windows.
 
-Implemented revision: GH-owned owner against final core for
+Implemented revision: bounded GH consumer-model cleanup for
+[django-trusts-gh-permissions#12](https://github.com/django-trusts/django-trusts-gh-permissions/issues/12)
+against the owner-only install from
 [django-trusts-gh-permissions#6](https://github.com/django-trusts/django-trusts-gh-permissions/issues/6)
 and documentation alignment in
 [django-trusts-gh-permissions#9](https://github.com/django-trusts/django-trusts-gh-permissions/issues/9).
+
+This is an unpublished development reference. **#12 is a clean-database
+schema reset.** Do not invent an `Account.name` → `AUTH_USER_MODEL`
+mapping. Drop the old tables and start from `gh_permissions.0001_initial`
+as regenerated in this revision.
 
 ## Companion
 
@@ -16,6 +24,7 @@ and documentation alignment in
 | --- | --- |
 | GH package | `0.1.0.dev0` (unchanged) |
 | Core requirement | `django-trusts>=1.0.0.dev3,<2` |
+| GH baseline (before #12) | merge [`eab54b8ba2a36434b93041ec9b53872a183bba5d`](https://github.com/django-trusts/django-trusts-gh-permissions/commit/eab54b8ba2a36434b93041ec9b53872a183bba5d) |
 | Paired final core | [django-trusts#116](https://github.com/django-trusts/django-trusts/pull/116) merge [`1e19b5d464c067186aada58943c3ee67c44b2aa0`](https://github.com/django-trusts/django-trusts/commit/1e19b5d464c067186aada58943c3ee67c44b2aa0) (library cut [django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112) `11058641`, `django-trusts==1.0.0.dev3`) |
 | Zero | **absent** (not a dependency) |
 
@@ -26,49 +35,96 @@ Earlier GH snapshots paired with Step I `django-trusts==1.0.0.dev2`
 
 ## Public changes
 
-Stored GH schema and authorization **data** stay compatible. Public
-**dependency and settings** use the owner-only install.
-
-| Surface | Old (G1) | New (supported) |
+| Surface | Old (merged `eab54b8`) | New (#12) |
 | --- | --- |
-| Core pin | git `@595e2f9f` / later `>=1.0.0.dev2,<2` | `django-trusts>=1.0.0.dev3,<2` (pair SHA `1e19b5d`) |
-| `INSTALLED_APPS` | `'trusts'` then `'gh_permissions'` | **`'gh_permissions.apps.GhPermissionsConfig'` only** (no `'trusts'`) |
-| Core AppConfig | installed (`label='trusts_core'`) | **not shipped** |
-| Registry owner | `kernel_config().configured_backend()` | `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')` |
-| Missing kernel / path | `ready()` silently returned | `ImproperlyConfigured` / lifecycle fail-loud |
+| Requester / member / direct-grant subject | `Account` (`name`) | `settings.AUTH_USER_MODEL` (tests/fixtures: `get_user_model()`) |
+| Direct permission row | `AccountRepoGrant(account, repository, operation)` | `UserRepositoryPermission(user, repository, operation)` |
+| Team permission row | `TeamRepoGrant(team, repository, operation)` | `TeamRepositoryPermission(team, repository, operation)` |
+| Team operation ceiling | `PermissionBundle(team, name, operations)` unioned by `permission_in(t.team.permission_bundles.operations)` | `Team.allowed_operations` M2M; `permission_in(t.team.allowed_operations)` |
+| Organization membership | unused `Organization.members` M2M (`account.organizations`) | **removed** — not a Trusts grant edge |
+| List manager | `GhAuthorizedQuerySet` / `GhAuthorizedManager` calling `implementation_for_path` | stock `trusts.query.AuthorizedManager` via `configured_implementation_handles()` |
+| Core pin | `django-trusts>=1.0.0.dev3,<2` | **unchanged** |
+| `INSTALLED_APPS` | `'gh_permissions.apps.GhPermissionsConfig'` only (no `'trusts'`) | **unchanged** |
+| Registry owner | `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')` | **unchanged** |
 | Backend | `gh_permissions.backends.GhAuthorizationBackend` | **unchanged** mixin-only path |
-| Models / migrations | `gh_permissions.0001_initial` | **unchanged** |
-| Tables / content types | `gh_permissions_*` | **unchanged** |
+| Models / migrations | `gh_permissions.0001_initial` (Account / bundles / grants) | **regenerated** `gh_permissions.0001_initial` (clean-DB reset) |
+| Tables / content types | `gh_permissions_account`, `…permissionbundle`, `…accountrepogrant`, `…teamrepogrant`, org-members M2M | those tables **gone**; `…userrepositorypermission`, `…teamrepositorypermission`, `Team.allowed_operations` M2M |
+| Authorization API | model instances (`Account`, `Operation`) | model instances (`AUTH_USER_MODEL`, `Operation`) |
 
-### Old / new settings
+### Old / new models
 
 ```python
-# Old (G1)
-INSTALLED_APPS = [
-    'trusts',
-    'gh_permissions',
-]
-AUTHENTICATION_BACKENDS = [
-    'gh_permissions.backends.GhAuthorizationBackend',
-]
+# Old (eab54b8)
+class Account(models.Model):
+    name = models.CharField(max_length=40, unique=True)
 
-# New (supported)
-INSTALLED_APPS = [
-    'django.contrib.contenttypes',
-    'django.contrib.auth',
-    'gh_permissions.apps.GhPermissionsConfig',
-]
-AUTHENTICATION_BACKENDS = [
-    'gh_permissions.backends.GhAuthorizationBackend',
-]
+class Organization(models.Model):
+    members = models.ManyToManyField(Account, related_name='organizations')
+
+class PermissionBundle(models.Model):
+    team = models.ForeignKey(Team, related_name='permission_bundles')
+    name = models.CharField(max_length=40)
+    operations = models.ManyToManyField(Operation, related_name='bundles')
+
+class AccountRepoGrant(models.Model):
+    account = models.ForeignKey(Account, ...)
+    repository = models.ForeignKey(Repository, ...)
+    operation = models.ForeignKey(Operation, ...)
+
+class TeamRepoGrant(models.Model):
+    team = models.ForeignKey(Team, ...)
+    repository = models.ForeignKey(Repository, ...)
+    operation = models.ForeignKey(Operation, ...)
+
+# New (#12)
+# No Account. No PermissionBundle. No Organization.members.
+class Team(models.Model):
+    members = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='teams')
+    allowed_operations = models.ManyToManyField(Operation, related_name='allowed_teams')
+
+class UserRepositoryPermission(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, ...)
+    repository = models.ForeignKey(Repository, ...)
+    operation = models.ForeignKey(Operation, ...)
+
+class TeamRepositoryPermission(models.Model):
+    team = models.ForeignKey(Team, ...)
+    repository = models.ForeignKey(Repository, ...)
+    operation = models.ForeignKey(Operation, ...)
+```
+
+### Old / new methods
+
+```python
+# Old listing glue (deleted)
+class GhAuthorizedQuerySet(AuthorizedQuerySet):
+    def authorized(self, user, permission, extra_q=None):
+        granted(
+            implementation_for_path(CANONICAL_BACKEND).configured_handles(),
+            ...
+        )
+Repository.objects = GhAuthorizedManager()
+
+# New (stock core)
+from trusts.query import AuthorizedManager
+Repository.objects = AuthorizedManager()
+# AuthorizedQuerySet.authorized() reads configured_implementation_handles()
 ```
 
 ```python
-# Old donations (removed core helper)
+# Old team condition
+permission_in(t.team.permission_bundles.operations)
+
+# New team condition
+permission_in(t.team.allowed_operations)
+```
+
+```python
+# Old donations (removed core helper; still forbidden)
 from trusts.apps import kernel_config
 kernel_config().configured_backend().registry
 
-# New donations
+# Supported donations (unchanged)
 from trusts.apps import implementation_for_path
 implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')
 ```
@@ -77,23 +133,27 @@ implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')
 
 | Situation | Supported behavior |
 | --- | --- |
-| Supported settings above | populate succeeds; `GhPermissionsConfig` is the sole `TrustsImplementationConfig` |
+| Supported settings (`GhPermissionsConfig` + mixin backend) | populate succeeds; `GhPermissionsConfig` is the sole `TrustsImplementationConfig` |
 | `'trusts'` listed | not the supported install (core ships no Django app) |
 | Canonical backend path missing | `ImproperlyConfigured` from `_validate_ownership` (no silent return) |
 | Core below `1.0.0.dev3` / missing helper | `ImproperlyConfigured` at import / ready |
 | `kernel_config()` under supported final core | **not importable** |
+| Existing GH database from `eab54b8` | **not migrated**; reset the database and apply regenerated `0001_initial` |
 
 ## Unchanged identity
 
 - App label `gh_permissions`
-- Migration key `('gh_permissions', '0001_initial')`
-- Tables, content types, permissions, and representative rows
+- Migration key `('gh_permissions', '0001_initial')` (contents regenerated)
+- Domain `Operation` (not Django `auth.Permission`)
+- Repository-scoped team permission row (renamed, still three FKs)
 - Two separately reviewable atoms: `register_direct` then `register_team`
 - Independent-root OR, fail-closed, fixed query counts
 - Mixin-only backend; generic `PlanQueryCompiler`; no Zero historical compiler
+- Separate `policy.py` from `apps.py`
 
-`makemigrations gh_permissions --check` is quiet. Already-applied GH DBs
-keep matching `django_migrations` rows.
+`makemigrations gh_permissions --check` is quiet on a tree that already
+has the regenerated `0001_initial`. Already-applied pre-#12 GH DBs do
+**not** keep matching tables; reset them.
 
 ## Contributor checklist
 
@@ -107,6 +167,15 @@ from trusts.core_backends
 from trusts.zero
 django-trusts-zero
 register_gh_policy
+class Account
+AccountRepoGrant
+TeamRepoGrant
+PermissionBundle
+permission_bundles
+GhAuthorizedQuerySet
+GhAuthorizedManager
+Organization.members
+account.organizations
 ```
 
 Then:
@@ -118,11 +187,19 @@ Then:
 - [ ] Pin `django-trusts>=1.0.0.dev3,<2`. Pair CI uses merge `1e19b5d`.
 - [ ] Do not add `django-trusts-zero`. Do not import `trusts.zero` or `trusts.core_backends`.
 - [ ] Keep `register_direct` and `register_team` as separate functions. Do not add `register_gh_policy()`.
-- [ ] `python -m django migrate --plan` — no GH operations on an already-current database.
+- [ ] Replace `Account` FKs with `settings.AUTH_USER_MODEL`. Tests/fixtures use `get_user_model()`.
+- [ ] Replace `AccountRepoGrant` with `UserRepositoryPermission` and `TeamRepoGrant` with `TeamRepositoryPermission`.
+- [ ] Flatten `PermissionBundle` into `Team.allowed_operations`. Update the team condition to `permission_in(t.team.allowed_operations)`.
+- [ ] Delete `GhAuthorizedQuerySet` / `GhAuthorizedManager`. Keep `Repository.objects = AuthorizedManager()` from `trusts.query`.
+- [ ] Remove unused `Organization.members`. Do not describe org membership as a Trusts grant edge.
+- [ ] Do **not** write an `Account.name` → User data migration. Reset the database.
+- [ ] `python -m django migrate --plan` — apply regenerated `gh_permissions.0001_initial` on a clean database.
 - [ ] `python -m django makemigrations gh_permissions --check` — quiet.
-- [ ] Confirm GH content types, table names, and representative rows are unchanged.
 - [ ] Confirm object / list / enumeration still OR both roots and fail closed with the same query counts.
+- [ ] Confirm the stock `AuthorizedManager` reaches this implementation's registered handles via `configured_implementation_handles()`.
 - [ ] Leave package version at `0.1.0.dev0`.
+- [ ] Do not add user-owned repositories or `Organization.owner` authorization.
+- [ ] Do not fold `policy.py` into `apps.py`.
 - [ ] Do not begin Windows #17 or examples.
 
 ## Out of scope
@@ -130,4 +207,8 @@ Then:
 - Windows conversion / README
 - Examples
 - RST sweep
-- New authorization semantics or a user migration API
+- User-owned repositories
+- Organization.owner / org-owner admin authorization
+- Folding `policy.py` into `apps.py`
+- A data-preserving Account → User mapping
+- A user migration API

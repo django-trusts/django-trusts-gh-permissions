@@ -3,17 +3,19 @@
 import inspect
 from pathlib import Path
 
+from django.apps import apps
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.exceptions import FieldDoesNotExist
 from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import (
-    Account,
-    AccountRepoGrant,
     Operation,
     Organization,
-    PermissionBundle,
     Repository,
     Team,
-    TeamRepoGrant,
+    TeamRepositoryPermission,
+    UserRepositoryPermission,
 )
 
 
@@ -76,30 +78,71 @@ class GhNamingTest(SimpleTestCase):
         self.assertIn('Equal', source)
         self.assertIn('All', source)
 
+    def test_obsolete_account_bundle_and_queryset_glue_are_gone(self):
+        import gh_permissions.models as models
+        source = Path(inspect.getfile(models)).read_text()
+        self.assertIn('settings.AUTH_USER_MODEL', source)
+        self.assertNotIn('class Account', source)
+        self.assertNotIn('PermissionBundle', source)
+        self.assertNotIn('GhAuthorized', source)
+        self.assertNotIn('AccountRepoGrant', source)
+        self.assertNotIn('TeamRepoGrant', source)
+        self.assertFalse(hasattr(models, 'Account'))
+        self.assertFalse(hasattr(models, 'PermissionBundle'))
+        self.assertFalse(hasattr(models, 'GhAuthorizedQuerySet'))
+        self.assertFalse(hasattr(models, 'GhAuthorizedManager'))
+        self.assertFalse(hasattr(models, 'AccountRepoGrant'))
+        self.assertFalse(hasattr(models, 'TeamRepoGrant'))
+
 
 class GhRelationTest(TestCase):
     def test_advertised_public_relations(self):
-        self.assertEqual(Account._meta.get_field('teams').related_model, Team)
+        User = get_user_model()
+        configured = apps.get_model(settings.AUTH_USER_MODEL)
+        self.assertIs(User, configured)
+        self.assertEqual(User._meta.get_field('teams').related_model, Team)
         self.assertEqual(
-            Account._meta.get_field('organizations').related_model,
-            Organization,
+            Team._meta.get_field('allowed_operations').related_model,
+            Operation,
         )
         self.assertEqual(
-            Team._meta.get_field('permission_bundles').related_model,
-            PermissionBundle,
+            Team._meta.get_field('members').related_model,
+            User,
+        )
+        self.assertEqual(
+            UserRepositoryPermission._meta.get_field('user').related_model,
+            User,
         )
         self.assertEqual(
             Repository._meta.get_field('organization').related_model,
             Organization,
         )
-        self.assertTrue(hasattr(Account, 'teams'))
-        self.assertTrue(hasattr(Account, 'organizations'))
-        self.assertTrue(hasattr(Team, 'permission_bundles'))
+        self.assertTrue(hasattr(User, 'teams'))
+        self.assertTrue(hasattr(Team, 'allowed_operations'))
+        user_field = UserRepositoryPermission._meta.get_field('user')
+        member_field = Team._meta.get_field('members')
+        self.assertIs(apps.get_model(user_field.deconstruct()[3]['to']), configured)
+        self.assertIs(apps.get_model(member_field.deconstruct()[3]['to']), configured)
+        self.assertTrue(user_field.swappable)
+        self.assertEqual(user_field.swappable_setting, 'AUTH_USER_MODEL')
+        self.assertTrue(member_field.swappable)
+        self.assertEqual(member_field.swappable_setting, 'AUTH_USER_MODEL')
+        with self.assertRaises(FieldDoesNotExist):
+            User._meta.get_field('organizations')
+        self.assertFalse(hasattr(Organization, 'members'))
+
+    def test_organization_membership_is_not_a_grant_edge(self):
+        field_names = {field.name for field in Organization._meta.get_fields()}
+        self.assertNotIn('members', field_names)
+        import gh_permissions.policy as policy
+        source = Path(inspect.getfile(policy)).read_text()
+        self.assertNotIn('organization.members', source)
+        self.assertNotIn('members.organizations', source)
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
-            Account, Organization, Team, PermissionBundle, Operation,
-            Repository, TeamRepoGrant, AccountRepoGrant,
+            Organization, Team, Operation, Repository,
+            TeamRepositoryPermission, UserRepositoryPermission,
         ):
             leaked = _related_accessor_names(model).intersection(
                 FORBIDDEN_PUBLIC_RELATIONS,
