@@ -20,7 +20,7 @@ from gh_permissions.apps import (
     FLOOR_MESSAGE,
     _load_implementation_config,
 )
-from gh_permissions.models import Repository, TeamRepoGrant
+from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import register_direct, register_team
 from tests.fixtures import GhFixtureMixin
 from trusts.apps import implementation_for_path
@@ -84,11 +84,14 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn("'gh_permissions.apps.GhPermissionsConfig'", readme)
         self.assertIn("'gh_permissions.backends.GhAuthorizationBackend'", readme)
         self.assertIn('from trusts.core import All, Equal, Ref, permission_in', readme)
-        self.assertIn('t = Ref(TeamRepoGrant)', readme)
+        self.assertIn('t = Ref(TeamRepositoryPermission)', readme)
+        self.assertNotIn('AccountRepoGrant', readme)
+        self.assertNotIn('PermissionBundle', readme)
+        self.assertNotIn('permission_bundles', readme)
         self.assertIn('user=t.team.members', readme)
-        self.assertIn('permission_in(t.team.permission_bundles.operations)', readme)
+        self.assertIn('permission_in(t.team.allowed_operations)', readme)
         self.assertIn('Equal(t.team.organization, t.repository.organization)', readme)
-        self.assertIn('AccountRepoGrant', readme)
+        self.assertIn('UserRepositoryPermission', readme)
         self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
         self.assertIn('from trusts.apps import implementation_for_path', readme)
         self.assertIn(
@@ -96,10 +99,10 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             readme,
         )
         self.assertIn(
-            'registry.has_permission(account, repository, operation)',
+            'registry.has_permission(user, repository, operation)',
             readme,
         )
-        self.assertIn('Repository.objects.authorized(account, operation)', readme)
+        self.assertIn('Repository.objects.authorized(user, operation)', readme)
         self.assertNotIn('.exists()', readme)
         self.assertIn(
             'python -m pip install "Django>=6.1,<6.2"\n'
@@ -151,7 +154,7 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn('user=t.team.members', policy)
         self.assertIn('permission=t.operation', policy)
         self.assertIn(
-            'permission_in(t.team.permission_bundles.operations)',
+            'permission_in(t.team.allowed_operations)',
             policy,
         )
         self.assertIn(
@@ -211,7 +214,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
     def test_documented_team_ref_matches_startup_registration(self):
         owner = implementation_for_path(CANONICAL_BACKEND)
         record = owner.configured_backend(CANONICAL_BACKEND).registry.records[1]
-        self.assertIs(record.root, TeamRepoGrant)
+        self.assertIs(record.root, TeamRepositoryPermission)
         self.assertEqual(record.user_path, ('team', 'members'))
         self.assertIsInstance(record.condition, All)
         self.assertIsInstance(record.condition.predicates[0], PermissionIn)

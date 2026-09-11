@@ -91,10 +91,9 @@ def main() -> int:
     from django.apps import apps as django_apps
     from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
     from gh_permissions.models import (
-        Account,
-        AccountRepoGrant,
         Repository,
-        TeamRepoGrant,
+        TeamRepositoryPermission,
+        UserRepositoryPermission,
     )
     import trusts.apps as trusts_apps
     from trusts.apps import implementation_configs
@@ -132,7 +131,7 @@ def main() -> int:
 
     registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
     roots = [record.root for record in registry.records]
-    if roots != [AccountRepoGrant, TeamRepoGrant]:
+    if roots != [UserRepositoryPermission, TeamRepositoryPermission]:
         raise SystemExit(
             'GH-only populate must register direct and team roots: %r' % roots
         )
@@ -140,7 +139,7 @@ def main() -> int:
     print('wheel import ok')
     print('django', django.get_version())
     print('gh_permissions.__file__', gh_file)
-    print('Account', Account)
+    print('UserRepositoryPermission', UserRepositoryPermission)
     print('Repository', Repository)
     print('owner', type(owners[0]).__name__, owners[0].label)
     print('startup roots', [root.__name__ for root in roots])
