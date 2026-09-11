@@ -3,15 +3,18 @@
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.apps import kernel_config
+from trusts.apps import implementation_for_path
 from trusts.core import TrustsConfigurationError
 
+from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import AccountRepoGrant, Repository, TeamRepoGrant
 from tests.fixtures import GhFixtureMixin
 
 
 def _registry():
-    return kernel_config().configured_backend().registry
+    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
+        CANONICAL_BACKEND,
+    ).registry
 
 
 class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):

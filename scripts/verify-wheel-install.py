@@ -73,8 +73,7 @@ def main() -> int:
         INSTALLED_APPS=[
             'django.contrib.contenttypes',
             'django.contrib.auth',
-            'trusts',
-            'gh_permissions',
+            'gh_permissions.apps.GhPermissionsConfig',
         ],
         AUTHENTICATION_BACKENDS=[
             'gh_permissions.backends.GhAuthorizationBackend',
@@ -90,13 +89,14 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
+    from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
     from gh_permissions.models import (
         Account,
         AccountRepoGrant,
         Repository,
         TeamRepoGrant,
     )
-    from trusts.apps import AppConfig, kernel_config
+    from trusts.apps import AppConfig, implementation_configs, kernel_config
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -112,25 +112,23 @@ def main() -> int:
     if 'trusts.zero' in _sys.modules:
         raise SystemExit('GH wheel populate imported trusts.zero')
 
-    config = kernel_config()
-    if type(config) is not AppConfig:
-        raise SystemExit('kernel_config() is not trusts.apps.AppConfig: %r' % (config,))
-    if config.label != 'trusts_core' or config.name != 'trusts':
-        raise SystemExit('C2 kernel name/label must be trusts/trusts_core: %r/%r' % (
-            config.name, config.label,
-        ))
-    if list(config.get_models()):
-        raise SystemExit('C2 kernel must expose no concrete models: %r' % (
-            list(config.get_models()),
-        ))
+    if 'trusts_core' in django_apps.app_configs:
+        raise SystemExit('core AppConfig is installed')
+    for installed in django_apps.get_app_configs():
+        if type(installed) is AppConfig:
+            raise SystemExit('core AppConfig is installed as %r' % installed)
     try:
-        django_apps.get_app_config('trusts')
+        kernel_config()
     except LookupError:
         pass
     else:
-        raise SystemExit('GH-only populate must not own label trusts')
+        raise SystemExit('kernel_config() must raise LookupError under IIb')
 
-    registry = config.configured_backend().registry
+    owners = implementation_configs()
+    if len(owners) != 1 or not isinstance(owners[0], GhPermissionsConfig):
+        raise SystemExit('expected one GhPermissionsConfig owner, got %r' % (owners,))
+
+    registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
     roots = [record.root for record in registry.records]
     if roots != [AccountRepoGrant, TeamRepoGrant]:
         raise SystemExit(
@@ -142,7 +140,7 @@ def main() -> int:
     print('gh_permissions.__file__', gh_file)
     print('Account', Account)
     print('Repository', Repository)
-    print('kernel_config', config, config.label)
+    print('owner', type(owners[0]).__name__, owners[0].label)
     print('startup roots', [root.__name__ for root in roots])
     print('absent zero modules', ' '.join(ABSENT_ZERO_MODULES))
     return 0

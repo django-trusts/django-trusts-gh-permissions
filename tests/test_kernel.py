@@ -1,4 +1,4 @@
-"""GH-only kernel topology: trusts_core, no Zero, inert trusts.models."""
+"""GH IIb kernel topology: no core AppConfig, one owner, no Zero."""
 
 import sys
 from importlib import import_module
@@ -10,39 +10,41 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import AppConfig, kernel_config
+from trusts.apps import AppConfig, implementation_configs, implementation_for_path
 from trusts.query import AuthorizedManager
 
+from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 
 
 class KernelIdentityTest(SimpleTestCase):
-    def test_installed_apps_are_trusts_and_gh_permissions(self):
+    def test_installed_apps_are_gh_only(self):
         labels = [config.label for config in apps.get_app_configs()]
-        self.assertIn('trusts_core', labels)
         self.assertIn('gh_permissions', labels)
-        self.assertNotIn('trusts', labels)
+        self.assertNotIn('trusts_core', labels)
         names = [config.name for config in apps.get_app_configs()]
-        self.assertIn('trusts', names)
         self.assertIn('gh_permissions', names)
+        self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
 
-    def test_kernel_config_is_class_identity_with_trusts_core_label(self):
-        config = kernel_config()
-        self.assertIs(type(config), AppConfig)
-        self.assertEqual(config.name, 'trusts')
-        self.assertEqual(config.label, 'trusts_core')
-        self.assertIs(config, kernel_config())
-        self.assertIs(config, apps.get_app_config('trusts_core'))
-        with self.assertRaises(LookupError):
-            apps.get_app_config('trusts')
+    def test_core_appconfig_is_not_installed(self):
+        self.assertNotIn('trusts_core', apps.app_configs)
+        for config in apps.get_app_configs():
+            self.assertFalse(type(config) is AppConfig)
 
-    def test_kernel_exposes_no_concrete_models(self):
-        config = kernel_config()
-        self.assertEqual(list(config.get_models()), [])
-        trusts = [m for m in apps.get_models() if m.__name__ == 'Trust']
-        self.assertEqual(trusts, [])
+    def test_gh_config_is_the_sole_implementation_owner(self):
+        owners = implementation_configs()
+        self.assertEqual(len(owners), 1)
+        self.assertIsInstance(owners[0], GhPermissionsConfig)
+        self.assertIs(owners[0], gh_config())
+        self.assertIs(implementation_for_path(CANONICAL_BACKEND), owners[0])
+
+    def test_kernel_config_raises_without_core_appconfig(self):
+        from trusts.apps import kernel_config
+
+        with self.assertRaises(LookupError):
+            kernel_config()
 
     def test_no_trustmodelbackend_and_mixin_only_handle(self):
         self.assertEqual(
@@ -83,6 +85,10 @@ class ModelsShimTest(SimpleTestCase):
         self.assertNotIn('Trust', module.__dict__)
 
     def test_legacy_trust_import_raises_documented_error(self):
+        import importlib.util
+
+        if importlib.util.find_spec('trusts.zero') is not None:
+            self.skipTest('Zero is present on this interpreter; CI pair is GH-only')
         self.assertNotIn('trusts.zero', sys.modules)
         with self.assertRaises(ImportError) as ctx:
             from trusts.models import Trust  # noqa: F401
@@ -117,8 +123,7 @@ class GhStartupWithoutZeroTest(TestCase):
         )
         self.assertTrue(apps.is_installed('gh_permissions'))
         self.assertNotIn('trusts.zero', sys.modules)
-        config = kernel_config()
-        self.assertEqual(list(config.get_models()), [])
+        self.assertIn(Repository, list(gh_config().get_models()))
 
     def test_system_checks_are_clean_and_zero_sql(self):
         self.assertNotIn('trusts.zero', sys.modules)

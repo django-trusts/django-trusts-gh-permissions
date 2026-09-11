@@ -1,104 +1,128 @@
-# Migration record (0.1.0.dev0 G1 reconstitution)
+# migrates.md — django-trusts-gh-permissions Step IIb
 
-This record covers public APIs and methods introduced by reconstituting
-the GH consumer on django-trusts C2 + #98
-(`595e2f9f0cc97f8744c1178f3e384dba5787773c`, reviewed head
-`5df5eab643d1da39c2ff86bc838b409377590da5`). The previous default-branch
-HEAD `dba78890451bca37f475e5cfe429302c2cd814a9` was README-only. Those
-surfaces were unavailable; they are not exempt from this record.
+This file is the mechanical checklist for Step IIb: GH-owned
+`GhPermissionsConfig` against merged core Step I. It does **not**
+implement core Step III / tombstone, Zero changes, examples, or Windows.
 
-G1 is a **complete** consumer on that kernel: both independent roots
-are registered at startup. Direct is the three-FK atom. Team is the
-accepted django-trusts#54 r7 spelling (`All` / `permission_in` /
-`Equal` plus `user=t.team.members`). Independent-root OR is proven.
-Do not add a consumer-local Q, lookup-string, tuple, or callable
-dialect.
+Implemented revision: **Step IIb** for
+[django-trusts-gh-permissions#6](https://github.com/django-trusts/django-trusts-gh-permissions/issues/6).
+Authorized by [django-trusts#102 r5](https://github.com/django-trusts/django-trusts/issues/102#issuecomment-5639018377)
+and the #93 baton.
 
-## Changes
+## Companion kernel
 
-### 1. GH domain models and `gh_permissions.0001_initial`
-
-| | |
+| Item | Value |
 | --- | --- |
-| Previous | README-only / unavailable. No models, no migrations. |
-| New | Concrete models `Account`, `Organization`, `Team`, `Repository`, `Operation`, `PermissionBundle`, `AccountRepoGrant`, `TeamRepoGrant` under app label `gh_permissions`, with migration `gh_permissions.0001_initial`. |
-| Replacement | Import from `gh_permissions.models`. Ordinary Django ORM for writes (`AccountRepoGrant.objects.create`, `Team.members.add`, …). |
-| Affected | New hosts of this package. |
-| Authorization | Models alone grant nothing. Membership or attachment without a complete registered relation fails closed. |
+| GH package | `0.1.0.dev0` (unchanged) |
+| Core requirement | `django-trusts>=1.0.0.dev2,<2` |
+| Paired Step I core | [django-trusts#109](https://github.com/django-trusts/django-trusts/pull/109) merge [`39f1f9611e214193aec4e97526cf9b54ee689967`](https://github.com/django-trusts/django-trusts/commit/39f1f9611e214193aec4e97526cf9b54ee689967) |
+| Zero | **absent** (not a dependency) |
 
-Migration-bot checklist:
+## Public changes
 
-- [ ] Add `'gh_permissions'` next to `'trusts'` in `INSTALLED_APPS` (kernel label is `trusts_core`; do not add `'trusts.zero'`).
-- [ ] Run `migrate`. Expect `gh_permissions.0001_initial` only for this package; no `trusts.0001_initial`.
-- [ ] Do not inherit `Content` / `Junction` or add `.trusts` / `.trustees` / `.contexts` / `.roles` / `.groups` relations.
-- [ ] Treat `organization.teams` / `organization.repositories` as containment, not grants.
+Stored GH schema and authorization **data** stay compatible. Public
+**dependency and settings** change at IIb.
 
-### 2. `register_direct` / `register_team`
-
-| | |
+| Surface | Old (G1 on C2 + #98) | New (IIb) |
 | --- | --- |
-| Previous | README-only / unavailable. Abandoned proof used `Context.register_identity` + `Trustee.register` (not reconstituted). The parked missing-core stop declared `register_team` but did not invoke it at startup. |
-| New | `gh_permissions.policy.register_direct(registry)` registers `Ref(AccountRepoGrant)` (`content=repository`, `user=account`, `permission=operation`). `register_team(registry)` is the accepted team spelling (`user=t.team.members`, `condition=All(permission_in(...), Equal(...))`). `GhPermissionsConfig.ready()` calls **both**, in that order, on the kernel store. There is no aggregate `register_gh_policy()`. |
-| Replacement | Contribute with `register_direct(handle.registry)` and `register_team(handle.registry)` from `AppConfig.ready()` via `kernel_config().configured_backend()`. Do not sequence them as one helper that mutates then catches. |
-| Affected | Hosts wiring GH policy. Isolated tests may pass a standalone `TrustsRegistry()`. |
-| Authorization | Direct grants are SQL `EXISTS` through `AccountRepoGrant`. Team grants are SQL `EXISTS` through `TeamRepoGrant` with membership, bundle ceiling, and organization alignment AND-correlated on that row. Independent roots OR. |
+| Core pin | git `@595e2f9f` | `django-trusts>=1.0.0.dev2,<2` (pair SHA `39f1f961`) |
+| `INSTALLED_APPS` | `'trusts'` then `'gh_permissions'` | **`'gh_permissions.apps.GhPermissionsConfig'` only** (no `'trusts'`) |
+| Core AppConfig | installed (`label='trusts_core'`) | **not installed** |
+| Registry owner | `kernel_config().configured_backend()` | `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')` |
+| Missing kernel / path | `ready()` silently returned | `ImproperlyConfigured` / Step I lifecycle fail-loud |
+| Backend | `gh_permissions.backends.GhAuthorizationBackend` | **unchanged** mixin-only path |
+| Models / migrations | `gh_permissions.0001_initial` | **unchanged** |
+| Tables / content types | `gh_permissions_*` | **unchanged** |
 
-Migration-bot checklist:
+### Old / new settings
 
-- [ ] Do not import `trusts.context` / `trusts.trustee` / alignment-path tuples from the abandoned proof.
-- [ ] Pin django-trusts at #98 merge `595e2f9f0cc97f8744c1178f3e384dba5787773c` (or a later published revision that includes it).
-- [ ] Call both `register_direct` and `register_team` from `ready()`. Do not add `register_gh_policy()`.
-- [ ] Import `All`, `Equal`, and `permission_in` from `trusts.core` only. Do not add a consumer-local condition dialect.
+```python
+# Old (G1)
+INSTALLED_APPS = [
+    'trusts',
+    'gh_permissions',
+]
+AUTHENTICATION_BACKENDS = [
+    'gh_permissions.backends.GhAuthorizationBackend',
+]
 
-### 3. `GhAuthorizationBackend`
+# New (IIb)
+INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'django.contrib.auth',
+    'gh_permissions.apps.GhPermissionsConfig',
+]
+AUTHENTICATION_BACKENDS = [
+    'gh_permissions.backends.GhAuthorizationBackend',
+]
+```
 
-| | |
+```python
+# Old donations
+from trusts.apps import kernel_config
+kernel_config().configured_backend().registry
+
+# New donations
+from trusts.apps import implementation_for_path
+implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')
+```
+
+### Startup / failure
+
+| Situation | IIb behavior |
 | --- | --- |
-| Previous | README-only / unavailable. Abandoned proof listed `trusts.backends.ObjectAuthorizationBackend`. |
-| New | `gh_permissions.backends.GhAuthorizationBackend` is `TrustModelBackendMixin` + `BaseBackend`. Mixin default compiler is `PlanQueryCompiler`. It is **not** `TrustModelBackend` and does not use Django auth Permission strings. |
-| Replacement | `AUTHENTICATION_BACKENDS = ('gh_permissions.backends.GhAuthorizationBackend',)`. |
-| Affected | Django populate / `configured_backend()` path for the live `TrustsRegistry`. |
-| Authorization | `.authorized` / registry projections use this handle. `has_perm` string codec is not the GH surface. |
+| Supported settings above | populate succeeds; `GhPermissionsConfig` is the sole `TrustsImplementationConfig` |
+| `'trusts'` listed | not the supported IIb install |
+| Canonical backend path missing | `ImproperlyConfigured` from `_validate_ownership` (no silent return) |
+| Core below `1.0.0.dev2` / missing helper | `ImproperlyConfigured` at import / ready |
+| `kernel_config()` under supported IIb | `LookupError` (no kernel `AppConfig`) |
 
-Migration-bot checklist:
+## Unchanged identity
 
-- [ ] Do not list `'trusts.backends.TrustModelBackend'`.
-- [ ] Do not copy a query compiler, alignment compiler, or grant-Q helper into this package.
+- App label `gh_permissions`
+- Migration key `('gh_permissions', '0001_initial')`
+- Tables, content types, permissions, and representative rows
+- Two separately reviewable atoms: `register_direct` then `register_team`
+- Independent-root OR, fail-closed, fixed query counts
+- Mixin-only backend; generic `PlanQueryCompiler`; no Zero historical compiler
 
-### 4. `Repository.objects.authorized(account, operation)`
+`makemigrations gh_permissions --check` is quiet. Already-applied GH DBs
+keep matching `django_migrations` rows.
 
-| | |
-| --- | --- |
-| Previous | README-only / unavailable. Abandoned proof accepted operation **strings** (`'read'`) via `operation_lookup='code'`. |
-| New | `Repository.objects = AuthorizedManager()`. Instance-only `.authorized(account, operation_instance)`. Strings raise `TrustsConfigurationError` with zero SQL. The same registration drives `registry.has_permission`, `registry.filter_authorized`, `registry.permissions_for`, and the manager. |
-| Replacement | Resolve `Operation` yourself (`Operation.objects.get(code=...)`) then pass the instance. |
-| Affected | Object checks, authorized listings, enumeration. |
-| Authorization | Direct and team roots OR in SQL. Object, queryset, manager, and enumeration agree. |
+## Migration-bot checklist
 
-Migration-bot checklist:
+Search application code and settings for:
 
-- [ ] Replace string operations with `Operation` instances.
-- [ ] Paginate only after `.authorized(...)`.
-- [ ] Do not attach `.permitted` or `.get_permission` to `Repository` / `Operation`.
+```text
+INSTALLED_APPS.*trusts
+from trusts.apps import kernel_config
+kernel_config(
+from trusts.core_backends
+from trusts.zero
+django-trusts-zero
+register_gh_policy
+```
 
-### 5. Independent-root OR (direct + team)
+Then:
 
-| | |
-| --- | --- |
-| Previous | Issue #3 / preserved proof required multiple complete relation roots to OR-compose (direct + team). The parked missing-core stop registered only the direct root; independent-root OR was unproven. |
-| New | Startup registers both roots. A principal who holds a complete team path and a complete direct path sees both resources in one authorized queryset. Removing any required edge of one root (membership, grant row, bundle operation, organization alignment, or direct grant row) removes only that branch. |
-| Replacement | Keep both `register_direct` and `register_team` as separate functions. Treat `test_multiple_direct_grant_rows_combine` as same-root grant-row OR, distinct from `test_direct_and_team_roots_or_compose`. |
-| Affected | Acceptance evidence and hosts that list repositories across direct and team grants. |
-| Authorization | Team membership, bundle ceiling, and cross-org alignment are enforced at read time on the team root. Direct three-FK grants remain unconstrained by those predicates. |
+- [ ] Remove `'trusts'` from `INSTALLED_APPS`. Keep `'gh_permissions.apps.GhPermissionsConfig'` (or `'gh_permissions'` with `default=True`).
+- [ ] Keep `'gh_permissions.backends.GhAuthorizationBackend'`. Do not list `'trusts.backends.TrustModelBackend'`.
+- [ ] Replace `kernel_config()` donations with `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`.
+- [ ] Confirm `ready()` no longer returns silently when the owner/path is missing.
+- [ ] Pin `django-trusts>=1.0.0.dev2,<2`. Pair CI uses merge `39f1f961`.
+- [ ] Do not add `django-trusts-zero`. Do not import `trusts.zero` or `trusts.core_backends`.
+- [ ] Keep `register_direct` and `register_team` as separate functions. Do not add `register_gh_policy()`.
+- [ ] `python -m django migrate --plan` — no GH operations on an already-current database.
+- [ ] `python -m django makemigrations gh_permissions --check` — quiet.
+- [ ] Confirm GH content types, table names, and representative rows are unchanged.
+- [ ] Confirm object / list / enumeration still OR both roots and fail closed with the same query counts.
+- [ ] Leave package version at `0.1.0.dev0`.
+- [ ] Do not begin core Step III / `1.0.0.dev3` / `1.0.0.dev4`, Zero changes, Windows #17, or examples.
 
-Migration-bot checklist:
+## Out of scope
 
-- [ ] Do not treat multiple `AccountRepoGrant` rows as independent-root OR evidence.
-- [ ] Do not ship a consumer-local extra dialect.
-- [ ] Expect one SQL `EXISTS` plan that OR-composes both roots; paginate only after filtering.
-
-## No change to these project-wide rules
-
-- Zero is not a dependency and must not be imported (`trusts.models` stays inert).
-- Copied framework authorization glue must remain zero.
-- Windows #17, examples, broad docs restructuring, and Zero/admin follow-up stay parked.
+- Core Step III failure-only `kernel_config` tombstone / `1.0.0.dev3`
+- Tombstone removal (`1.0.0.dev4`)
+- Zero IIa follow-up
+- Windows #17
+- Examples

@@ -99,9 +99,13 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertEqual(registry.records, ())
 
     def test_late_registration_after_freeze_is_rejected(self):
-        from trusts.apps import kernel_config
+        from trusts.apps import implementation_for_path
 
-        registry = kernel_config().configured_backend().registry
+        from gh_permissions.apps import CANONICAL_BACKEND
+
+        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
+            CANONICAL_BACKEND,
+        ).registry
         self.assertTrue(registry.frozen)
         d = Ref(AccountRepoGrant)
         with self.assertNumQueries(0):
@@ -150,8 +154,12 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertIs(registry.records[1].root, TeamRepoGrant)
 
     def test_startup_registers_direct_and_team_roots(self):
-        from trusts.apps import kernel_config
+        from trusts.apps import implementation_for_path
 
-        registry = kernel_config().configured_backend().registry
+        from gh_permissions.apps import CANONICAL_BACKEND
+
+        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
+            CANONICAL_BACKEND,
+        ).registry
         roots = [record.root for record in registry.records]
         self.assertEqual(roots, [AccountRepoGrant, TeamRepoGrant])

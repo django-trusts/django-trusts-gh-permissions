@@ -14,8 +14,43 @@ or ``.groups``.
 """
 
 from django.db import models
+from django.db.models import Model
 
-from trusts.query import AuthorizedManager
+from trusts.query import AuthorizedManager, AuthorizedQuerySet
+
+
+CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
+
+
+class GhAuthorizedQuerySet(AuthorizedQuerySet):
+    """Owner-present list filter. Does not call ``kernel_config()``.
+
+    Core ``AuthorizedQuerySet.authorized`` still reads the transitional
+    kernel AppConfig. IIb does not install that config, so GH listings
+    resolve handles through ``implementation_for_path``. ``granted``
+    stays in core.
+    """
+
+    def authorized(self, user, permission, extra_q=None):
+        from trusts.apps import implementation_for_path
+        from trusts.core import TrustsConfigurationError, granted
+
+        if not isinstance(permission, Model):
+            raise TrustsConfigurationError(
+                'permission must be a model instance, not %r.' % (permission,)
+            )
+        granted_q = granted(
+            implementation_for_path(CANONICAL_BACKEND).configured_handles(),
+            self, user, permission, kind='complete',
+        )
+        if granted_q is None:
+            return self.none()
+        if extra_q is not None:
+            granted_q = granted_q & extra_q
+        return self.filter(granted_q).distinct()
+
+
+GhAuthorizedManager = AuthorizedManager.from_queryset(GhAuthorizedQuerySet)
 
 
 class Account(models.Model):
@@ -92,7 +127,7 @@ class Repository(models.Model):
     )
     title = models.CharField(max_length=40)
 
-    objects = AuthorizedManager()
+    objects = GhAuthorizedManager()
 
     class Meta:
         verbose_name = 'repository'
