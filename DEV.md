@@ -28,8 +28,16 @@ Final core ships no Django `AppConfig`, no `kernel_config()`, and no
 
 `Requires-Dist`: `django-trusts>=1.0.0.dev3,<2`.
 
-Persisted identity is unchanged: app label `gh_permissions`, migration
-`gh_permissions.0001_initial`, tables and content types stay GH-owned.
+## Schema reset ([issue #12](https://github.com/django-trusts/django-trusts-gh-permissions/issues/12))
+
+This unpublished reference declares a clean-database schema reset. Do
+not map historical `Account.name` onto an arbitrary swappable user
+model. The replacement `0001_initial` is the current schema. Already
+applied GH databases must be dropped and recreated.
+
+Persisted identity after the reset: app label `gh_permissions`,
+migration `gh_permissions.0001_initial`, GH-owned tables and content
+types for the cleaned models.
 
 ## What the archived Step IIb README got wrong
 
@@ -42,23 +50,24 @@ deleted `kernel_config()`, the core `AppConfig`, and
 `implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`
 and never installs `'trusts'`.
 
-## Bounded policy (still true)
+## Bounded policy (still true after #12)
 
-- `Account` membership in an `Organization` (`account.organizations`)
-- `Account` membership in a `Team` (`account.teams`); teams belong to
-  an organization
+- Configured user-model membership in a `Team` (`user.teams`); teams
+  belong to an organization
 - `Repository` belongs to an organization
-- A `Team` can receive a repository-scoped `PermissionBundle`
-- An `Account` may receive a direct `AccountRepoGrant`
+- A `Team` has a direct `allowed_operations` ceiling
+- A user may receive a direct `UserRepositoryPermission`
+- A team may receive a repository-scoped `TeamRepositoryPermission`
 - Complete relation roots OR-compose (direct + team). A partial
   membership or attachment grants nothing.
 - Team grants are capped by grant-row organization equality and by
-  permission-bundle membership (`All` / `permission_in` / `Equal`)
+  the team's allowed operations (`All` / `permission_in` / `Equal`)
 - Revocation and malformed configuration fail closed
+- Organization membership is not a persisted grant edge
 
-Public relations used to authorize: `account.teams`,
-`team.permission_bundles`, `repository.organization`. Callers pass
-`Account` and `Operation` **instances**.
+Public relations used to authorize: `team.members`,
+`team.allowed_operations`, `repository.organization`. Callers pass
+user-model and `Operation` **instances**.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct is `register_direct`. There is no aggregate `register_gh_policy()`.
@@ -66,6 +75,9 @@ Direct is `register_direct`. There is no aggregate `register_gh_policy()`.
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
 `TrustModelBackend`. GH does not use Django auth Permission strings.
+
+`Repository.objects` is stock core `AuthorizedManager`. There is no
+local `GhAuthorizedQuerySet`.
 
 Application authors own ordinary relational models plus compact
 registrations. Core owns validation, correlated query construction,
@@ -102,9 +114,9 @@ package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
 `trusts.backends.TrustModelBackend`.
 
-Public APIs and the IIb settings cutover are recorded in
-[migrates.md](migrates.md). That file is a contributor checklist, not
-a user migration product.
+Public APIs and the IIb settings cutover plus the #12 schema reset are
+recorded in [migrates.md](migrates.md). That file is a contributor
+checklist, not a user migration product.
 
 ## Code-budget inventory
 
@@ -112,7 +124,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` | Account, Organization, Team, Repository, PermissionBundle, Operation, TeamRepoGrant, AccountRepoGrant |
+| Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
 | Policy registrations | `policy.py` | Direct `Ref` registration; accepted team spelling; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
 | Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` |
