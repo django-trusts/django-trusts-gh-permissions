@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # Final core library + README (django-trusts#116 merge).
-  COMPANION_KERNEL_SHA: 1e19b5d464c067186aada58943c3ee67c44b2aa0
+  # Paired core handle.register API (django-trusts#158 merge).
+  COMPANION_KERNEL_SHA: e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4
 
 jobs:
   tests:
@@ -47,7 +47,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '1e19b5d464c067186aada58943c3ee67c44b2aa0' in pin, pin
+        assert 'e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
@@ -78,8 +78,8 @@ jobs:
         python-version: "3.12"
     - name: Matrix on exact final-core merge
       run: |
-        test "${COMPANION_KERNEL_SHA}" = "1e19b5d464c067186aada58943c3ee67c44b2aa0"
-        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1e19b5d464c067186aada58943c3ee67c44b2aa0"
+        test "${COMPANION_KERNEL_SHA}" = "e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4"
+        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4"
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
