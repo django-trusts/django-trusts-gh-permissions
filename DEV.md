@@ -10,11 +10,14 @@ points at `README.md`, not this file.
 This tree is `django-trusts-gh-permissions==0.1.0.dev0` against the
 final core library cut `django-trusts==1.0.0.dev3`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
-merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). User-facing core
-documentation is django-trusts
-[#116](https://github.com/django-trusts/django-trusts/pull/116) merge
-`1e19b5d464c067186aada58943c3ee67c44b2aa0`. Pair CI and
-`scripts/django-trusts.pin` use that documented final-core revision.
+merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI and
+`scripts/django-trusts.pin` use the public `handle.register` API from
+django-trusts [#158](https://github.com/django-trusts/django-trusts/pull/158)
+merge `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4`.
+
+The earlier documented core README merge
+[#116](https://github.com/django-trusts/django-trusts/pull/116)
+`1e19b5d464c067186aada58943c3ee67c44b2aa0` is superseded for this pin.
 
 Earlier GH snapshots paired with Step I `django-trusts==1.0.0.dev2`
 (merge `39f1f9611e214193aec4e97526cf9b54ee689967`). That pin is
@@ -68,7 +71,9 @@ Public relations used to authorize: `user.teams`,
 `AUTH_USER_MODEL` and `Operation` **instances**.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
-Direct is `register_direct`. There is no aggregate `register_gh_policy()`.
+Direct is `register_direct`. Both take the configured `BackendHandle`
+and call `handle.register` with Django `__` path strings. There is no
+aggregate `register_gh_policy()`.
 
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
@@ -103,7 +108,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact final-core merge `1e19b5d464c067186aada58943c3ee67c44b2aa0`.
+with Django 6.1 against exact paired-core merge `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -120,9 +125,9 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Files | Why consumer-owned |
 |---|---|---|
 | Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
-| Policy registrations | `policy.py` | Direct `Ref` registration; accepted team spelling; no aggregate helper |
+| Policy registrations | `policy.py` | Direct and team `handle.register` with `__` paths; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` |
+| Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |
 
 Package version is **0.1.0.dev0**.
