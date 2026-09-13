@@ -1,7 +1,7 @@
 """#9: user-facing README and package metadata for GH on final core.
 
 Executable README spellings are the verified test settings, the
-accepted team ``handle.register`` mapping, the owner/registry object
+accepted team ``handle.register_relationship`` mapping, the owner/registry object
 call, and the two-checkout install sequence.
 """
 
@@ -46,7 +46,7 @@ FORBIDDEN_README = (
     '1.0.0.dev2',
     '1.0.0.dev3',
     '39f1f961',
-    'e9fd4cd4',
+    'bc25cd95',
     'Ref(',
     '11058641',
     'a071415',
@@ -85,7 +85,8 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn("'gh_permissions.apps.GhPermissionsConfig'", readme)
         self.assertIn("'gh_permissions.backends.GhAuthorizationBackend'", readme)
         self.assertIn('from trusts.core import All, Equal, permission_in', readme)
-        self.assertIn('handle.register(', readme)
+        self.assertIn('handle.register_relationship(', readme)
+        self.assertNotIn('handle.register(', readme)
         self.assertIn('user="team__members"', readme)
         self.assertIn('permission="operation"', readme)
         self.assertIn('content="repository"', readme)
@@ -155,7 +156,8 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         )
         policy = (ROOT / 'gh_permissions' / 'policy.py').read_text()
         self.assertIn('def register_team(handle):', policy)
-        self.assertIn('handle.register(', policy)
+        self.assertIn('handle.register_relationship(', policy)
+        self.assertNotIn('handle.register(', policy)
         self.assertIn("user='team__members'", policy)
         self.assertIn("permission='operation'", policy)
         self.assertIn("content='repository'", policy)

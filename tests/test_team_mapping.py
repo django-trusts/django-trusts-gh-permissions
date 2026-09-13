@@ -1,9 +1,10 @@
-"""Accepted team mapping is expressible through ``handle.register``.
+"""Accepted team mapping is expressible through ``handle.register_relationship``.
 
 django-trusts#54 r7 / issue #3 accepted team registration, flattened
-ceiling after #12, public Django ``__`` paths after #131::
+ceiling after #12, public Django ``__`` paths after #131, and the
+public relationship method after Core #174::
 
-    handle.register(
+    handle.register_relationship(
         TeamRepositoryPermission,
         user='team__members',
         permission='operation',
