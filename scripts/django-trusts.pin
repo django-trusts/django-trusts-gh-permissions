@@ -1,5 +1,4 @@
 # Reviewed django-trusts head required by this GH tree.
-# Final core library + README (django-trusts#116) from library cut
-# 11058641b533e0f8489598e0b1f5cbe5d42a81db (django-trusts#112).
+# Paired handle.register API (django-trusts#158) on 1.0.0.dev3.
 # Never pin django-trusts-zero.
-ref=1e19b5d464c067186aada58943c3ee67c44b2aa0
+ref=e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4
