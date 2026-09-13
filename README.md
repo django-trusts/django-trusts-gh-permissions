@@ -49,22 +49,22 @@ AUTHENTICATION_BACKENDS = (
 )
 ```
 
-`GhPermissionsConfig` owns the implementation. The accepted team `Ref`
+`GhPermissionsConfig` owns the implementation. The accepted team
 registration (contributed at startup) is:
 
 ```python
-from trusts.core import All, Equal, Ref, permission_in
+from trusts.core import All, Equal, permission_in
 
 from gh_permissions.models import TeamRepositoryPermission
 
-t = Ref(TeamRepositoryPermission)
-registry.register(
-    content=t.repository,
-    user=t.team.members,
-    permission=t.operation,
+handle.register(
+    TeamRepositoryPermission,
+    user="team__members",
+    permission="operation",
+    content="repository",
     condition=All(
-        permission_in(t.team.allowed_operations),
-        Equal(t.team.organization, t.repository.organization),
+        permission_in("team__allowed_operations"),
+        Equal("team__organization", "repository__organization"),
     ),
 )
 ```

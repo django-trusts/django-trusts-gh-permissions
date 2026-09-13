@@ -68,9 +68,9 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         owner = implementation_for_path(
             CANONICAL_BACKEND, apps_registry=getattr(self, 'apps', None),
         )
-        registry = owner.configured_backend(CANONICAL_BACKEND).registry
-        if getattr(self, '_gh_policy_registry_id', None) is registry:
+        handle = owner.configured_backend(CANONICAL_BACKEND)
+        if getattr(self, '_gh_policy_handle_id', None) == handle:
             return
-        register_direct(registry)
-        register_team(registry)
-        self._gh_policy_registry_id = registry
+        register_direct(handle)
+        register_team(handle)
+        self._gh_policy_handle_id = handle

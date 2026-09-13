@@ -12,7 +12,7 @@ from gh_permissions.models import (
     UserRepositoryPermission,
 )
 from gh_permissions.policy import register_direct, register_team
-from tests.fixtures import GhFixtureMixin
+from tests.fixtures import GhFixtureMixin, isolated_handle
 
 
 # Intentionally unsupported GH behaviors (not defects of this consumer):
@@ -38,9 +38,10 @@ class UnsupportedGhBehaviorTest(SimpleTestCase):
 
 class GhFailClosedTest(GhFixtureMixin, TestCase):
     def test_unregistered_resource_fails_closed(self):
-        registry = TrustsRegistry()
-        register_direct(registry)
-        register_team(registry)
+        handle = isolated_handle()
+        register_direct(handle)
+        register_team(handle)
+        registry = handle.registry
         self.assertFalse(
             registry.has_permission(self.member, self.org_a, self.read),
         )
@@ -52,9 +53,10 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         )
 
     def test_wrong_requester_model_and_raw_pk_fail_closed(self):
-        registry = TrustsRegistry()
-        register_direct(registry)
-        register_team(registry)
+        handle = isolated_handle()
+        register_direct(handle)
+        register_team(handle)
+        registry = handle.registry
         self.assertFalse(
             registry.has_permission(self.repo_a, self.repo_b, self.write),
         )
@@ -103,17 +105,18 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
 
         from gh_permissions.apps import CANONICAL_BACKEND
 
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
+        handle = implementation_for_path(CANONICAL_BACKEND).configured_backend(
             CANONICAL_BACKEND,
-        ).registry
+        )
+        registry = handle.registry
         self.assertTrue(registry.frozen)
         d = Ref(UserRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_direct(registry)
+                register_direct(handle)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_team(registry)
+                register_team(handle)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 registry.register(
@@ -134,24 +137,24 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
     def test_register_team_adds_one_record_with_zero_sql(self):
-        registry = TrustsRegistry()
+        handle = isolated_handle()
         with self.assertNumQueries(0):
-            record = register_team(registry)
-        self.assertEqual(len(registry.records), 1)
+            record = register_team(handle)
+        self.assertEqual(len(handle.registry.records), 1)
         self.assertIs(record.root, TeamRepositoryPermission)
 
     def test_register_team_adds_independent_root_beside_direct(self):
-        registry = TrustsRegistry()
-        register_direct(registry)
-        before = registry.records
+        handle = isolated_handle()
+        register_direct(handle)
+        before = handle.registry.records
         self.assertEqual(len(before), 1)
         self.assertEqual(before[0].root, UserRepositoryPermission)
         with self.assertNumQueries(0):
-            record = register_team(registry)
-        self.assertEqual(len(registry.records), 2)
-        self.assertIs(registry.records[0].root, UserRepositoryPermission)
+            record = register_team(handle)
+        self.assertEqual(len(handle.registry.records), 2)
+        self.assertIs(handle.registry.records[0].root, UserRepositoryPermission)
         self.assertIs(record.root, TeamRepositoryPermission)
-        self.assertIs(registry.records[1].root, TeamRepositoryPermission)
+        self.assertIs(handle.registry.records[1].root, TeamRepositoryPermission)
 
     def test_startup_registers_direct_and_team_roots(self):
         from trusts.apps import implementation_for_path

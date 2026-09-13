@@ -11,6 +11,7 @@ Locks the supported owner contract against ``django-trusts`` 1.x:
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 from django.apps import apps
@@ -78,6 +79,21 @@ class Issue6OwnerProofs(SimpleTestCase):
         ]
         self.assertEqual(roots, [UserRepositoryPermission, TeamRepositoryPermission])
 
+    def test_ready_reentry_is_handle_keyed(self):
+        from django.apps import apps
+
+        config = apps.get_app_config('gh_permissions')
+        owner = implementation_for_path(CANONICAL_BACKEND)
+        handle = owner.configured_backend(CANONICAL_BACKEND)
+        before = handle.registry.records
+        self.assertEqual(
+            [record.root for record in before],
+            [UserRepositoryPermission, TeamRepositoryPermission],
+        )
+        GhPermissionsConfig.ready(config)
+        after = owner.configured_backend(CANONICAL_BACKEND).registry.records
+        self.assertEqual(after, before)
+
     def test_missing_canonical_backend_path_fails_at_startup(self):
         config = apps.get_app_config('gh_permissions')
         with override_settings(AUTHENTICATION_BACKENDS=[]):
@@ -115,6 +131,15 @@ class Issue6OwnerProofs(SimpleTestCase):
 
         self.assertNotIn('trusts', django_settings.INSTALLED_APPS)
         self.assertNotIn('trusts.apps.AppConfig', django_settings.INSTALLED_APPS)
+        ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
+        self.assertIn('register_direct(handle)', ready)
+        self.assertIn('register_team(handle)', ready)
+        self.assertNotIn('_gh_policy_registry_id', ready)
+        self.assertIn('_gh_policy_handle_id', ready)
+        self.assertIn('== handle', ready)
+        self.assertNotIn('.registry.register(', ready)
+        self.assertNotIn('register_direct(registry)', ready)
+        self.assertNotIn('register_team(registry)', ready)
 
 
 class Issue6AuthorizationProofs(TestCase):
