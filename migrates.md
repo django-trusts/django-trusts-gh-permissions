@@ -212,3 +212,131 @@ Then:
 - Folding `policy.py` into `apps.py`
 - A data-preserving Account → User mapping
 - A user migration API
+
+# Adopt handle.register pair (issue #131)
+
+This record is the **executable G1 delta** on live `main`
+`600ae3746f3934b3d25417c7201cbf772dbe4ee4`. Historical sections above
+stay as written, including the #12 AUTH_USER_MODEL / flatten-bundles /
+stock `AuthorizedManager` reset and the IIb owner cutover. Those
+describe earlier stairs. The stale initial-only `dev` branch is not
+this implementation baseline.
+
+Authorization **data**, independent-root OR, organization equality,
+team operation ceiling, fail-closed incomplete/revoked paths,
+object/list/enumeration behavior, fixed query counts,
+`AUTH_USER_MODEL`, stock `AuthorizedManager`, and
+`gh_permissions.0001_initial` are unchanged. No Trusts schema
+migration is added. Package version stays `0.1.0.dev0`. Zero stays
+absent.
+
+## Pin
+
+| | |
+| --- | --- |
+| Previous | Core [#116](https://github.com/django-trusts/django-trusts/pull/116) merge `1e19b5d464c067186aada58943c3ee67c44b2aa0` (library cut [#112](https://github.com/django-trusts/django-trusts/pull/112) `11058641`, `django-trusts==1.0.0.dev3`). |
+| New | Core `handle.register` API at `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4` (merged [django-trusts#158](https://github.com/django-trusts/django-trusts/pull/158)). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| Replacement | Same git URL, new exact SHA in `requirements.txt`, `scripts/django-trusts.pin`, CI `COMPANION_KERNEL_SHA`, and package-metadata needles. No floating branch. Never `django-trusts-zero`. |
+| Affected | Package install, policy donation, pin-integrity constants, DEV pairing line. |
+| Authorization | Same allow/deny. Direct and team roots still OR; only the registration argument changes. |
+
+## Old → new
+
+```python
+# Old (#12 on 1e19b5d)
+from trusts.core import All, Equal, Ref, permission_in
+
+def register_direct(registry):
+    d = Ref(UserRepositoryPermission)
+    return registry.register(
+        content=d.repository, user=d.user, permission=d.operation,
+    )
+
+def register_team(registry):
+    t = Ref(TeamRepositoryPermission)
+    return registry.register(
+        content=t.repository,
+        user=t.team.members,
+        permission=t.operation,
+        condition=All(
+            permission_in(t.team.allowed_operations),
+            Equal(t.team.organization, t.repository.organization),
+        ),
+    )
+
+registry = owner.configured_backend(CANONICAL_BACKEND).registry
+if getattr(self, '_gh_policy_registry_id', None) is registry:
+    return
+register_direct(registry)
+register_team(registry)
+self._gh_policy_registry_id = registry
+
+# New (paired e9fd4cd4)
+from trusts.core import All, Equal, permission_in
+
+def register_direct(handle):
+    return handle.register(
+        UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
+    )
+
+def register_team(handle):
+    return handle.register(
+        TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
+        condition=All(
+            permission_in('team__allowed_operations'),
+            Equal('team__organization', 'repository__organization'),
+        ),
+    )
+
+handle = owner.configured_backend(CANONICAL_BACKEND)
+register_direct(handle)
+register_team(handle)
+```
+
+Helpers require a `BackendHandle` (`TypeError` on a bare registry).
+Exact-duplicate registration still fails closed without mutating stored
+records. Invalid configuration fails before either helper runs. Do not
+store `handle.registry` for re-entry. Do not call `.registry.register`
+from production donation. `handle.registry` remains temporarily so
+compiler tests can inspect normalized records and so object/list
+evaluation can keep `registry.has_permission` / `.authorized()`.
+
+## Migration-bot checklist
+
+Search application code, README, DEV/reference snippets, and
+registration fixtures for:
+
+```text
+from trusts.core import Ref
+Ref(
+.registry.register(
+1e19b5d464c067186aada58943c3ee67c44b2aa0
+1e19b5d
+from trusts.zero
+import trusts.zero
+django-trusts-zero
+```
+
+Then:
+
+- [ ] Pin Core `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4` in `requirements.txt`, `scripts/django-trusts.pin`, and CI `COMPANION_KERNEL_SHA`.
+- [ ] Retarget the package-metadata / README needle from `1e19b5d` to `e9fd4cd4`.
+- [ ] Convert `register_direct` / `register_team` to take the configured handle and call `handle.register` with Django `__` paths.
+- [ ] Convert `GhPermissionsConfig.ready()` to donate both roots on the handle. Do not key idempotency on `.registry`.
+- [ ] Remove consumer-facing `Ref` and `.registry.register(` from production, README, DEV/reference snippets, and registration fixtures.
+- [ ] Keep isolated compiler fail-closed proofs that call `TrustsRegistry.register` with `Ref` for malformed paths.
+- [ ] Keep evaluation `registry.has_permission` / `Repository.objects.authorized`.
+- [ ] Keep `register_direct` and `register_team` as separate functions. Do not add `register_gh_policy()`.
+- [ ] Keep Zero absent. Do not import `trusts.zero`.
+- [ ] Leave package version at `0.1.0.dev0`. Do not change schema/models.
+- [ ] Target `main` (`600ae374…`). Do not replace or regress from stale `dev`.
+- [ ] `python -m tests.runtests` on Python 3.12–3.14.
+- [ ] Fresh `migrate --noinput` + `check` + `makemigrations gh_permissions --check`.
+- [ ] Pair job and package/wheel metadata against the exact SHA.
+- [ ] Do not start C1-fold `handle.register_strategy` / `OrderedFold`, W1, C2 (`handle.registry` removal), #146, #159/#160, or release/version work.
