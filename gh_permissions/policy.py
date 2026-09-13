@@ -1,4 +1,4 @@
-"""GH policy registrations on public ``BackendHandle.register``.
+"""GH policy registrations on public ``BackendHandle.register_relationship``.
 
 Direct is the three-FK user/repository/operation row. Team is the
 accepted mapping: terminal membership hop, team operation ceiling, and
@@ -24,7 +24,7 @@ def _require_handle(handle):
 def register_direct(handle):
     """Register the direct-user permission-bearing relation."""
     handle = _require_handle(handle)
-    return handle.register(
+    return handle.register_relationship(
         UserRepositoryPermission,
         user='user',
         permission='operation',
@@ -35,7 +35,7 @@ def register_direct(handle):
 def register_team(handle):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
     handle = _require_handle(handle)
-    return handle.register(
+    return handle.register_relationship(
         TeamRepositoryPermission,
         user='team__members',
         permission='operation',

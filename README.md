@@ -57,7 +57,7 @@ from trusts.core import All, Equal, permission_in
 
 from gh_permissions.models import TeamRepositoryPermission
 
-handle.register(
+handle.register_relationship(
     TeamRepositoryPermission,
     user="team__members",
     permission="operation",

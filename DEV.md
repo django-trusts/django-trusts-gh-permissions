@@ -11,9 +11,13 @@ This tree is `django-trusts-gh-permissions==0.1.0.dev0` against the
 final core library cut `django-trusts==1.0.0.dev3`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI and
-`scripts/django-trusts.pin` use the public `handle.register` API from
-django-trusts [#158](https://github.com/django-trusts/django-trusts/pull/158)
-merge `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4`.
+`scripts/django-trusts.pin` use the public `handle.register_relationship`
+API from django-trusts [#174](https://github.com/django-trusts/django-trusts/pull/174)
+merge `bc25cd9524b12cd15047a401d12b82f813b6e500`.
+
+The earlier documented `handle.register` pair
+[#158](https://github.com/django-trusts/django-trusts/pull/158)
+`e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4` is superseded for this pin.
 
 The earlier documented core README merge
 [#116](https://github.com/django-trusts/django-trusts/pull/116)
@@ -72,8 +76,8 @@ Public relations used to authorize: `user.teams`,
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct is `register_direct`. Both take the configured `BackendHandle`
-and call `handle.register` with Django `__` path strings. There is no
-aggregate `register_gh_policy()`.
+and call `handle.register_relationship` with Django `__` path strings.
+There is no aggregate `register_gh_policy()`.
 
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
@@ -108,7 +112,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core merge `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4`.
+with Django 6.1 against exact paired-core merge `bc25cd9524b12cd15047a401d12b82f813b6e500`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -125,7 +129,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Files | Why consumer-owned |
 |---|---|---|
 | Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
-| Policy registrations | `policy.py` | Direct and team `handle.register` with `__` paths; no aggregate helper |
+| Policy registrations | `policy.py` | Direct and team `handle.register_relationship` with `__` paths; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
 | Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

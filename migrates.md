@@ -340,3 +340,140 @@ Then:
 - [ ] Fresh `migrate --noinput` + `check` + `makemigrations gh_permissions --check`.
 - [ ] Pair job and package/wheel metadata against the exact SHA.
 - [ ] Do not start C1-fold `handle.register_strategy` / `OrderedFold`, W1, C2 (`handle.registry` removal), #146, #159/#160, or release/version work.
+
+# Adopt handle.register_relationship pair (issue #16)
+
+This record is the **executable G2 delta** on live `main`
+`98e6db7b04d81370cd75a9c291ead8f83f519dd3`. Historical sections above
+stay as written, including the G1 `handle.register` pair on
+`e9fd4cd4…`, the #12 AUTH_USER_MODEL / flatten-bundles / stock
+`AuthorizedManager` reset, and the IIb owner cutover. Those describe
+earlier stairs. Do not rewrite them as though they used the final
+`register_relationship` spelling.
+
+Authorization **data**, independent-root OR, organization equality,
+team operation ceiling, fail-closed incomplete/revoked paths,
+object/list/enumeration behavior, fixed query counts,
+`AUTH_USER_MODEL`, stock `AuthorizedManager`, and
+`gh_permissions.0001_initial` are unchanged. No Trusts schema
+migration is added. Package version stays `0.1.0.dev0`. Zero stays
+absent.
+
+## Pin
+
+| | |
+| --- | --- |
+| Previous | Core `handle.register` API at `e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4` (merged [django-trusts#158](https://github.com/django-trusts/django-trusts/pull/158)). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| New | Core `handle.register_relationship` API at `bc25cd9524b12cd15047a401d12b82f813b6e500` (merged [django-trusts#174](https://github.com/django-trusts/django-trusts/pull/174), which removed the temporary `BackendHandle.register(...)` forwarder). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| Replacement | Same git URL, new exact SHA in `requirements.txt`, `scripts/django-trusts.pin`, CI `COMPANION_KERNEL_SHA`, and package-metadata needles. No floating branch. Never `django-trusts-zero`. |
+| Affected | Package install, policy donation, pin-integrity constants, DEV pairing line, README / test fixtures that taught `handle.register`. |
+| Authorization | Same allow/deny. Direct and team roots still OR; only the registration method name changes. Persisted schema and data are unchanged. |
+
+## Old → new
+
+```python
+# Old (G1 on e9fd4cd4)
+from trusts.core import All, Equal, permission_in
+
+def register_direct(handle):
+    return handle.register(
+        UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
+    )
+
+def register_team(handle):
+    return handle.register(
+        TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
+        condition=All(
+            permission_in('team__allowed_operations'),
+            Equal('team__organization', 'repository__organization'),
+        ),
+    )
+
+handle = owner.configured_backend(CANONICAL_BACKEND)
+register_direct(handle)
+register_team(handle)
+
+# New (paired bc25cd95)
+from trusts.core import All, Equal, permission_in
+
+def register_direct(handle):
+    return handle.register_relationship(
+        UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
+    )
+
+def register_team(handle):
+    return handle.register_relationship(
+        TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
+        condition=All(
+            permission_in('team__allowed_operations'),
+            Equal('team__organization', 'repository__organization'),
+        ),
+    )
+
+handle = owner.configured_backend(CANONICAL_BACKEND)
+register_direct(handle)
+register_team(handle)
+```
+
+Helpers still require a `BackendHandle` (`TypeError` on a bare registry).
+Exact-duplicate registration still fails closed without mutating stored
+records. Invalid configuration fails before either helper runs. Keep
+`register_direct` and `register_team` as separate atoms. Do not add
+`register_gh_policy()` or any other aggregate helper.
+
+Do not introduce `register_ordered_fold`, private registry donation,
+`Ref`, or a Zero dependency. Evaluation still uses
+`registry.has_permission` / `Repository.objects.authorized`. Isolated
+compiler fail-closed proofs may still call `TrustsRegistry.register`
+with `Ref` for malformed paths.
+
+## Migration-bot checklist
+
+Search application code, README, DEV/reference snippets, and
+registration fixtures for:
+
+```text
+handle.register(
+e9fd4cd4f77624f3d5351b505808c1d6fa8bcbc4
+e9fd4cd4
+register_ordered_fold
+from trusts.core import Ref
+Ref(
+.registry.register(
+from trusts.zero
+import trusts.zero
+django-trusts-zero
+register_gh_policy
+```
+
+Treat historical `migrates.md` G1 / #12 stairs as labeled history.
+Current production, README, DEV pairing, and executable fixtures must
+not teach `handle.register(`.
+
+Then:
+
+- [ ] Search code and docs for leftover production / user-facing `handle.register(`.
+- [ ] Pin Core `bc25cd9524b12cd15047a401d12b82f813b6e500` in `requirements.txt`, `scripts/django-trusts.pin`, and CI `COMPANION_KERNEL_SHA`.
+- [ ] Retarget the package-metadata / README needle from `e9fd4cd4` to `bc25cd95`.
+- [ ] Convert `register_direct` / `register_team` to call `handle.register_relationship` with the same Django `__` paths.
+- [ ] Keep `register_direct` and `register_team` as separate functions. Do not add `register_gh_policy()`.
+- [ ] Startup still donates both independent roots on the configured handle.
+- [ ] Keep Zero absent. Do not import `trusts.zero`.
+- [ ] Leave package version at `0.1.0.dev0`. Do not change schema/models/migrations.
+- [ ] `python -m django migrate --noinput` + `check` + `makemigrations gh_permissions --check` remain quiet.
+- [ ] Confirm object / list / enumeration still OR both roots and fail closed with the same query counts.
+- [ ] `python -m tests.runtests` on Python 3.12–3.14.
+- [ ] Pair job and package/wheel metadata against the exact SHA.
+- [ ] Do not start Core #132 / #137. Do not introduce `register_ordered_fold`, private registry donation, `Ref`, or Zero.
