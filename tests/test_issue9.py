@@ -1,8 +1,8 @@
 """#9: user-facing README and package metadata for GH on final core.
 
 Executable README spellings are the verified test settings, the
-accepted team ``Ref`` registration, the owner/registry object call,
-and the two-checkout install sequence.
+accepted team ``handle.register`` mapping, the owner/registry object
+call, and the two-checkout install sequence.
 """
 
 import sys
@@ -46,7 +46,8 @@ FORBIDDEN_README = (
     '1.0.0.dev2',
     '1.0.0.dev3',
     '39f1f961',
-    '1e19b5d',
+    'e9fd4cd4',
+    'Ref(',
     '11058641',
     'a071415',
     'pair CI',
@@ -83,11 +84,17 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn('1.x', readme)
         self.assertIn("'gh_permissions.apps.GhPermissionsConfig'", readme)
         self.assertIn("'gh_permissions.backends.GhAuthorizationBackend'", readme)
-        self.assertIn('from trusts.core import All, Equal, Ref, permission_in', readme)
-        self.assertIn('t = Ref(TeamRepositoryPermission)', readme)
-        self.assertIn('user=t.team.members', readme)
-        self.assertIn('permission_in(t.team.allowed_operations)', readme)
-        self.assertIn('Equal(t.team.organization, t.repository.organization)', readme)
+        self.assertIn('from trusts.core import All, Equal, permission_in', readme)
+        self.assertIn('handle.register(', readme)
+        self.assertIn('user="team__members"', readme)
+        self.assertIn('permission="operation"', readme)
+        self.assertIn('content="repository"', readme)
+        self.assertIn('permission_in("team__allowed_operations")', readme)
+        self.assertIn(
+            'Equal("team__organization", "repository__organization")',
+            readme,
+        )
+        self.assertNotIn('registry.register(', readme)
         self.assertIn('UserRepositoryPermission', readme)
         self.assertIn('AUTH_USER_MODEL', readme)
         self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
@@ -147,18 +154,21 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             readme,
         )
         policy = (ROOT / 'gh_permissions' / 'policy.py').read_text()
-        self.assertIn('def register_team(registry):', policy)
-        self.assertIn('content=t.repository', policy)
-        self.assertIn('user=t.team.members', policy)
-        self.assertIn('permission=t.operation', policy)
+        self.assertIn('def register_team(handle):', policy)
+        self.assertIn('handle.register(', policy)
+        self.assertIn("user='team__members'", policy)
+        self.assertIn("permission='operation'", policy)
+        self.assertIn("content='repository'", policy)
         self.assertIn(
-            'permission_in(t.team.allowed_operations)',
+            "permission_in('team__allowed_operations')",
             policy,
         )
         self.assertIn(
-            'Equal(t.team.organization, t.repository.organization)',
+            "Equal('team__organization', 'repository__organization')",
             policy,
         )
+        self.assertNotIn('from trusts.core import All, Equal, Ref, permission_in', policy)
+        self.assertNotIn('.registry.register(', policy)
         self.assertIn(register_direct.__name__, policy)
         self.assertIn(register_team.__name__, policy)
         self.assertFalse(hasattr(
@@ -209,7 +219,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         )
         self.assertNotIn('trusts', settings.INSTALLED_APPS)
 
-    def test_documented_team_ref_matches_startup_registration(self):
+    def test_documented_team_mapping_matches_startup_registration(self):
         owner = implementation_for_path(CANONICAL_BACKEND)
         record = owner.configured_backend(CANONICAL_BACKEND).registry.records[1]
         self.assertIs(record.root, TeamRepositoryPermission)

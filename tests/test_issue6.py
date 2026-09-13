@@ -11,6 +11,7 @@ Locks the supported owner contract against ``django-trusts`` 1.x:
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 from django.apps import apps
@@ -115,6 +116,13 @@ class Issue6OwnerProofs(SimpleTestCase):
 
         self.assertNotIn('trusts', django_settings.INSTALLED_APPS)
         self.assertNotIn('trusts.apps.AppConfig', django_settings.INSTALLED_APPS)
+        ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
+        self.assertIn('register_direct(handle)', ready)
+        self.assertIn('register_team(handle)', ready)
+        self.assertNotIn('_gh_policy_registry_id', ready)
+        self.assertNotIn('.registry.register(', ready)
+        self.assertNotIn('register_direct(registry)', ready)
+        self.assertNotIn('register_team(registry)', ready)
 
 
 class Issue6AuthorizationProofs(TestCase):

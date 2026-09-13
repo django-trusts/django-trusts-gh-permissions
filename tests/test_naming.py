@@ -77,6 +77,10 @@ class GhNamingTest(SimpleTestCase):
         self.assertIn('permission_in', source)
         self.assertIn('Equal', source)
         self.assertIn('All', source)
+        self.assertIn('handle.register(', source)
+        self.assertNotIn('from trusts.core import All, Equal, Ref, permission_in', source)
+        self.assertNotIn('Ref(', source)
+        self.assertNotIn('.registry.register(', source)
 
     def test_obsolete_account_bundle_and_queryset_glue_are_gone(self):
         import gh_permissions.models as models

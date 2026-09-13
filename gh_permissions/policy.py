@@ -1,35 +1,47 @@
-"""GH policy registrations on public ``TrustsRegistry.register``.
+"""GH policy registrations on public ``BackendHandle.register``.
 
 Direct is the three-FK user/repository/operation row. Team is the
 accepted mapping: terminal membership hop, team operation ceiling, and
 organization alignment. ``GhPermissionsConfig.ready`` contributes both
 independent roots as separate calls, not one aggregate helper.
+Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
 """
 
-from trusts.core import All, Equal, Ref, permission_in
+from trusts.core import All, BackendHandle, Equal, permission_in
 
 from gh_permissions.models import TeamRepositoryPermission, UserRepositoryPermission
 
 
-def register_direct(registry):
+def _require_handle(handle):
+    if not isinstance(handle, BackendHandle):
+        raise TypeError(
+            'GH relation helpers require a BackendHandle, not %r.'
+            % (type(handle).__name__,)
+        )
+    return handle
+
+
+def register_direct(handle):
     """Register the direct-user permission-bearing relation."""
-    d = Ref(UserRepositoryPermission)
-    return registry.register(
-        content=d.repository,
-        user=d.user,
-        permission=d.operation,
+    handle = _require_handle(handle)
+    return handle.register(
+        UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
     )
 
 
-def register_team(registry):
+def register_team(handle):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
-    t = Ref(TeamRepositoryPermission)
-    return registry.register(
-        content=t.repository,
-        user=t.team.members,
-        permission=t.operation,
+    handle = _require_handle(handle)
+    return handle.register(
+        TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
         condition=All(
-            permission_in(t.team.allowed_operations),
-            Equal(t.team.organization, t.repository.organization),
+            permission_in('team__allowed_operations'),
+            Equal('team__organization', 'repository__organization'),
         ),
     )

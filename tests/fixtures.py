@@ -12,6 +12,19 @@ from gh_permissions.models import (
 )
 
 
+def isolated_handle(registry=None):
+    """Wrap an unfrozen registry in a ``BackendHandle`` for isolated tests."""
+    from trusts.core import BackendHandle, PlanQueryCompiler, TrustsRegistry
+
+    if registry is None:
+        registry = TrustsRegistry()
+    return BackendHandle(
+        path='tests.isolated',
+        registry=registry,
+        compiler=PlanQueryCompiler(),
+    )
+
+
 class GhFixtureMixin(object):
     """Two orgs, team + direct paths, and the partial-path counters."""
 
