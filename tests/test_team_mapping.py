@@ -3,7 +3,7 @@
 django-trusts#54 r7 / issue #3 accepted team registration, flattened
 ceiling after #12, public Django ``__`` paths after #131, the
 relationship method after Core #174, and the public ``register`` plus
-symbolic condition after Core #211::
+symbolic condition after Core #211, proven on #213::
 
     handle.register(
         trust=TeamRepositoryPermission,

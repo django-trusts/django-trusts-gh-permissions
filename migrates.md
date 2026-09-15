@@ -502,7 +502,8 @@ absent. Literal Python `in` stays unsupported.
 | | |
 | --- | --- |
 | Previous | Core `handle.register_relationship` API at `bc25cd9524b12cd15047a401d12b82f813b6e500` (merged [django-trusts#174](https://github.com/django-trusts/django-trusts/pull/174)). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
-| New | Core public `BackendHandle.register` plus symbolic-condition API at `8bfe6151b5a65af2d0667ab3a71680eecc90a691` ([django-trusts#211](https://github.com/django-trusts/django-trusts/pull/211) approved head, stacked on [django-trusts#208](https://github.com/django-trusts/django-trusts/pull/208) `15e8fa80c1184ae338078e967dfd60dcdd2b67cc`). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| Reviewed API | Public `BackendHandle.register` plus symbolic-condition grammar at [django-trusts#211](https://github.com/django-trusts/django-trusts/pull/211) `8bfe6151b5a65af2d0667ab3a71680eecc90a691` (stacked on [django-trusts#208](https://github.com/django-trusts/django-trusts/pull/208) `15e8fa80c1184ae338078e967dfd60dcdd2b67cc`). |
+| New | Core integration train [django-trusts#213](https://github.com/django-trusts/django-trusts/pull/213) `DEV_register_api_train` exact head `a909eaeb8e087977fb1c1076682aab0b5ad754c5` (stacks #206 + #208 + #211). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
 | Replacement | Same git URL, new exact SHA in `requirements.txt`, `scripts/django-trusts.pin`, CI `COMPANION_KERNEL_SHA`, and package-metadata needles. No floating branch. Never `django-trusts-zero`. |
 | Affected | Package install, policy donation, pin-integrity constants, DEV pairing line, README / test fixtures that taught `register_relationship` plus public `All` / `permission_in` / `Equal`. |
 | Authorization | Same allow/deny. Direct and team roots still OR; only the registration method and public condition grammar change. Persisted schema and data are unchanged. |
@@ -537,7 +538,7 @@ handle = owner.configured_backend(CANONICAL_BACKEND)
 register_direct(handle)
 register_team(handle)
 
-# New (paired 8bfe6151)
+# New (paired a909eae / #213)
 def register_direct(handle):
     return handle.register(
         trust=UserRepositoryPermission,
@@ -598,6 +599,8 @@ handle.register_relationship(
 from trusts.core import All, Equal, permission_in
 bc25cd9524b12cd15047a401d12b82f813b6e500
 bc25cd95
+8bfe6151b5a65af2d0667ab3a71680eecc90a691
+8bfe615
 predicate=
  in 
 register_ordered_fold
@@ -620,11 +623,11 @@ Then:
 
 - [ ] Search current application-facing policy for leftover
       `register_relationship(`, `permission_in(`, `Equal(`, and `All(`.
-- [ ] Pin Core `8bfe6151b5a65af2d0667ab3a71680eecc90a691` in
+- [ ] Pin Core `a909eaeb8e087977fb1c1076682aab0b5ad754c5` in
       `requirements.txt`, `scripts/django-trusts.pin`, and CI
       `COMPANION_KERNEL_SHA`.
-- [ ] Retarget the package-metadata / README needle from `bc25cd95`
-      to `8bfe615`.
+- [ ] Retarget the package-metadata / README needle from `8bfe615`
+      to `a909eae`.
 - [ ] Convert `register_direct` / `register_team` to call
       `handle.register(trust=..., ...)` with the same Django `__`
       path strings.
@@ -648,6 +651,7 @@ Then:
       list, and enumeration.
 - [ ] `python -m tests.runtests` on Python 3.12–3.14.
 - [ ] Pair job and package/wheel metadata against the exact SHA.
-- [ ] Do not modify or tip-chase django-trusts #206 / #208 / #211 or
-      Zero #38. Do not introduce `register_ordered_fold`, private
-      registry donation, `Ref`, reverse walking, new joins, or Zero.
+- [ ] Pair against exact Core #213 head `a909eaeb8e087977fb1c1076682aab0b5ad754c5`.
+      Do not tip-chase past that train head. Do not introduce
+      `register_ordered_fold`, private registry donation, `Ref`,
+      reverse walking, new joins, or Zero.

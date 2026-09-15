@@ -13,8 +13,12 @@ final core library cut `django-trusts==1.0.0.dev3`
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI and
 `scripts/django-trusts.pin` use the public `handle.register` plus
 symbolic-condition API from django-trusts
-[#211](https://github.com/django-trusts/django-trusts/pull/211)
-head `8bfe6151b5a65af2d0667ab3a71680eecc90a691`.
+[#213](https://github.com/django-trusts/django-trusts/pull/213)
+`DEV_register_api_train` head `a909eaeb8e087977fb1c1076682aab0b5ad754c5`.
+
+The earlier documented [#211](https://github.com/django-trusts/django-trusts/pull/211)
+symbolic-condition head `8bfe6151b5a65af2d0667ab3a71680eecc90a691` is
+superseded for this pin; #213 stacks that reviewed API.
 
 The earlier documented `handle.register_relationship` pair
 [#174](https://github.com/django-trusts/django-trusts/pull/174)
@@ -119,7 +123,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `8bfe6151b5a65af2d0667ab3a71680eecc90a691`.
+with Django 6.1 against exact paired-core head `a909eaeb8e087977fb1c1076682aab0b5ad754c5`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
