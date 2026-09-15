@@ -477,3 +477,177 @@ Then:
 - [ ] `python -m tests.runtests` on Python 3.12–3.14.
 - [ ] Pair job and package/wheel metadata against the exact SHA.
 - [ ] Do not start Core #132 / #137. Do not introduce `register_ordered_fold`, private registry donation, `Ref`, or Zero.
+
+# Adopt register() and symbolic condition (issue #18)
+
+This record is the **executable G3 delta** on live `main`
+`25018b05c02b0856e60033d2f29aef5629e10195`. Historical sections above
+stay as written, including the G2 `register_relationship` pair on
+`bc25cd95…`, the G1 temporary `handle.register` forwarder on
+`e9fd4cd4…`, the #12 AUTH_USER_MODEL / flatten-bundles / stock
+`AuthorizedManager` reset, and the IIb owner cutover. Those describe
+earlier stairs. Do not rewrite them as though they used the final
+`register(trust=..., condition=lambda t: ...)` spelling.
+
+Authorization **data**, independent-root OR, organization equality,
+team operation ceiling, fail-closed incomplete/revoked paths,
+object/list/enumeration behavior, fixed query counts,
+`AUTH_USER_MODEL`, stock `AuthorizedManager`, and
+`gh_permissions.0001_initial` are unchanged. No Trusts schema
+migration is added. Package version stays `0.1.0.dev0`. Zero stays
+absent. Literal Python `in` stays unsupported.
+
+## Pin
+
+| | |
+| --- | --- |
+| Previous | Core `handle.register_relationship` API at `bc25cd9524b12cd15047a401d12b82f813b6e500` (merged [django-trusts#174](https://github.com/django-trusts/django-trusts/pull/174)). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| New | Core public `BackendHandle.register` plus symbolic-condition API at `8bfe6151b5a65af2d0667ab3a71680eecc90a691` ([django-trusts#211](https://github.com/django-trusts/django-trusts/pull/211) approved head, stacked on [django-trusts#208](https://github.com/django-trusts/django-trusts/pull/208) `15e8fa80c1184ae338078e967dfd60dcdd2b67cc`). Floor remains `django-trusts>=1.0.0.dev3,<2`. |
+| Replacement | Same git URL, new exact SHA in `requirements.txt`, `scripts/django-trusts.pin`, CI `COMPANION_KERNEL_SHA`, and package-metadata needles. No floating branch. Never `django-trusts-zero`. |
+| Affected | Package install, policy donation, pin-integrity constants, DEV pairing line, README / test fixtures that taught `register_relationship` plus public `All` / `permission_in` / `Equal`. |
+| Authorization | Same allow/deny. Direct and team roots still OR; only the registration method and public condition grammar change. Persisted schema and data are unchanged. |
+
+## Old → new
+
+```python
+# Old (G2 on bc25cd95)
+from trusts.core import All, Equal, permission_in
+
+def register_direct(handle):
+    return handle.register_relationship(
+        UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
+    )
+
+def register_team(handle):
+    return handle.register_relationship(
+        TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
+        condition=All(
+            permission_in('team__allowed_operations'),
+            Equal('team__organization', 'repository__organization'),
+        ),
+    )
+
+handle = owner.configured_backend(CANONICAL_BACKEND)
+register_direct(handle)
+register_team(handle)
+
+# New (paired 8bfe6151)
+def register_direct(handle):
+    return handle.register(
+        trust=UserRepositoryPermission,
+        user='user',
+        permission='operation',
+        content='repository',
+    )
+
+def register_team(handle):
+    return handle.register(
+        trust=TeamRepositoryPermission,
+        user='team__members',
+        permission='operation',
+        content='repository',
+        condition=lambda t: (
+            t.team.allowed_operations.contains(t.operation)
+            & (t.team.organization == t.repository.organization)
+        ),
+    )
+
+handle = owner.configured_backend(CANONICAL_BACKEND)
+register_direct(handle)
+register_team(handle)
+```
+
+The public condition grammar is exactly `.contains(...)`, `==`, and
+`&`. The ceiling and organization equality stay AND-combined on the
+one team registration. The predicate runs once after the freeze check.
+Stored policy is private normalized `All` / `PermissionIn` / `Equal`
+IR and contains no application callable.
+
+Helpers still require a `BackendHandle` (`TypeError` on a bare registry).
+Exact-duplicate registration still fails closed without mutating stored
+records. Invalid configuration fails before either helper runs. Keep
+`register_direct` and `register_team` as separate atoms. Do not add
+`register_gh_policy()` or any other aggregate helper. Do not add
+`predicate=`. Do not use public `All`, `Equal`, or `permission_in`.
+Do not write literal Python `in`.
+
+Do not introduce `register_ordered_fold`, private registry donation,
+`Ref`, reverse walking, new joins, schema changes, or a Zero
+dependency. Evaluation still uses `registry.has_permission` /
+`Repository.objects.authorized`. Isolated compiler fail-closed proofs
+may still call `TrustsRegistry.register` with `Ref` for malformed
+paths, and tests may inspect stored private IR.
+
+## Migration-bot checklist
+
+Search application code, README, DEV/reference snippets, and
+registration fixtures for:
+
+```text
+register_relationship(
+permission_in(
+Equal(
+All(
+handle.register_relationship(
+from trusts.core import All, Equal, permission_in
+bc25cd9524b12cd15047a401d12b82f813b6e500
+bc25cd95
+predicate=
+ in 
+register_ordered_fold
+from trusts.core import Ref
+Ref(
+.registry.register(
+from trusts.zero
+import trusts.zero
+django-trusts-zero
+register_gh_policy
+```
+
+Treat historical `migrates.md` G2 / G1 / #12 stairs as labeled
+history. Current production, README, DEV pairing, and executable
+fixtures must not teach `register_relationship(`, public
+`permission_in(`, public `Equal(`, or public `All(` as the live
+application-facing policy. Literal Python `in` stays unsupported.
+
+Then:
+
+- [ ] Search current application-facing policy for leftover
+      `register_relationship(`, `permission_in(`, `Equal(`, and `All(`.
+- [ ] Pin Core `8bfe6151b5a65af2d0667ab3a71680eecc90a691` in
+      `requirements.txt`, `scripts/django-trusts.pin`, and CI
+      `COMPANION_KERNEL_SHA`.
+- [ ] Retarget the package-metadata / README needle from `bc25cd95`
+      to `8bfe615`.
+- [ ] Convert `register_direct` / `register_team` to call
+      `handle.register(trust=..., ...)` with the same Django `__`
+      path strings.
+- [ ] Convert the team condition to
+      `lambda t: (t.team.allowed_operations.contains(t.operation) & (t.team.organization == t.repository.organization))`.
+- [ ] Keep `register_direct` and `register_team` as separate functions.
+      Do not add `register_gh_policy()`.
+- [ ] Startup still donates both independent roots on the configured
+      handle. Donation remains idempotent and is designed not to issue
+      SQL.
+- [ ] Stored policy is private IR, not the application callable.
+- [ ] Keep Zero absent. Do not import `trusts.zero`.
+- [ ] Leave package version at `0.1.0.dev0`. Do not change
+      schema/models/migrations.
+- [ ] `python -m django migrate --noinput` + `check` +
+      `makemigrations gh_permissions --check` remain quiet.
+- [ ] Confirm object / list / enumeration still OR both roots and fail
+      closed with the same query counts.
+- [ ] With the local team permission record retained, removing the
+      operation ceiling or mismatching organizations denies object,
+      list, and enumeration.
+- [ ] `python -m tests.runtests` on Python 3.12–3.14.
+- [ ] Pair job and package/wheel metadata against the exact SHA.
+- [ ] Do not modify or tip-chase django-trusts #206 / #208 / #211 or
+      Zero #38. Do not introduce `register_ordered_fold`, private
+      registry donation, `Ref`, reverse walking, new joins, or Zero.

@@ -106,6 +106,12 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
 
     def test_removing_allowed_operation_denies_only_that_branch(self):
+        # Local team permission row stays; only the ceiling is removed.
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(
+                team=self.writers, repository=self.repo_a, operation=self.read,
+            ).exists()
+        )
         self.writers.allowed_operations.remove(self.read)
         self._object_list_agree(self.member, self.read, self.repo_a, False)
         self._object_list_agree(
@@ -113,6 +119,12 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
 
     def test_removing_organization_alignment_denies_only_that_branch(self):
+        # Local team permission row stays; only organization equality fails.
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(
+                team=self.writers, repository=self.repo_a, operation=self.read,
+            ).exists()
+        )
         self.writers.organization = self.org_b
         self.writers.save()
         self._object_list_agree(self.member, self.read, self.repo_a, False)

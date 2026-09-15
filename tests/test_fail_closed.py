@@ -143,6 +143,15 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertEqual(len(handle.registry.records), 1)
         self.assertIs(record.root, TeamRepositoryPermission)
 
+    def test_duplicate_team_registration_fails_closed_without_mutation(self):
+        handle = isolated_handle()
+        register_team(handle)
+        before = handle.registry.records
+        with self.assertNumQueries(0):
+            with self.assertRaises(TrustsConfigurationError):
+                register_team(handle)
+        self.assertEqual(handle.registry.records, before)
+
     def test_register_team_adds_independent_root_beside_direct(self):
         handle = isolated_handle()
         register_direct(handle)
