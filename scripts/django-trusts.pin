@@ -1,4 +1,4 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired handle.register + symbolic condition API (django-trusts#211).
+# Paired handle.register + symbolic condition API (django-trusts#213).
 # Never pin django-trusts-zero.
-ref=8bfe6151b5a65af2d0667ab3a71680eecc90a691
+ref=a909eaeb8e087977fb1c1076682aab0b5ad754c5

@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # Paired core handle.register + symbolic condition API (django-trusts#211).
-  COMPANION_KERNEL_SHA: 8bfe6151b5a65af2d0667ab3a71680eecc90a691
+  # Paired core register + symbolic condition train (django-trusts#213).
+  COMPANION_KERNEL_SHA: a909eaeb8e087977fb1c1076682aab0b5ad754c5
 
 jobs:
   tests:
@@ -47,7 +47,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '8bfe6151b5a65af2d0667ab3a71680eecc90a691' in pin, pin
+        assert 'a909eaeb8e087977fb1c1076682aab0b5ad754c5' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
@@ -62,7 +62,7 @@ jobs:
       run: python -m django makemigrations gh_permissions --check --settings=tests.settings
 
   pair-final-core:
-    name: pair with django-trusts #211
+    name: pair with django-trusts #213
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -78,8 +78,8 @@ jobs:
         python-version: "3.12"
     - name: Matrix on exact final-core merge
       run: |
-        test "${COMPANION_KERNEL_SHA}" = "8bfe6151b5a65af2d0667ab3a71680eecc90a691"
-        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "8bfe6151b5a65af2d0667ab3a71680eecc90a691"
+        test "${COMPANION_KERNEL_SHA}" = "a909eaeb8e087977fb1c1076682aab0b5ad754c5"
+        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "a909eaeb8e087977fb1c1076682aab0b5ad754c5"
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
