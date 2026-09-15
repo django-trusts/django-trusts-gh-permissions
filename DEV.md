@@ -14,11 +14,9 @@ merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI and
 `scripts/django-trusts.pin` use the public `handle.register` plus
 symbolic-condition API from django-trusts
 [#213](https://github.com/django-trusts/django-trusts/pull/213)
-`DEV_register_api_train` head `a909eaeb8e087977fb1c1076682aab0b5ad754c5`.
-
-The earlier documented [#211](https://github.com/django-trusts/django-trusts/pull/211)
-symbolic-condition head `8bfe6151b5a65af2d0667ab3a71680eecc90a691` is
-superseded for this pin; #213 stacks that reviewed API.
+integration train `DEV_register_api_train` head
+`a909eaeb8e087977fb1c1076682aab0b5ad754c5` (stacks approved #206 docs,
+#208 `register(*, trust=...)`, and #211 symbolic `condition=`).
 
 The earlier documented `handle.register_relationship` pair
 [#174](https://github.com/django-trusts/django-trusts/pull/174)
