@@ -48,6 +48,14 @@ def _related_accessor_names(model):
     return names
 
 
+APPLICATION_POLICY_NEEDLES = (
+    'register_relationship(',
+    'permission_in(',
+    'Equal(',
+    'All(',
+)
+
+
 class GhNamingTest(SimpleTestCase):
     def test_package_source_uses_gh_not_full_external_name(self):
         import gh_permissions
@@ -74,14 +82,32 @@ class GhNamingTest(SimpleTestCase):
         self.assertIn('register_direct', source)
         self.assertIn('register_team', source)
         self.assertNotIn('register_gh_policy', source)
-        self.assertIn('permission_in', source)
-        self.assertIn('Equal', source)
-        self.assertIn('All', source)
-        self.assertIn('handle.register_relationship(', source)
-        self.assertNotIn('handle.register(', source)
+        self.assertIn('handle.register(', source)
+        self.assertIn('trust=TeamRepositoryPermission', source)
+        self.assertIn('condition=lambda t:', source)
+        self.assertIn('.contains(t.operation)', source)
+        self.assertNotIn('register_relationship(', source)
+        self.assertNotIn('permission_in(', source)
+        self.assertNotIn('Equal(', source)
+        self.assertNotIn('All(', source)
         self.assertNotIn('from trusts.core import All, Equal, Ref, permission_in', source)
         self.assertNotIn('Ref(', source)
         self.assertNotIn('.registry.register(', source)
+        self.assertNotIn('predicate=', source)
+        self.assertNotIn(' in ', source)
+
+    def test_application_facing_policy_has_no_removed_public_nodes(self):
+        paths = (
+            Path(__file__).resolve().parents[1] / 'gh_permissions' / 'policy.py',
+            Path(__file__).resolve().parents[1] / 'README.md',
+        )
+        offenders = []
+        for path in paths:
+            text = path.read_text()
+            for needle in APPLICATION_POLICY_NEEDLES:
+                if needle in text:
+                    offenders.append('%s: %s' % (path.name, needle))
+        self.assertEqual(offenders, [])
 
     def test_obsolete_account_bundle_and_queryset_glue_are_gone(self):
         import gh_permissions.models as models

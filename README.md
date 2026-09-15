@@ -53,18 +53,16 @@ AUTHENTICATION_BACKENDS = (
 registration (contributed at startup) is:
 
 ```python
-from trusts.core import All, Equal, permission_in
-
 from gh_permissions.models import TeamRepositoryPermission
 
-handle.register_relationship(
-    TeamRepositoryPermission,
+backend.register(
+    trust=TeamRepositoryPermission,
     user="team__members",
     permission="operation",
     content="repository",
-    condition=All(
-        permission_in("team__allowed_operations"),
-        Equal("team__organization", "repository__organization"),
+    condition=lambda t: (
+        t.team.allowed_operations.contains(t.operation)
+        & (t.team.organization == t.repository.organization)
     ),
 )
 ```

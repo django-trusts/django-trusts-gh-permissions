@@ -1,4 +1,4 @@
-"""GH policy registrations on public ``BackendHandle.register_relationship``.
+"""GH policy registrations on public ``BackendHandle.register``.
 
 Direct is the three-FK user/repository/operation row. Team is the
 accepted mapping: terminal membership hop, team operation ceiling, and
@@ -7,7 +7,7 @@ independent roots as separate calls, not one aggregate helper.
 Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
 """
 
-from trusts.core import All, BackendHandle, Equal, permission_in
+from trusts.core import BackendHandle
 
 from gh_permissions.models import TeamRepositoryPermission, UserRepositoryPermission
 
@@ -24,8 +24,8 @@ def _require_handle(handle):
 def register_direct(handle):
     """Register the direct-user permission-bearing relation."""
     handle = _require_handle(handle)
-    return handle.register_relationship(
-        UserRepositoryPermission,
+    return handle.register(
+        trust=UserRepositoryPermission,
         user='user',
         permission='operation',
         content='repository',
@@ -35,13 +35,13 @@ def register_direct(handle):
 def register_team(handle):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
     handle = _require_handle(handle)
-    return handle.register_relationship(
-        TeamRepositoryPermission,
+    return handle.register(
+        trust=TeamRepositoryPermission,
         user='team__members',
         permission='operation',
         content='repository',
-        condition=All(
-            permission_in('team__allowed_operations'),
-            Equal('team__organization', 'repository__organization'),
+        condition=lambda t: (
+            t.team.allowed_operations.contains(t.operation)
+            & (t.team.organization == t.repository.organization)
         ),
     )
