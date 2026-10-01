@@ -1,4 +1,4 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired handle.register + symbolic condition API (django-trusts#213).
+# Enumeration opt-out (#20) is paired with core 781a33df (django-trusts#241).
 # Never pin django-trusts-zero.
-ref=a909eaeb8e087977fb1c1076682aab0b5ad754c5
+ref=781a33dfc46fa3ba10a5e8b634de2d47780e857b
