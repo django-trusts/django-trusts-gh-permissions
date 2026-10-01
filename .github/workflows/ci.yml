@@ -62,7 +62,7 @@ jobs:
       run: python -m django makemigrations gh_permissions --check --settings=tests.settings
 
   pair-final-core:
-    name: pair with django-trusts 781a33df
+    name: pair with django-trusts
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
