@@ -12,6 +12,7 @@ from django.test import SimpleTestCase, TestCase
 from gh_permissions.models import (
     Operation,
     Organization,
+    OrganizationOwnerPermission,
     Repository,
     Team,
     TeamRepositoryPermission,
@@ -81,6 +82,7 @@ class GhNamingTest(SimpleTestCase):
         self.assertNotIn('TrustModelBackend', source)
         self.assertIn('register_direct', source)
         self.assertIn('register_team', source)
+        self.assertIn('register_organization_owner', source)
         self.assertNotIn('register_gh_policy', source)
         self.assertIn('handle.register(', source)
         self.assertIn('trust=TeamRepositoryPermission', source)
@@ -174,6 +176,7 @@ class GhRelationTest(TestCase):
         for model in (
             Organization, Team, Operation, Repository,
             TeamRepositoryPermission, UserRepositoryPermission,
+            OrganizationOwnerPermission,
         ):
             leaked = _related_accessor_names(model).intersection(
                 FORBIDDEN_PUBLIC_RELATIONS,

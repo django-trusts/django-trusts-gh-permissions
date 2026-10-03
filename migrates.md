@@ -655,3 +655,115 @@ Then:
       Do not tip-chase past that train head. Do not introduce
       `register_ordered_fold`, private registry donation, `Ref`,
       reverse walking, new joins, or Zero.
+
+# Add OrganizationOwnerPermission (issue #22)
+
+This record is the **schema delta** for organization-owner
+administration on `main` `ce31e4ff667ec47c343edcf14fbdb6f893fd3b54`.
+Historical sections above stay as written. The #12 checklist item that
+said not to add `Organization.owner` authorization still stands for
+that stair: this stair does not add an `Organization.owner` column.
+
+Administration is a registered Trusts relationship,
+`OrganizationOwnerPermission`. It is not organization membership and
+it is not a repository permission. Direct and team repository
+authorization are unchanged. `GhAuthorizationBackend` still contributes
+no Django permission strings. Package version stays `0.1.0.dev0`. Zero
+stays absent.
+
+## Old behavior
+
+`Organization` had only `name`. No row stored an owner and there was
+no organization-administration table. There was no organization-scoped
+admin. Existing databases have no `owner_id` column on
+`gh_permissions_organization`. Unowned organizations are the only
+state.
+
+## New behavior
+
+`0002_organizationownerpermission` creates
+`OrganizationOwnerPermission` only. It does not alter `Organization`,
+backfill rows, or delete rows. Every organization that existed before
+the migration remains. No permission row is created for it, so it stays
+unowned until a superuser inserts one.
+
+The row is a one-to-one `organization`, an `owner` foreign key to
+`settings.AUTH_USER_MODEL`
+(`related_name='organization_owner_grants'`, `on_delete=CASCADE`), and
+an `operation` foreign key to `Operation`. No row means unowned.
+Deleting the user deletes the grant and leaves the organization, its
+teams, and its repositories in place. Deleting the organization
+deletes the grant.
+
+`register_organization_owner` registers that model with
+`user='owner'`, `permission='operation'`, and
+`content='organization'`, as its own root after direct and team.
+`Organization.objects.authorized(user, operation)` is the admin scope.
+A missing management `Operation`, a missing grant, a different owner,
+or a different operation all fail closed. Repository object, list, and
+enumeration checks stay on the direct and team roots, with the same
+fixed query counts. Membership alone still grants nothing.
+
+## Old → new
+
+```python
+# Old (0001_initial)
+class Organization(models.Model):
+    name = models.CharField(max_length=40, unique=True)
+
+# New (0002_organizationownerpermission)
+# Organization is unchanged. Administration is a separate row:
+class OrganizationOwnerPermission(models.Model):
+    organization = models.OneToOneField(
+        Organization, related_name='owner_grant', on_delete=models.CASCADE,
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+    operation = models.ForeignKey(
+        Operation,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+```
+
+## Migration-bot checklist
+
+Search application code and migrations for an `Organization.owner`
+column, an owner data backfill, or a second admin filter on
+`owner_id`:
+
+```text
+OrganizationOwnerPermission
+register_organization_owner
+0002_organizationownerpermission
+organization_owner_grants
+```
+
+Then:
+
+- [ ] Apply `gh_permissions.0002_organizationownerpermission` forward
+      from a database that already has `0001_initial`. Do not reset the
+      database and do not regenerate `0001_initial`.
+- [ ] Confirm the migration is only `CreateModel` of
+      `OrganizationOwnerPermission`. It must not use `AddField`,
+      `RunPython`, `RemoveField`, or `DeleteModel`.
+- [ ] Confirm pre-existing organization rows are still present, still
+      have no `owner_id` column, and have no permission row.
+- [ ] Confirm a superuser may insert a permission row later. Do not
+      invent a backfill that picks an owner.
+- [ ] Confirm repository authorization does not read the new root.
+      Object, authorized queryset, and permission enumeration stay on
+      the direct and team roots, with the same fixed query counts.
+- [ ] Confirm `Organization.objects.authorized(user, operation)` is
+      empty until a matching permission row exists.
+- [ ] Confirm `AUTH_USER_MODEL` remains the grant owner, the team
+      member target, and the direct-grant subject.
+- [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
+- [ ] `python -m django migrate --noinput` on a fresh database.
+- [ ] Upgrade `0001_initial` → head without dropping organization rows.
+- [ ] `python -m django makemigrations gh_permissions --check` is quiet.
+- [ ] Do not rename `Team`. Do not treat `Team` as `auth.Group` or as
+      Core `group=`.

@@ -8,6 +8,11 @@ organization, team, and repository relationships on
 It is **not affiliated with GitHub** and is **not** a complete GitHub
 authorization clone. Treat it as a worked example, not a migration target.
 
+This bounded example does not reproduce GitHub directly. Its `Team` is
+role-like: it groups members, carries an allowed-operation ceiling, and
+receives repository grants. It does not model the broader collaboration
+behavior of a real GitHub team.
+
 Do **not** list `'trusts'` in `INSTALLED_APPS`. Core is a Python
 library, not a Django app.
 
@@ -34,8 +39,10 @@ Requester, team-member, and direct-grant relations use
 
 ## Configure
 
-These imports and settings match the project's verified test
-configuration. Core `'trusts'` is absent.
+These imports and settings are the supported authorization install.
+Core `'trusts'` is absent. Tests that exercise organization-owner
+admin also install Django's admin, sessions, messages, and static
+files. Those apps are not part of authorization.
 
 ```python
 INSTALLED_APPS = (
@@ -105,12 +112,46 @@ python -m pip install .
 
 Requires **Python 3.12–3.14** and **Django 6.1**.
 
+## Organization-owner admin
+
+Organization administration is a registered Trusts relationship,
+`OrganizationOwnerPermission`: one user, one operation, and one
+organization. No row means the organization is unowned. That
+relationship is separate from the direct and team repository roots, so
+owning an organization does not authorize repository operations. Team
+membership remains only a repository authorization path: membership
+alone grants nothing, and an organization owner who is not a member
+and has no direct grant cannot perform repository operations.
+
+A staff user who holds that grant for the declared management operation,
+and who holds the Django model permissions for that organization's
+teams, repositories, membership, and direct or team repository grants,
+can manage those rows. Django model permissions are the coarse admin
+entrance. Trusts supplies the organization boundary. Rows in other
+organizations are closed. The owner cannot create, retarget, or delete
+the grant that supplies that boundary. Application superusers can
+administer every row, including organizations that do not yet have a
+grant, and they assign the grant. Existing organizations stay unowned
+until a superuser adds one. User accounts stay on Django's user admin.
+Selecting a user as a member or direct-grant target does not administer
+that account.
+
+Projects that enable this admin install `django.contrib.admin` (with
+sessions and messages) and list
+`django.contrib.auth.backends.ModelBackend` beside
+`GhAuthorizationBackend`. `GhAuthorizationBackend` still contributes no
+Django permission strings. `ModelBackend` resolves staff model
+permissions and loads the logged-in user. The result of the bounded
+proof is written up in
+[docs/org-scoped-admin.md](docs/org-scoped-admin.md).
+
 ## Limitations
 
-There is no implicit permission-level hierarchy, org-owner admin,
-public anonymous read, nested teams, invitations, token/app scopes,
-branch protection, deploy keys, Actions secrets, forks, CODEOWNERS,
-visibility matrix, or org default repository permission.
+There is no implicit permission-level hierarchy and no org-owner admin
+grant on repositories. There is no public anonymous read, nested teams,
+invitations, token/app scopes, branch protection, deploy keys, Actions
+secrets, forks, CODEOWNERS, visibility matrix, or org default
+repository permission.
 
 ## Documentation
 

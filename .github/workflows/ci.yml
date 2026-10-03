@@ -56,6 +56,8 @@ jobs:
         coverage report
     - name: Fresh migrate
       run: python -m django migrate --noinput --settings=tests.settings
+    - name: Migration upgrade
+      run: python manage.py test tests.test_org_scoped_admin.OrganizationOwnerMigrationTests --settings=tests.settings -v1
     - name: System checks
       run: python -m django check --settings=tests.settings
     - name: makemigrations --check
@@ -86,6 +88,7 @@ jobs:
         python -m pip install -e . --config-settings editable_mode=compat
         coverage run -m tests.runtests
         python -m django migrate --noinput --settings=tests.settings
+        python manage.py test tests.test_org_scoped_admin.OrganizationOwnerMigrationTests --settings=tests.settings -v1
         python -m django check --settings=tests.settings
         python -m django makemigrations gh_permissions --check --settings=tests.settings
 
