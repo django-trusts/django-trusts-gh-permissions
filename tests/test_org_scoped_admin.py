@@ -12,6 +12,7 @@ from django.contrib import admin
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.exceptions import FieldDoesNotExist
 from django.core.management import call_command
 from django.db import connection
 from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
@@ -20,6 +21,7 @@ from django.urls import reverse
 
 from gh_permissions.admin import (
     OrganizationAdmin,
+    OrganizationOwnerPermissionAdmin,
     OrgScopedAdmin,
     RepositoryAdmin,
     TeamAdmin,
@@ -30,6 +32,7 @@ from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Operation,
     Organization,
+    OrganizationOwnerPermission,
     Repository,
     Team,
     TeamRepositoryPermission,
@@ -49,6 +52,7 @@ SCOPED_MODELS = (
     Repository,
     UserRepositoryPermission,
     TeamRepositoryPermission,
+    OrganizationOwnerPermission,
 )
 CONCRETE_ADMINS = (
     OrganizationAdmin,
@@ -56,6 +60,7 @@ CONCRETE_ADMINS = (
     RepositoryAdmin,
     UserRepositoryPermissionAdmin,
     TeamRepositoryPermissionAdmin,
+    OrganizationOwnerPermissionAdmin,
 )
 
 
@@ -143,15 +148,21 @@ class OrgScopedAdminContractTests(SimpleTestCase):
         self.assertFalse((ROOT / 'gh_permissions' / 'templates').exists())
         self.assertFalse((ROOT / 'gh_permissions' / 'views.py').exists())
 
-    def test_owner_migration_is_a_nullable_add_field(self):
+    def test_owner_migration_creates_the_grant_and_not_an_owner_column(self):
         text = (
-            ROOT / 'gh_permissions' / 'migrations' / '0002_organization_owner.py'
+            ROOT / 'gh_permissions' / 'migrations' / '0002_organizationownerpermission.py'
         ).read_text()
-        self.assertIn('AddField', text)
-        self.assertIn('null=True', text)
+        self.assertIn("name='OrganizationOwnerPermission'", text)
+        self.assertNotIn('AddField', text)
         self.assertNotIn('RemoveField', text)
         self.assertNotIn('DeleteModel', text)
         self.assertNotIn('RunPython', text)
+        self.assertNotIn('owned_organizations', text)
+        admin_source = (ROOT / 'gh_permissions' / 'admin.py').read_text()
+        self.assertIn('Organization.objects.authorized', admin_source)
+        self.assertNotIn('_scope_queryset', admin_source)
+        self.assertNotIn('owner=user', admin_source)
+        self.assertNotIn('owner_id', admin_source)
 
     def test_user_facing_copy_keeps_role_like_team_disclaimer(self):
         readme = (ROOT / 'README.md').read_text()
@@ -175,7 +186,7 @@ class OrganizationOwnerMigrationTests(TransactionTestCase):
         )
         super().tearDown()
 
-    def test_upgrade_from_initial_preserves_rows_and_leaves_owner_null(self):
+    def test_upgrade_from_initial_preserves_rows_without_an_owner_column(self):
         call_command(
             'migrate', 'gh_permissions', '0001_initial',
             verbosity=0, interactive=False,
@@ -197,15 +208,13 @@ class OrganizationOwnerMigrationTests(TransactionTestCase):
             'migrate', 'gh_permissions', verbosity=0, interactive=False,
         )
         org = Organization.objects.get(name='legacy-org')
-        self.assertIsNone(org.owner_id)
         self.assertEqual(Organization.objects.count(), 1)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT owner_id FROM gh_permissions_organization "
-                "WHERE name = 'legacy-org'"
-            )
-            self.assertIsNone(cursor.fetchone()[0])
-        self.assertTrue(Organization._meta.get_field('owner').null)
+        with self.assertRaises(FieldDoesNotExist):
+            Organization._meta.get_field('owner')
+        self.assertFalse(
+            OrganizationOwnerPermission.objects.filter(organization=org).exists(),
+        )
+        self.assertEqual(OrganizationOwnerPermission.objects.count(), 0)
 
 
 @override_settings(AUTHENTICATION_BACKENDS=ADMIN_BACKENDS)
@@ -232,15 +241,25 @@ class OrgScopedAdminRequestTests(TestCase):
         self.member = User.objects.create(username='already-member', is_active=True)
         for user in (self.owner_a, self.owner_b, self.staff_empty):
             _grant_scoped(user)
-        self.org_a = Organization.objects.create(name='owned-alpha', owner=self.owner_a)
-        self.org_a2 = Organization.objects.create(name='owned-delta', owner=self.owner_a)
-        self.org_b = Organization.objects.create(name='foreign-beta', owner=self.owner_b)
+        self.org_a = Organization.objects.create(name='owned-alpha')
+        self.org_a2 = Organization.objects.create(name='owned-delta')
+        self.org_b = Organization.objects.create(name='foreign-beta')
         self.org_free = Organization.objects.create(name='unowned-gamma')
         self.team_a = Team.objects.create(organization=self.org_a, name='alpha-writers')
         self.team_b = Team.objects.create(organization=self.org_b, name='beta-outsiders')
         self.team_a.members.add(self.member)
         self.read = Operation.objects.create(code='read')
         self.write = Operation.objects.create(code='write')
+        self.manage = Operation.objects.create(code=OrgScopedAdmin.management_operation)
+        self.grant_a = OrganizationOwnerPermission.objects.create(
+            organization=self.org_a, owner=self.owner_a, operation=self.manage,
+        )
+        self.grant_a2 = OrganizationOwnerPermission.objects.create(
+            organization=self.org_a2, owner=self.owner_a, operation=self.manage,
+        )
+        self.grant_b = OrganizationOwnerPermission.objects.create(
+            organization=self.org_b, owner=self.owner_b, operation=self.manage,
+        )
         self.team_a.allowed_operations.add(self.read)
         self.repo_a = Repository.objects.create(
             organization=self.org_a, title='alpha-repo',
@@ -297,11 +316,28 @@ class OrgScopedAdminRequestTests(TestCase):
         )
         created = self.super_client.post(
             reverse('admin:gh_permissions_organization_add'),
-            {'name': 'super-added', 'owner': str(self.owner_a.pk), '_save': 'Save'},
+            {'name': 'super-added', '_save': 'Save'},
         )
         self.assertEqual(created.status_code, 302)
-        self.assertTrue(
-            Organization.objects.filter(name='super-added', owner=self.owner_a).exists(),
+        added = Organization.objects.get(name='super-added')
+        self.assertFalse(
+            OrganizationOwnerPermission.objects.filter(organization=added).exists(),
+        )
+        granted = self.super_client.post(
+            reverse('admin:gh_permissions_organizationownerpermission_add'),
+            {
+                'organization': str(added.pk),
+                'owner': str(self.owner_a.pk),
+                'operation': str(self.manage.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(granted.status_code, 302)
+        self.assertContains(
+            self.owner_client.get(
+                reverse('admin:gh_permissions_organization_changelist'),
+            ),
+            'super-added',
         )
 
     def test_owner_changelist_is_sql_filtered_before_pagination(self):
@@ -320,7 +356,8 @@ class OrgScopedAdminRequestTests(TestCase):
             ]
             self.assertTrue(limited)
             for sql in limited:
-                self.assertIn('owner_id', sql)
+                self.assertIn('gh_permissions_organizationownerpermission', sql)
+                self.assertNotIn('gh_permissions_organization"."owner_id', sql)
             self.assertContains(page, '2 teams')
             self.assertNotContains(page, 'beta-outsiders')
             self.assertNotContains(page, 'foreign-beta')
@@ -386,7 +423,11 @@ class OrgScopedAdminRequestTests(TestCase):
             list(Team.objects.order_by('pk').values_list('pk', 'name', 'organization_id')),
             before,
         )
-        self.assertTrue(Organization.objects.filter(pk=self.org_b.pk, owner=self.owner_b).exists())
+        self.assertTrue(
+            OrganizationOwnerPermission.objects.filter(
+                pk=self.grant_b.pk, owner=self.owner_b, organization=self.org_b,
+            ).exists(),
+        )
         owned_history = self.owner_client.get(
             reverse('admin:gh_permissions_team_history', args=[self.team_a.pk]),
         )
@@ -820,25 +861,73 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertFalse(Team.objects.filter(pk=self.team_a.pk).exists())
         self.assertTrue(Repository.objects.filter(pk=self.repo_b.pk).exists())
 
-    def test_ownership_cannot_be_moved_by_an_owner(self):
+    def test_owner_cannot_mint_or_retarget_the_authority_grant(self):
         renamed = self.owner_client.post(
             reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
-            {
-                'name': 'owned-alpha-renamed',
-                'owner': str(self.owner_b.pk),
-                '_save': 'Save',
-            },
+            {'name': 'owned-alpha-renamed', '_save': 'Save'},
         )
         self.assertEqual(renamed.status_code, 302)
         self.org_a.refresh_from_db()
         self.assertEqual(self.org_a.name, 'owned-alpha-renamed')
-        self.assertEqual(self.org_a.owner_id, self.owner_a.pk)
-        add = self.owner_client.post(
+        self.grant_a.refresh_from_db()
+        self.assertEqual(self.grant_a.owner_id, self.owner_a.pk)
+        add_org = self.owner_client.post(
             reverse('admin:gh_permissions_organization_add'),
-            {'name': 'stolen', 'owner': str(self.owner_a.pk), '_save': 'Save'},
+            {'name': 'stolen', '_save': 'Save'},
         )
-        self.assertEqual(add.status_code, 403)
+        self.assertEqual(add_org.status_code, 403)
         self.assertFalse(Organization.objects.filter(name='stolen').exists())
+        forged_add = self.owner_client.post(
+            reverse('admin:gh_permissions_organizationownerpermission_add'),
+            {
+                'organization': str(self.org_free.pk),
+                'owner': str(self.owner_a.pk),
+                'operation': str(self.manage.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(forged_add.status_code, 403)
+        self.assertFalse(
+            OrganizationOwnerPermission.objects.filter(organization=self.org_free).exists(),
+        )
+        forged_change = self.owner_client.post(
+            reverse(
+                'admin:gh_permissions_organizationownerpermission_change',
+                args=[self.grant_a.pk],
+            ),
+            {
+                'organization': str(self.org_b.pk),
+                'owner': str(self.owner_a.pk),
+                'operation': str(self.manage.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(forged_change.status_code, 403)
+        self.grant_a.refresh_from_db()
+        self.assertEqual(self.grant_a.organization_id, self.org_a.pk)
+        self.assertEqual(self.grant_a.owner_id, self.owner_a.pk)
+        self.assertEqual(self.grant_a.operation_id, self.manage.pk)
+        forged_delete = self.owner_client.post(
+            reverse(
+                'admin:gh_permissions_organizationownerpermission_delete',
+                args=[self.grant_a.pk],
+            ),
+            {'post': 'yes'},
+        )
+        self.assertEqual(forged_delete.status_code, 403)
+        bulk = self.owner_client.post(
+            reverse('admin:gh_permissions_organizationownerpermission_changelist'),
+            {
+                'action': 'delete_selected',
+                'post': 'yes',
+                'select_across': '1',
+                ACTION_CHECKBOX_NAME: [str(self.grant_a.pk)],
+            },
+        )
+        self.assertEqual(bulk.status_code, 403)
+        self.assertTrue(
+            OrganizationOwnerPermission.objects.filter(pk=self.grant_a.pk).exists(),
+        )
         moved = self.owner_client.post(
             reverse('admin:gh_permissions_team_change', args=[self.team_a.pk]),
             {
@@ -857,16 +946,20 @@ class OrgScopedAdminRequestTests(TestCase):
             'alpha-writers',
         )
         reassigned = self.super_client.post(
-            reverse('admin:gh_permissions_organization_change', args=[self.org_b.pk]),
+            reverse(
+                'admin:gh_permissions_organizationownerpermission_change',
+                args=[self.grant_b.pk],
+            ),
             {
-                'name': 'foreign-beta',
+                'organization': str(self.org_b.pk),
                 'owner': str(self.owner_a.pk),
+                'operation': str(self.manage.pk),
                 '_save': 'Save',
             },
         )
         self.assertEqual(reassigned.status_code, 302)
-        self.org_b.refresh_from_db()
-        self.assertEqual(self.org_b.owner_id, self.owner_a.pk)
+        self.grant_b.refresh_from_db()
+        self.assertEqual(self.grant_b.owner_id, self.owner_a.pk)
         self.assertContains(
             self.owner_client.get(
                 reverse('admin:gh_permissions_organization_changelist'),
@@ -951,8 +1044,10 @@ class OrgScopedAdminRequestTests(TestCase):
 
     def test_deleting_the_owner_clears_administration_and_keeps_rows(self):
         self.owner_a.delete()
-        self.org_a.refresh_from_db()
-        self.assertIsNone(self.org_a.owner_id)
+        self.assertFalse(
+            OrganizationOwnerPermission.objects.filter(organization=self.org_a).exists(),
+        )
+        self.assertTrue(Organization.objects.filter(pk=self.org_a.pk).exists())
         self.assertTrue(Team.objects.filter(pk=self.team_a.pk).exists())
         self.assertTrue(Repository.objects.filter(pk=self.repo_a.pk).exists())
         listing = self.super_client.get(
@@ -965,3 +1060,139 @@ class OrgScopedAdminRequestTests(TestCase):
             ),
             'owned-alpha',
         )
+
+    def test_owner_grant_row_gates_admin_and_matches_authorized(self):
+        OrganizationOwnerPermission.objects.filter(owner=self.owner_a).delete()
+        self.assertEqual(
+            set(Organization.objects.authorized(self.owner_a, self.manage)),
+            set(),
+        )
+        hidden = self.owner_client.get(
+            reverse('admin:gh_permissions_organization_changelist'),
+        )
+        self.assertNotContains(hidden, 'owned-alpha')
+        self.assertNotContains(hidden, 'owned-delta')
+        self._closed(
+            self.owner_client,
+            reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
+        )
+
+        OrganizationOwnerPermission.objects.create(
+            organization=self.org_a, owner=self.owner_a, operation=self.manage,
+        )
+        managed = set(Organization.objects.authorized(self.owner_a, self.manage))
+        self.assertEqual(managed, {self.org_a})
+        shown = self.owner_client.get(
+            reverse('admin:gh_permissions_organization_changelist'),
+        )
+        self.assertContains(shown, 'owned-alpha')
+        self.assertNotContains(shown, 'owned-delta')
+        self.assertNotContains(shown, 'foreign-beta')
+        self.assertNotContains(shown, 'unowned-gamma')
+        self.assertEqual(
+            self.owner_client.get(
+                reverse('admin:gh_permissions_team_change', args=[self.team_a.pk]),
+            ).status_code,
+            200,
+        )
+
+        grant = OrganizationOwnerPermission.objects.get(organization=self.org_a)
+        grant.operation = self.read
+        grant.save()
+        self.assertEqual(
+            set(Organization.objects.authorized(self.owner_a, self.manage)),
+            set(),
+        )
+        self._closed(
+            self.owner_client,
+            reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
+        )
+
+        grant.operation = self.manage
+        grant.owner = self.owner_b
+        grant.save()
+        self.assertNotIn(
+            self.org_a, Organization.objects.authorized(self.owner_a, self.manage),
+        )
+        self.assertIn(
+            self.org_a, Organization.objects.authorized(self.owner_b, self.manage),
+        )
+        self.assertContains(
+            self.foreign_client.get(
+                reverse('admin:gh_permissions_organization_changelist'),
+            ),
+            'owned-alpha',
+        )
+        self._closed(
+            self.owner_client,
+            reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
+        )
+        grant.delete()
+        self.assertNotIn(
+            self.org_a, Organization.objects.authorized(self.owner_b, self.manage),
+        )
+        self._closed(
+            self.foreign_client,
+            reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
+        )
+
+    def test_repository_paths_do_not_supply_admin_authority(self):
+        registry = _registry()
+        with self.assertNumQueries(1):
+            self.assertFalse(
+                registry.has_permission(self.owner_a, self.repo_a, self.read),
+            )
+        self.assertEqual(
+            list(Repository.objects.authorized(self.owner_a, self.read)),
+            [],
+        )
+        self.assertEqual(
+            set(Organization.objects.authorized(self.owner_a, self.manage)),
+            {self.org_a, self.org_a2},
+        )
+        self.team_a.members.add(self.staff_empty)
+        UserRepositoryPermission.objects.create(
+            user=self.staff_empty, repository=self.repo_a, operation=self.read,
+        )
+        TeamRepositoryPermission.objects.create(
+            team=self.team_a, repository=self.repo_a, operation=self.read,
+        )
+        self.assertTrue(
+            registry.has_permission(self.staff_empty, self.repo_a, self.read),
+        )
+        self.assertEqual(
+            list(Organization.objects.authorized(self.staff_empty, self.manage)),
+            [],
+        )
+        listing = self.empty_client.get(
+            reverse('admin:gh_permissions_organization_changelist'),
+        )
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotContains(listing, 'owned-alpha')
+        self.assertEqual(
+            self.empty_client.get(
+                reverse('admin:gh_permissions_team_change', args=[self.team_a.pk]),
+            ).status_code,
+            302,
+        )
+
+    def test_missing_management_operation_authorizes_nothing(self):
+        previous = OrgScopedAdmin.management_operation
+        OrgScopedAdmin.management_operation = 'missing-manage'
+        try:
+            self.assertEqual(
+                set(Organization.objects.authorized(self.owner_a, self.manage)),
+                {self.org_a, self.org_a2},
+            )
+            listing = self.owner_client.get(
+                reverse('admin:gh_permissions_organization_changelist'),
+            )
+            self.assertNotContains(listing, 'owned-alpha')
+            self.assertEqual(
+                self.owner_client.get(
+                    reverse('admin:gh_permissions_team_add'),
+                ).status_code,
+                403,
+            )
+        finally:
+            OrgScopedAdmin.management_operation = previous

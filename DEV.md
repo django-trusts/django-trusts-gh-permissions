@@ -82,8 +82,11 @@ Public relations used to authorize: `user.teams`,
 `AUTH_USER_MODEL` and `Operation` **instances**.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
-Direct is `register_direct`. Both take the configured `BackendHandle`
-and call `handle.register` with `trust=` plus Django `__` path strings.
+Direct is `register_direct`. Organization administration is
+`register_organization_owner` (`OrganizationOwnerPermission`, content
+`organization`). Each takes the configured `BackendHandle` and calls
+`handle.register` with `trust=` plus Django `__` path strings. The
+organization-owner root does not authorize repository operations.
 Team adds a one-argument symbolic `condition=` using `.contains`, `==`,
 and `&`. Literal Python `in` is unsupported. There is no aggregate
 `register_gh_policy()`.
@@ -137,10 +140,10 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
-| Policy registrations | `policy.py` | Direct and team `handle.register` with `trust=` and a symbolic team condition; no aggregate helper |
+| Domain models | `models.py` + migrations | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission, OrganizationOwnerPermission |
+| Policy registrations | `policy.py` | Direct, team, and organization-owner `handle.register` calls with `trust=` and a symbolic team condition; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |
+| Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct`, then `register_team`, then `register_organization_owner` on the handle |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |
 
 Package version is **0.1.0.dev0**.

@@ -114,20 +114,27 @@ Requires **Python 3.12–3.14** and **Django 6.1**.
 
 ## Organization-owner admin
 
-Organization ownership is administration authority for Django's built-in
-admin. It is not a Trusts grant. Team membership remains only an
-authorization grant path: membership alone grants nothing, and an owner
-who is not a member and has no direct grant cannot perform repository
-operations.
+Organization administration is a registered Trusts relationship,
+`OrganizationOwnerPermission`: one user, one operation, and one
+organization. No row means the organization is unowned. That
+relationship is separate from the direct and team repository roots, so
+owning an organization does not authorize repository operations. Team
+membership remains only a repository authorization path: membership
+alone grants nothing, and an organization owner who is not a member
+and has no direct grant cannot perform repository operations.
 
-A staff user who owns an organization and holds the Django model
-permissions for that organization's teams, repositories, membership,
-and direct or team repository grants can manage those rows. Rows in
-other organizations are closed. Application superusers can administer
-every row, including organizations that do not yet have an owner.
-Existing organizations stay unowned until a superuser assigns one.
-User accounts stay on Django's user admin. Selecting a user as a member
-or direct-grant target does not administer that account.
+A staff user who holds that grant for the declared management operation,
+and who holds the Django model permissions for that organization's
+teams, repositories, membership, and direct or team repository grants,
+can manage those rows. Django model permissions are the coarse admin
+entrance. Trusts supplies the organization boundary. Rows in other
+organizations are closed. The owner cannot create, retarget, or delete
+the grant that supplies that boundary. Application superusers can
+administer every row, including organizations that do not yet have a
+grant, and they assign the grant. Existing organizations stay unowned
+until a superuser adds one. User accounts stay on Django's user admin.
+Selecting a user as a member or direct-grant target does not administer
+that account.
 
 Projects that enable this admin install `django.contrib.admin` (with
 sessions and messages) and list

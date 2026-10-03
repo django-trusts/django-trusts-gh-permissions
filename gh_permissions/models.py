@@ -5,12 +5,12 @@ Public relations used to authorize:
     user.teams
     team.allowed_operations
     repository.organization
+    organization owner grant (user, operation, organization)
 
-``organization.teams`` / ``organization.repositories`` are owner
-containment. They are not a grant. Organization membership is not
-modeled here and is not a Trusts grant edge. These models never inherit
-Content and never expose ``.trusts``, ``.trustees``, ``.contexts``,
-``.roles``, or ``.groups``.
+``organization.teams`` / ``organization.repositories`` are containment.
+They are not a grant. Organization membership is not modeled here.
+These models never inherit Content and never expose ``.trusts``,
+``.trustees``, ``.contexts``, ``.roles``, or ``.groups``.
 """
 
 from django.conf import settings
@@ -20,23 +20,15 @@ from trusts.query import AuthorizedManager
 
 
 class Organization(models.Model):
-    """Containment. Not a grant and not a membership roster.
+    """Containment. Not a membership roster and not a repository grant.
 
-    ``owner`` is administration authority for Django admin. It is not a
-    Trusts grant edge: owning an organization does not authorize
-    repository operations. Null means unowned, which only a superuser
-    can administer. Deleting the owner clears the field (``SET_NULL``)
-    and leaves the rows in place.
+    Administration is a separate ``OrganizationOwnerPermission`` row.
+    No such row means the organization is unowned.
     """
 
     name = models.CharField(max_length=40, unique=True)
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name='owned_organizations',
-    )
+
+    objects = AuthorizedManager()
 
     def __str__(self):
         return self.name
@@ -129,3 +121,31 @@ class TeamRepositoryPermission(models.Model):
 
     class Meta:
         unique_together = ('team', 'repository', 'operation')
+
+
+class OrganizationOwnerPermission(models.Model):
+    """Organization administration grant. Not a repository permission.
+
+    One row names the user and operation for one organization. No row
+    means unowned. Deleting the user or the organization deletes the
+    row and leaves the other side in place.
+    """
+
+    organization = models.OneToOneField(
+        Organization,
+        related_name='owner_grant',
+        on_delete=models.CASCADE,
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+    operation = models.ForeignKey(
+        Operation,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+
+    def __str__(self):
+        return '%s:%s' % (self.organization, self.operation)

@@ -88,7 +88,7 @@ class KernelMigrationLoaderTest(TestCase):
         }
         self.assertEqual(gh_keys, {
             ('gh_permissions', '0001_initial'),
-            ('gh_permissions', '0002_organization_owner'),
+            ('gh_permissions', '0002_organizationownerpermission'),
         })
 
 

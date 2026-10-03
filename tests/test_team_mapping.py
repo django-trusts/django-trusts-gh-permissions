@@ -33,7 +33,11 @@ from trusts.core import (
 )
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
-from gh_permissions.policy import register_direct, register_team
+from gh_permissions.policy import (
+    register_direct,
+    register_organization_owner,
+    register_team,
+)
 from tests.fixtures import isolated_handle
 
 
@@ -73,3 +77,5 @@ class TeamMappingRegistrationTest(TestCase):
             register_team(registry)
         with self.assertRaises(TypeError):
             register_direct(registry)
+        with self.assertRaises(TypeError):
+            register_organization_owner(registry)

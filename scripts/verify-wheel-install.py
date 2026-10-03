@@ -91,6 +91,7 @@ def main() -> int:
     from django.apps import apps as django_apps
     from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
     from gh_permissions.models import (
+        OrganizationOwnerPermission,
         Repository,
         TeamRepositoryPermission,
         UserRepositoryPermission,
@@ -131,9 +132,14 @@ def main() -> int:
 
     registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
     roots = [record.root for record in registry.records]
-    if roots != [UserRepositoryPermission, TeamRepositoryPermission]:
+    if roots != [
+        UserRepositoryPermission,
+        TeamRepositoryPermission,
+        OrganizationOwnerPermission,
+    ]:
         raise SystemExit(
-            'GH-only populate must register direct and team roots: %r' % roots
+            'GH-only populate must register direct, team, and '
+            'organization-owner roots: %r' % roots
         )
 
     print('wheel import ok')

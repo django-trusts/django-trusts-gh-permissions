@@ -11,6 +11,8 @@ from trusts.query import AuthorizedManager, AuthorizedQuerySet
 
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
+    Organization,
+    OrganizationOwnerPermission,
     Repository,
     TeamRepositoryPermission,
     UserRepositoryPermission,
@@ -263,6 +265,7 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
     def test_stock_manager_reads_configured_implementation_handles(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
+        self.assertIs(type(Organization.objects), AuthorizedManager)
 
         handles = configured_implementation_handles()
         self.assertEqual(len(handles), 1)
@@ -270,7 +273,11 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
         roots = [record.root for record in handles[0].registry.records]
         self.assertEqual(
             roots,
-            [UserRepositoryPermission, TeamRepositoryPermission],
+            [
+                UserRepositoryPermission,
+                TeamRepositoryPermission,
+                OrganizationOwnerPermission,
+            ],
         )
 
         with patch(
