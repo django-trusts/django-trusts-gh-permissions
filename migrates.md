@@ -655,3 +655,95 @@ Then:
       Do not tip-chase past that train head. Do not introduce
       `register_ordered_fold`, private registry donation, `Ref`,
       reverse walking, new joins, or Zero.
+
+# Add nullable Organization.owner (issue #22)
+
+This record is the **schema delta** for organization-owner
+administration on `main` `ce31e4ff667ec47c343edcf14fbdb6f893fd3b54`.
+Historical sections above stay as written. The #12 checklist item that
+said not to add `Organization.owner` described that stair. It is not
+this stair.
+
+`owner` is administration authority for Django admin. It is **not** a
+Trusts grant, not an authorization join, and not organization
+membership. Direct and team authorization are unchanged.
+`GhAuthorizationBackend` still contributes no Django permission
+strings. Package version stays `0.1.0.dev0`. Zero stays absent.
+
+## Old behavior
+
+`Organization` had only `name`. No row stored an owner. There was no
+organization-scoped admin. Existing databases have no `owner_id`
+column. Unowned organizations are the only state.
+
+## New behavior
+
+`Organization.owner` is a nullable foreign key to
+`settings.AUTH_USER_MODEL` (`related_name='owned_organizations'`,
+`on_delete=SET_NULL`). Migration `0002_organization_owner` adds that
+column. It does not backfill, rewrite, or delete rows. Every
+organization that existed before the migration remains, with
+`owner_id` NULL, until a superuser assigns an owner.
+
+Null is fail-closed for administration: an unowned organization is
+visible to application superusers and to nobody else. Deleting the
+owning user sets `owner_id` back to NULL and leaves the organization,
+its teams, and its repositories in place.
+
+Authorization does not read `owner`. Membership alone still grants
+nothing. Team operation ceiling and organization alignment are
+unchanged.
+
+## Old → new
+
+```python
+# Old (0001_initial)
+class Organization(models.Model):
+    name = models.CharField(max_length=40, unique=True)
+
+# New (0002_organization_owner)
+class Organization(models.Model):
+    name = models.CharField(max_length=40, unique=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='owned_organizations',
+    )
+```
+
+## Migration-bot checklist
+
+Search application code and migrations for a non-null owner, an owner
+data backfill, or an authorization join on `owner`:
+
+```text
+Organization.owner
+owned_organizations
+0002_organization_owner
+owner_id
+```
+
+Then:
+
+- [ ] Apply `gh_permissions.0002_organization_owner` forward from a
+      database that already has `0001_initial`. Do not reset the
+      database and do not regenerate `0001_initial`.
+- [ ] Confirm the migration is only `AddField` of nullable `owner`.
+      It must not use `RunPython`, `RemoveField`, or `DeleteModel`.
+- [ ] Confirm pre-existing organization rows are still present and
+      `owner_id` is NULL.
+- [ ] Confirm a superuser may assign `owner` later. Do not invent a
+      backfill that picks an owner.
+- [ ] Confirm authorization queries do not join `owner`. Object,
+      authorized queryset, and permission enumeration stay on the
+      direct and team roots, with the same fixed query counts.
+- [ ] Confirm `AUTH_USER_MODEL` remains the owner target, the team
+      member target, and the direct-grant subject.
+- [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
+- [ ] `python -m django migrate --noinput` on a fresh database.
+- [ ] Upgrade `0001_initial` → head without dropping organization rows.
+- [ ] `python -m django makemigrations gh_permissions --check` is quiet.
+- [ ] Do not rename `Team`. Do not treat `Team` as `auth.Group` or as
+      Core `group=`.

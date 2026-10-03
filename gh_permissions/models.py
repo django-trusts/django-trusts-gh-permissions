@@ -20,9 +20,23 @@ from trusts.query import AuthorizedManager
 
 
 class Organization(models.Model):
-    """Owner / containment. Not a grant and not a membership roster."""
+    """Containment. Not a grant and not a membership roster.
+
+    ``owner`` is administration authority for Django admin. It is not a
+    Trusts grant edge: owning an organization does not authorize
+    repository operations. Null means unowned, which only a superuser
+    can administer. Deleting the owner clears the field (``SET_NULL``)
+    and leaves the rows in place.
+    """
 
     name = models.CharField(max_length=40, unique=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='owned_organizations',
+    )
 
     def __str__(self):
         return self.name

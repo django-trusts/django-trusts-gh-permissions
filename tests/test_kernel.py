@@ -86,7 +86,10 @@ class KernelMigrationLoaderTest(TestCase):
         gh_keys = {
             key for key in loader.disk_migrations if key[0] == 'gh_permissions'
         }
-        self.assertEqual(gh_keys, {('gh_permissions', '0001_initial')})
+        self.assertEqual(gh_keys, {
+            ('gh_permissions', '0001_initial'),
+            ('gh_permissions', '0002_organization_owner'),
+        })
 
 
 class ModelsShimTest(SimpleTestCase):
