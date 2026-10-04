@@ -61,10 +61,15 @@ The next #28 slice adds ownership update and delete, the
 `Repository.organization` moves. A conventional organization that
 survives the write must keep an owner. `delete_user` locks every
 conventional organization that user owns, in primary-key order,
-inside the same transaction as the delete. `LastOrganizationOwner`
-lists each organization that would be left empty, and the transaction
-rolls the deletion back. The user's personal organization is deleted
-with the user, so it is not one of those survivors. An active
+inside the same transaction as the delete. The id list can be an
+ordinary read. The decision is a later `select_for_update` of the
+ownership rows, after that organization lock, so a repeatable-read
+snapshot from the id list is not the owner count. The same locking
+recount guards ownership update and delete.
+`LastOrganizationOwner` lists each organization that would be left
+empty, and the transaction rolls the deletion back. The user's
+personal organization is deleted with the user, so it is not one of
+those survivors. An active
 superuser may add the first owner of an organization that has none,
 and may not remove the last one. A persisted inactive actor is still
 denied before that bypass and before the ownership inquiry.

@@ -1466,6 +1466,93 @@ class OwnershipRetentionTests(TestCase):
             user=user, organization_id=personal_pk,
         ).exists())
 
+    def test_last_owner_decision_uses_the_post_lock_current_read(self):
+        import gh_permissions.services as services
+
+        user = create_user('departing')
+        shared = create_organization('shared-lock')
+        OrganizationOwnership.objects.create(user=user, organization=shared)
+        co_owner = OrganizationOwnership.objects.create(
+            user=self.owner, organization=shared,
+        )
+        refusal = self._assert_post_lock_current_read(
+            lambda: delete_user(user),
+            shared.pk,
+            co_owner.pk,
+        )
+        self.assertEqual(refusal.organization_ids, (shared.pk,))
+        self.assertTrue(get_user_model().objects.filter(pk=user.pk).exists())
+        self.assertTrue(Alias.objects.filter(name='departing').exists())
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=co_owner.pk).exists()
+        )
+
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        refusal = self._assert_post_lock_current_read(
+            lambda: delete_organization_ownership(self.owner, self.row.pk),
+            self.org.pk,
+            second.pk,
+        )
+        self.assertEqual(refusal.organization_ids, (self.org.pk,))
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=self.row.pk).exists()
+        )
+
+        superuser = self._superuser('root-lock')
+        refusal = self._assert_post_lock_current_read(
+            lambda: update_organization_ownership(
+                superuser, self.row.pk, organization_id=self.other_org.pk,
+            ),
+            self.org.pk,
+            second.pk,
+            only_locking=False,
+        )
+        self.assertEqual(refusal.organization_ids, (self.org.pk,))
+        self.row.refresh_from_db()
+        self.assertEqual(self.row.organization_id, self.org.pk)
+        self.assertEqual(self.row.user_id, self.owner.pk)
+
+    def _assert_post_lock_current_read(
+        self, call, organization_id, removed_pk, only_locking=True,
+    ):
+        original_fetch = QuerySet._fetch_all
+        events = []
+
+        def fetch(queryset):
+            locking = bool(queryset.query.select_for_update)
+            result = original_fetch(queryset)
+            events.append((queryset.model, locking))
+            locked_ids = []
+            if queryset.model is Organization and locking:
+                locked_ids = [
+                    row.pk for row in queryset._result_cache or ()
+                ]
+            if (
+                locked_ids
+                and organization_id in locked_ids
+                and not fetch.removed
+            ):
+                fetch.removed = True
+                with patch.object(QuerySet, '_fetch_all', original_fetch):
+                    OrganizationOwnership.objects.filter(
+                        pk=removed_pk,
+                    ).delete()
+            return result
+
+        fetch.removed = False
+
+        with patch.object(QuerySet, '_fetch_all', fetch):
+            with self.assertRaises(LastOrganizationOwner) as caught:
+                call()
+        org_at = events.index((Organization, True))
+        after = events[org_at + 1:]
+        self.assertIn((OrganizationOwnership, True), after)
+        if only_locking:
+            self.assertNotIn((OrganizationOwnership, False), after)
+        return caught.exception
+
     def test_raw_writes_and_register_condition_do_not_keep_an_owner(self):
         handle = isolated_handle()
         register_organization_owner(handle)

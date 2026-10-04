@@ -273,11 +273,13 @@ def delete_user(user):
     The personal organization and its ownership rows follow the user,
     so that organization is not required to keep an owner. Every
     conventional organization this user owns is locked in
-    primary-key order inside the same transaction. When any of those
-    would be left with no owner, ``LastOrganizationOwner`` lists each
-    of them and nothing is deleted. A user created outside these
-    services may have no alias; deletion still removes the user when
-    the preflight passes. A raw ``User.delete`` does not run it.
+    primary-key order inside the same transaction. After each of
+    those locks, a ``select_for_update`` recount decides whether
+    another owner remains. When any organization would be left with
+    no owner, ``LastOrganizationOwner`` lists each of them and
+    nothing is deleted. A user created outside these services may
+    have no alias; deletion still removes the user when the preflight
+    passes. A raw ``User.delete`` does not run it.
     """
     User = get_user_model()
     with transaction.atomic():
@@ -847,22 +849,60 @@ def _lock_ownership(ownership_id):
     )
 
 
+def _peek_ownership_organization_id(ownership_pk):
+    """Return the organization id without locking the ownership row.
+
+    The organization row is locked before the ownership row, matching
+    ``delete_user``. A non-locking peek only chooses that organization.
+    It is not the owner count.
+    """
+    organization_id = OrganizationOwnership.objects.filter(
+        pk=ownership_pk,
+    ).values_list('organization_id', flat=True).first()
+    if organization_id is None:
+        raise MissingRelationshipTarget(
+            'organization ownership', ownership_pk,
+        )
+    return organization_id
+
+
+def _current_remaining_owner_ids(
+    organization, *, excluded_user_id=None, excluded_ownership_pk=None,
+):
+    """Lock this organization's ownership rows and return the survivors.
+
+    Callers already hold ``organization`` via ``select_for_update``.
+    This query is the current read: ``select_for_update`` locks the
+    ownership rows in primary-key order and re-reads them. A plain
+    ``exists()`` can still return a co-owner from a repeatable-read
+    snapshot taken before that organization lock, after a supported
+    write has removed the co-owner and committed.
+    """
+    rows = OrganizationOwnership.objects.select_for_update().filter(
+        organization=organization,
+    ).order_by('pk')
+    if excluded_user_id is not None:
+        rows = rows.exclude(user_id=excluded_user_id)
+    if excluded_ownership_pk is not None:
+        rows = rows.exclude(pk=excluded_ownership_pk)
+    return list(rows.values_list('pk', flat=True))
+
+
 def _refuse_unless_another_owner(organization, *, excluding_ownership_pk):
     """Require another owner when ``organization`` is conventional.
 
     The organization row is already locked in this transaction. The
-    count is the rows that would remain. ``register(condition=)``
-    cannot do this: at the pinned core it is compiled into the
-    trust-row ``EXISTS`` and reads rows that already exist. It has no
-    aggregate over owners that would remain, and core installs no
-    save or delete signal.
+    count is the locking read of the rows that would remain.
+    ``register(condition=)`` cannot do this: at the pinned core it is
+    compiled into the trust-row ``EXISTS`` and reads rows that already
+    exist. It has no aggregate over owners that would remain, and core
+    installs no save or delete signal.
     """
     if organization.personal_user_id is not None:
         return
-    remaining = OrganizationOwnership.objects.filter(
-        organization=organization,
-    ).exclude(pk=excluding_ownership_pk)
-    if not remaining.exists():
+    if not _current_remaining_owner_ids(
+        organization, excluded_ownership_pk=excluding_ownership_pk,
+    ):
         raise LastOrganizationOwner((organization.pk,))
 
 
@@ -872,9 +912,10 @@ def _refuse_ownerless_conventional_organizations(user):
     ``user`` is already ``select_for_update``d, so a new ownership row
     for that user waits on databases that share the row lock with the
     foreign-key insert. The personal organization is omitted because
-    ``delete_user`` deletes it with the user. The decision is the
-    recount under each organization lock. Every organization that
-    would be left empty is reported together.
+    ``delete_user`` deletes it with the user. Which organizations to
+    lock can come from an ordinary read. The decision, after each
+    organization lock, is ``_current_remaining_owner_ids``. Every
+    organization that would be left empty is reported together.
     """
     organization_ids = sorted(set(
         OrganizationOwnership.objects.filter(
@@ -887,10 +928,9 @@ def _refuse_ownerless_conventional_organizations(user):
         organization = _lock_organization(organization_id)
         if organization.personal_user_id is not None:
             continue
-        others = OrganizationOwnership.objects.filter(
-            organization=organization,
-        ).exclude(user=user)
-        if not others.exists():
+        if not _current_remaining_owner_ids(
+            organization, excluded_user_id=user.pk,
+        ):
             blocked.append(organization.pk)
     if blocked:
         raise LastOrganizationOwner(tuple(blocked))
@@ -919,13 +959,19 @@ def update_organization_ownership(
     )
     with transaction.atomic():
         actor = _locked_actor(actor)
-        ownership = _lock_ownership(ownership_pk)
-        stored = _lock_organization(ownership.organization_id)
+        stored_id = _peek_ownership_organization_id(ownership_pk)
+        stored = _lock_organization(stored_id)
         _require_manage(actor, [stored])
         target = stored
         if organization_pk is not None and organization_pk != stored.pk:
             target = _lock_organization(organization_pk)
             _require_manage(actor, [target])
+        ownership = _lock_ownership(ownership_pk)
+        if ownership.organization_id != stored.pk:
+            stored = _lock_organization(ownership.organization_id)
+            _require_manage(actor, [stored])
+            if target.pk == stored_id:
+                target = stored
         if user_pk is None:
             user = _lock_user(ownership.user_id)
         else:
@@ -963,9 +1009,14 @@ def delete_organization_ownership(actor, ownership_id):
     ownership_pk = _require_pk(ownership_id, 'organization ownership')
     with transaction.atomic():
         actor = _locked_actor(actor)
-        ownership = _lock_ownership(ownership_pk)
-        organization = _lock_organization(ownership.organization_id)
+        organization = _lock_organization(
+            _peek_ownership_organization_id(ownership_pk),
+        )
         _require_manage(actor, [organization])
+        ownership = _lock_ownership(ownership_pk)
+        if ownership.organization_id != organization.pk:
+            organization = _lock_organization(ownership.organization_id)
+            _require_manage(actor, [organization])
         _refuse_unless_another_owner(
             organization, excluding_ownership_pk=ownership.pk,
         )
