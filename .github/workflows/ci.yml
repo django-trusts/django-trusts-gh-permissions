@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  # Companion core: django-trusts draft #259 tip (not dev or master).
+  # Companion core: promoted django-trusts dev 9cac5d84.
   COMPANION_KERNEL_SHA: 9cac5d843b58be5174f7ae53920d2861419d14d9
 
 jobs:

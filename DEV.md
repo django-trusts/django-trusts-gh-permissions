@@ -12,11 +12,10 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts draft
-[#259](https://github.com/django-trusts/django-trusts/pull/259)
-tip `9cac5d843b58be5174f7ae53920d2861419d14d9` on
-`cursor/reverse-permitted-users-ac91`. That commit is not on `dev` or
-`master`. Do not float the pin to latest `dev`.
+django-trusts `dev` commit
+`9cac5d843b58be5174f7ae53920d2861419d14d9`, the merge of
+[#261](https://github.com/django-trusts/django-trusts/pull/261).
+Do not float past that commit.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.
