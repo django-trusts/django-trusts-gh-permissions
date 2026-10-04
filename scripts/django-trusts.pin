@@ -1,4 +1,5 @@
 # Reviewed django-trusts head required by this GH tree.
-# Enumeration opt-out (#20) is paired with core 781a33df (django-trusts#241).
-# Never pin django-trusts-zero.
-ref=781a33dfc46fa3ba10a5e8b634de2d47780e857b
+# Paired with django-trusts draft #259 tip c7c83c3
+# (cursor/reverse-permitted-users-ac91). Not on dev or master.
+# Never pin django-trusts-zero. Do not float to latest dev.
+ref=c7c83c3c775bc96a86eb35221de3ce07eca33c83
