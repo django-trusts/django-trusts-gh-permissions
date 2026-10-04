@@ -1,9 +1,9 @@
 """GH adapter for organization-scoped stock admin.
 
 Scope rows come from ``Organization.objects.authorized(user,
-manage_organization)``. That queryset stays empty for non-superusers
-while the owner relationship cannot be registered. Conventional
-organization create, rename, and delete call the domain services.
+manage_organization)``. An ``OrganizationOwnership`` row is what
+puts that organization in the queryset. Conventional organization
+create, rename, and delete call the domain services.
 Personal-organization deletion deletes the user, which releases the
 username alias. Private hook plumbing lives in ``_admin_scope``.
 """
@@ -16,7 +16,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from gh_permissions._admin_scope import AuthorizedScopeAdminMixin
 from gh_permissions.models import (
     Organization,
-    OrganizationMembership,
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     Team,
@@ -146,7 +146,7 @@ class TeamRepositoryPermissionAdmin(OrgScopedAdmin):
     ordering = ('pk',)
 
 
-class OrganizationMembershipAdmin(OrgScopedAdmin):
+class OrganizationOwnershipAdmin(OrgScopedAdmin):
     authorization_scope_paths = 'organization'
     ordering = ('pk',)
 
@@ -156,4 +156,4 @@ admin.site.register(Team, TeamAdmin)
 admin.site.register(Repository, RepositoryAdmin)
 admin.site.register(RepositoryCollaborator, RepositoryCollaboratorAdmin)
 admin.site.register(TeamRepositoryPermission, TeamRepositoryPermissionAdmin)
-admin.site.register(OrganizationMembership, OrganizationMembershipAdmin)
+admin.site.register(OrganizationOwnership, OrganizationOwnershipAdmin)

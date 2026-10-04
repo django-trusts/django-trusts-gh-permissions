@@ -20,15 +20,17 @@ end on one forward to-many step to `auth.Permission`.
 
 [#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
 adds `Alias`, personal versus conventional organizations,
-`OrganizationMembership`, and `RepositoryCollaborator`. It removes
+`OrganizationOwnership`, and `RepositoryCollaborator`. It removes
 `UserRepositoryPermission` and `OrganizationOwnerPermission`. Team,
 `Team.allowed_operations`, and `TeamRepositoryPermission` are unchanged.
-The owner registration is written and not installed: public `condition=`
-cannot compare `is_owner` to `True`, and a named filter cannot walk the
-membership from the organization or the user. Startup therefore does not
-register an unfiltered membership path. The shared owner `Group` is still
-seeded with `manage_organization`, `read_repository`, `write_repository`,
-and `admin_repository`. Raw user creates and renames, including stock
+`OrganizationOwnership` is owners only. The row is the grant, so
+startup registers it with no condition: `owner_group` permissions
+apply to the organization and to that organization's repositories.
+A user with no ownership row is not an owner. Ordinary organization
+membership is deferred. Team does not carry
+that bundle. The shared owner `Group` is seeded with
+`manage_organization`, `read_repository`, `write_repository`, and
+`admin_repository`. Raw user creates and renames, including stock
 user admin, do not touch `Alias`.
 
 The permission terminal is `auth.Permission`, with codenames
@@ -114,8 +116,8 @@ and never installs `'trusts'`.
 - Team permissions are capped by grant-row organization equality and by
   the team operation ceiling (`.contains` / `==` / `&`)
 - Revocation and malformed configuration fail closed
-- `OrganizationMembership` is stored. It is not a startup Trusts edge:
-  `is_owner == True` is outside the public condition grammar
+- `OrganizationOwnership` is the owner grant and a startup Trusts edge.
+  Team membership does not grant that bundle
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and
@@ -185,11 +187,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Alias, Organization, OrganizationMembership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group. Not admin. |
-| Policy registrations | `policy.py` | Collaborator and team `handle.register` calls. Owner helper is present and not installed. No aggregate helper |
+| Policy registrations | `policy.py` | Collaborator, team, and owner `handle.register` calls. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | `register_collaborator`, then `register_team`, then owner-group seed on `post_migrate` |
+| Ready contribution | `apps.py` | `register_collaborator`, `register_team`, `register_organization_owner`, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

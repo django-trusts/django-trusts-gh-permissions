@@ -3,23 +3,19 @@
 Collaborators are one user/repository row. ``permission`` is the
 terminal many-to-many ``permissions``. Team keeps the accepted mapping:
 terminal membership step, operation ceiling, and organization alignment.
-``GhPermissionsConfig.ready`` contributes those two roots as separate
+An owner is one ``OrganizationOwnership`` row. That row reads
+``organization__owner_group__permissions`` for the organization and
+for ``organization__repositories``, with no condition. A user with no
+ownership row is not an owner. Team does not carry this bundle.
+``GhPermissionsConfig.ready`` contributes the three helpers as separate
 calls. Helpers require a ``BackendHandle``; a bare registry is
-``TypeError``.
-
-``register_organization_owner`` is the owner relationship:
-``OrganizationMembership`` filtered with ``is_owner == True``, reading
-``organization__owner_group__permissions``, for the organization and
-for ``organization__repositories``. The public condition grammar
-rejects a boolean comparison, so startup does not call that helper.
-An unfiltered membership registration would grant every membership
-the owner bundle. ``permission=`` does not feed ``get_group_permissions``.
+``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
 """
 
 from trusts.core import BackendHandle
 
 from gh_permissions.models import (
-    OrganizationMembership,
+    OrganizationOwnership,
     RepositoryCollaborator,
     TeamRepositoryPermission,
 )
@@ -60,29 +56,21 @@ def register_team(handle):
     )
 
 
-def _owner_condition(membership):
-    return membership.is_owner == True  # noqa: E712
-
-
 def register_organization_owner(handle):
-    """Register owner memberships for one organization and its repositories.
+    """Register each ownership row for one organization and its repositories.
 
-    ``condition`` is ``is_owner == True``. Core rejects that spelling.
-    This helper raises ``TrustsConfigurationError`` and stores nothing.
-    Startup does not call it.
+    The ownership row is the grant. No condition is applied.
     """
     handle = _require_handle(handle)
     handle.register(
-        trust=OrganizationMembership,
+        trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
         content='organization',
-        condition=_owner_condition,
     )
     return handle.register(
-        trust=OrganizationMembership,
+        trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
         content='organization__repositories',
-        condition=_owner_condition,
     )

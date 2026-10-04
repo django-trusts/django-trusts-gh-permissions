@@ -37,7 +37,7 @@ incomplete, or revoked paths fail closed.
 `Alias` is the shared current-name ledger (`name` unique). It is not an
 authorization edge and it does not store redirects or older names.
 Creating a user reserves an alias, creates the user, creates a personal
-organization, and creates an owner membership. Creating a conventional
+organization, and creates an ownership row. Creating a conventional
 organization reserves an alias, then creates the organization. Renaming
 either name updates the alias and the named object in one transaction.
 Deleting the named object releases its current alias.
@@ -54,9 +54,12 @@ with the user. Its displayed name follows `personal_user.username`.
 Exactly one of those shapes is allowed. Every organization points at the
 same seeded owner `Group`. There is no `Plan`.
 
-`OrganizationMembership` is one row per user and organization, with
-`is_owner`. An organization can have several owners. A non-owner
-membership does not receive owner permissions.
+`OrganizationOwnership` is the owner grant: one row per user and
+organization, exposed as `Organization.owners`. Every row is an owner.
+An organization can have several owners. Someone with no ownership
+row does not receive owner permissions. Ordinary organization
+membership is not modeled here. `Team` stays separate and does not
+grant this bundle.
 
 `Repository.name` is unique per organization and may repeat across
 organizations.
@@ -172,25 +175,18 @@ Requires **Python 3.12–3.14** and **Django 6.1**.
 ## Organization-owner admin
 
 Organization administration was `OrganizationOwnerPermission`. That
-model is gone. Ownership is `OrganizationMembership.is_owner`, and the
-intended registration reads `Organization.owner_group` permissions for
-the organization and for that organization's repositories, restricted
-to `is_owner=True`.
+model is gone. Ownership is an `OrganizationOwnership` row. Startup
+registers that row so `Organization.owner_group` permissions apply to
+the organization and to that organization's repositories. No condition
+is required, because a non-owner has no ownership row. `Team` does
+not grant this bundle.
 
-The public condition grammar accepts path equality, collection
-membership, and `&`. It does not accept `is_owner == True`. A named
-filter is selected by the caller and cannot walk from the organization
-or the user back to the membership row. Startup therefore does not
-register the membership path. Registering it without the condition
-would give every membership the owner bundle, including non-owners.
-
-The shared owner group is still seeded with `manage_organization`,
-`read_repository`, `write_repository`, and `admin_repository`. Until
-the condition can be expressed, those rows do not authorize owners.
-`Organization.objects.authorized(user, manage_organization)` is empty
-for anyone who is not a superuser. The org-owner admin adapter still
-uses that queryset. Conventional organization create, rename, and
-delete in admin call the domain services. Stock user admin does not.
+The shared owner group is seeded with `manage_organization`,
+`read_repository`, `write_repository`, and `admin_repository`.
+`Organization.objects.authorized(user, manage_organization)` is the
+organizations that user owns. The org-owner admin adapter uses that
+queryset. Conventional organization create, rename, and delete in
+admin call the domain services. Stock user admin does not.
 
 Projects that enable this admin install `django.contrib.admin` and list
 `ModelBackend` beside `GhAuthorizationBackend`. The boundary is written
@@ -198,9 +194,9 @@ up in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
 
 ## Limitations
 
-There is no implicit permission-level hierarchy. There is no org-owner
-admin grant on repositories while the `is_owner` condition cannot be
-registered. There is no public anonymous read, nested teams,
+There is no implicit permission-level hierarchy. Owners receive the
+seeded group permissions on their organization and its repositories.
+Team membership does not grant that bundle. There is no public anonymous read, nested teams,
 invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
 repository permission. `Team.allowed_operations` and

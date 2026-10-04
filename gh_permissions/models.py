@@ -10,12 +10,11 @@ Public relations used to authorize:
 ``organization.teams`` and ``organization.repositories`` are containment.
 ``Alias`` reserves the shared current name. Authorization does not
 traverse it, and it stores no redirects or name history.
-``OrganizationMembership`` is ordinary membership and ownership.
-Startup does not register that relationship: the public condition
-grammar cannot express ``is_owner == True``, and an unfiltered path
-would hand the owner bundle to every membership. These models never
-inherit Content and never expose ``.trusts``, ``.trustees``,
-``.contexts``, ``.roles``, or ``.groups``.
+``OrganizationOwnership`` is the owner grant: one row per user and
+organization, exposed as ``Organization.owners``. Ordinary organization
+membership is not modeled. Team stays separate and does not carry
+this bundle. These models never inherit Content and never expose
+``.trusts``, ``.trustees``, ``.contexts``, ``.roles``, or ``.groups``.
 """
 
 from django.conf import settings
@@ -62,6 +61,13 @@ class Organization(models.Model):
         related_name='owner_organizations',
         on_delete=models.PROTECT,
     )
+    owners = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through='OrganizationOwnership',
+        through_fields=('organization', 'user'),
+        related_name='owned_organizations',
+        blank=True,
+    )
 
     objects = AuthorizedManager()
 
@@ -99,26 +105,30 @@ class Organization(models.Model):
         return self.display_name or ''
 
 
-class OrganizationMembership(models.Model):
-    """One row per user and organization. Ownership is ``is_owner``."""
+class OrganizationOwnership(models.Model):
+    """One owner row per user and organization.
+
+    Every row is an owner. A user with no row is not an owner.
+    Ordinary organization membership is a later relationship. Team
+    stays separate.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='organization_memberships',
+        related_name='organization_ownerships',
         on_delete=models.CASCADE,
     )
     organization = models.ForeignKey(
         Organization,
-        related_name='memberships',
+        related_name='ownerships',
         on_delete=models.CASCADE,
     )
-    is_owner = models.BooleanField(default=False)
 
     class Meta:
         constraints = (
             models.UniqueConstraint(
                 fields=('user', 'organization'),
-                name='unique_organization_membership',
+                name='unique_organization_ownership',
             ),
         )
 

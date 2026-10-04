@@ -12,6 +12,7 @@ from trusts.query import AuthorizedManager, AuthorizedQuerySet
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Organization,
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     TeamRepositoryPermission,
@@ -275,6 +276,8 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
             [
                 RepositoryCollaborator,
                 TeamRepositoryPermission,
+                OrganizationOwnership,
+                OrganizationOwnership,
             ],
         )
 

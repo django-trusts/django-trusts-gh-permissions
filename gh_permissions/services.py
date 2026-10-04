@@ -13,7 +13,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.db import IntegrityError, transaction
 
-from gh_permissions.models import Alias, Organization, OrganizationMembership
+from gh_permissions.models import Alias, Organization, OrganizationOwnership
 
 
 OWNER_GROUP_NAME = 'organization-owners'
@@ -168,10 +168,9 @@ def create_user(username, password=None, **extra):
             personal_user=user,
             owner_group=ensure_owner_group(),
         )
-        OrganizationMembership.objects.create(
+        OrganizationOwnership.objects.create(
             user=user,
             organization=organization,
-            is_owner=True,
         )
         return user
 

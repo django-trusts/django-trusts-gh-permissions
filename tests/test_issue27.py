@@ -1,9 +1,9 @@
 """Issue #27: shared names, ownership, and repository collaborators.
 
-Domain services are tested without admin. The owner registration is
-attempted with ``is_owner == True`` and left uninstalled: that condition
-is outside the public grammar, and the same path without the condition
-would authorize non-owners.
+Domain services are tested without admin. An ``OrganizationOwnership``
+row is the owner grant. Startup registers that path with no condition.
+A user with no ownership row is not an owner. Team does not carry
+the owner bundle.
 """
 
 from unittest.mock import patch
@@ -15,16 +15,17 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
 from trusts.apps import implementation_for_path
-from trusts.core import TrustsConfigurationError
 from trusts.policy_lock import render_policy_sql_bytes
 
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Alias,
     Organization,
-    OrganizationMembership,
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    Team,
+    TeamRepositoryPermission,
 )
 from gh_permissions.policy import (
     register_collaborator,
@@ -83,16 +84,22 @@ class AliasServiceTest(TestCase):
         self.assertTrue(Alias.objects.filter(name='acme').exists())
         self.assertEqual(organization.owner_group.name, OWNER_GROUP_NAME)
 
-    def test_user_creation_creates_personal_organization_and_owner_membership(self):
+    def test_user_creation_creates_personal_organization_and_ownership_row(self):
         user = create_user('ada')
         organization = user.personal_organization
         self.assertIsNone(organization.name)
         self.assertEqual(organization.personal_user_id, user.pk)
         self.assertEqual(organization.display_name, 'ada')
-        membership = OrganizationMembership.objects.get(
+        ownership = OrganizationOwnership.objects.get(
             user=user, organization=organization,
         )
-        self.assertTrue(membership.is_owner)
+        self.assertEqual(ownership.pk, organization.ownerships.get().pk)
+        self.assertEqual(list(organization.owners.all()), [user])
+        self.assertEqual(list(user.owned_organizations.all()), [organization])
+        self.assertFalse(any(
+            field.name == 'is_owner'
+            for field in OrganizationOwnership._meta.local_fields
+        ))
         self.assertTrue(Alias.objects.filter(name='ada').exists())
         self.assertEqual(organization.owner_group_id, ensure_owner_group().pk)
 
@@ -230,18 +237,21 @@ class OwnershipAndCollaborationTest(TestCase):
         organization = create_organization('acme')
         first = create_user('first')
         second = create_user('second')
-        OrganizationMembership.objects.create(
-            user=first, organization=organization, is_owner=True,
+        OrganizationOwnership.objects.create(
+            user=first, organization=organization,
         )
-        OrganizationMembership.objects.create(
-            user=second, organization=organization, is_owner=True,
+        OrganizationOwnership.objects.create(
+            user=second, organization=organization,
         )
         self.assertEqual(
-            set(organization.memberships.filter(is_owner=True).values_list(
-                'user__username', flat=True,
-            )),
+            set(organization.owners.values_list('username', flat=True)),
             {'first', 'second'},
         )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                OrganizationOwnership.objects.create(
+                    user=first, organization=organization,
+                )
 
     def test_seeded_owner_group_holds_the_broad_permissions(self):
         group = Group.objects.get(name=OWNER_GROUP_NAME)
@@ -257,97 +267,81 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertEqual(user.personal_organization.owner_group_id, group.pk)
         self.assertEqual(organization.owner_group_id, group.pk)
 
-    def test_owner_condition_is_rejected_and_unfiltered_path_over_grants(self):
+    def test_ownership_row_is_the_owner_grant(self):
         handle = isolated_handle()
         with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                register_organization_owner(handle)
-        self.assertEqual(handle.registry.records, ())
+            repository_record = register_organization_owner(handle)
+        records = handle.registry.records
+        self.assertEqual(len(records), 2)
+        self.assertIs(records[0].root, OrganizationOwnership)
+        self.assertIs(records[0].content_model, Organization)
+        self.assertIs(repository_record.root, OrganizationOwnership)
+        self.assertIs(repository_record.content_model, Repository)
+        self.assertIsNone(records[0].condition)
+        self.assertIsNone(repository_record.condition)
+        self.assertFalse(records[0].via_group)
+        self.assertFalse(repository_record.via_group)
+        self.assertEqual(
+            records[0].permission_path,
+            ('organization', 'owner_group', 'permissions'),
+        )
+        self.assertIs(records[0].permission_model, Permission)
 
         owner = create_user('owner')
-        member = create_user('member')
+        bystander = create_user('bystander')
         organization = create_organization('acme')
-        OrganizationMembership.objects.create(
-            user=owner, organization=organization, is_owner=True,
-        )
-        OrganizationMembership.objects.create(
-            user=member, organization=organization, is_owner=False,
+        OrganizationOwnership.objects.create(
+            user=owner, organization=organization,
         )
         repository = Repository.objects.create(
             organization=organization, name='app',
         )
         manage = _manage()
         read = repository_permission('read_repository')
+        write = repository_permission('write_repository')
+        admin = repository_permission('admin_repository')
         startup = _startup_registry()
-        self.assertFalse(startup.has_permission(owner, organization, manage))
-        self.assertFalse(startup.has_permission(member, organization, manage))
-        self.assertFalse(owner.has_perm(
+        self.assertTrue(startup.has_permission(owner, organization, manage))
+        self.assertFalse(startup.has_permission(bystander, organization, manage))
+        self.assertTrue(owner.has_perm(
             'gh_permissions.manage_organization', organization,
         ))
-        self.assertFalse(member.has_perm(
+        self.assertFalse(bystander.has_perm(
             'gh_permissions.manage_organization', organization,
         ))
-        self.assertFalse(owner.has_perm(
-            'gh_permissions.read_repository', repository,
-        ))
-        self.assertFalse(member.has_perm(
-            'gh_permissions.read_repository', repository,
-        ))
+        for permission in (read, write, admin):
+            codename = 'gh_permissions.%s' % permission.codename
+            self.assertTrue(startup.has_permission(owner, repository, permission))
+            self.assertFalse(
+                startup.has_permission(bystander, repository, permission),
+            )
+            self.assertTrue(owner.has_perm(codename, repository))
+            self.assertFalse(bystander.has_perm(codename, repository))
         self.assertEqual(owner.get_group_permissions(organization), set())
-        self.assertEqual(member.get_group_permissions(repository), set())
+        self.assertEqual(owner.get_group_permissions(repository), set())
+        self.assertEqual(bystander.get_group_permissions(organization), set())
 
-        unfiltered = isolated_handle()
-        record = unfiltered.register(
-            trust=OrganizationMembership,
-            user='user',
-            permission='organization__owner_group__permissions',
-            content='organization',
+        team = Team.objects.create(organization=organization, name='writers')
+        team.members.add(bystander)
+        team.allowed_operations.add(read)
+        TeamRepositoryPermission.objects.create(
+            team=team, repository=repository, operation=read,
         )
-        self.assertFalse(record.via_group)
-        self.assertEqual(
-            record.permission_path,
-            ('organization', 'owner_group', 'permissions'),
-        )
-        self.assertIs(record.permission_model, Permission)
-        self.assertTrue(
-            unfiltered.registry.has_permission(owner, organization, manage),
-        )
-        self.assertTrue(
-            unfiltered.registry.has_permission(member, organization, manage),
-        )
-
-        repositories = isolated_handle()
-        repository_record = repositories.register(
-            trust=OrganizationMembership,
-            user='user',
-            permission='organization__owner_group__permissions',
-            content='organization__repositories',
-        )
-        self.assertFalse(repository_record.via_group)
-        self.assertIs(repository_record.content_model, Repository)
-        self.assertTrue(
-            repositories.registry.has_permission(member, repository, read),
-        )
-        self.assertTrue(
-            repositories.registry.has_permission(owner, repository, read),
-        )
-
-    def test_named_filter_cannot_walk_back_to_membership(self):
-        handle = isolated_handle()
-        attempts = (
-            lambda u, p, o: o.memberships.is_owner == True,  # noqa: E712
-            lambda u, p, o: u.organization_memberships.is_owner == True,  # noqa: E712
-        )
-        for predicate in attempts:
-            with self.assertRaises(Exception) as caught:
-                handle.add_named_filter(
-                    Organization, 'owner', predicate=predicate,
-                )
-            self.assertIn('Multi-valued', str(caught.exception))
-        self.assertEqual(
-            handle.registry.get_permission_condition_record(Organization, 'owner'),
-            None,
-        )
+        self.assertTrue(bystander.has_perm(
+            'gh_permissions.read_repository', repository,
+        ))
+        self.assertFalse(bystander.has_perm(
+            'gh_permissions.write_repository', repository,
+        ))
+        self.assertFalse(bystander.has_perm(
+            'gh_permissions.admin_repository', repository,
+        ))
+        self.assertFalse(bystander.has_perm(
+            'gh_permissions.manage_organization', organization,
+        ))
+        self.assertNotIn(manage.pk, {
+            row.pk for row in startup.permissions_for(bystander, organization)
+        })
 
     def test_collaborators_receive_only_selected_repository_permissions(self):
         organization = create_organization('acme')
@@ -355,7 +349,7 @@ class OwnershipAndCollaborationTest(TestCase):
             organization=organization, name='app',
         )
         outsider = create_user('outsider')
-        self.assertFalse(OrganizationMembership.objects.filter(
+        self.assertFalse(OrganizationOwnership.objects.filter(
             user=outsider, organization=organization,
         ).exists())
         read = repository_permission('read_repository')
@@ -401,18 +395,23 @@ class OwnershipAndCollaborationTest(TestCase):
         import gh_permissions.models as models
         self.assertFalse(hasattr(models, 'OrganizationOwnerPermission'))
         self.assertFalse(hasattr(models, 'UserRepositoryPermission'))
+        self.assertFalse(hasattr(models, 'OrganizationMembership'))
         names = [record.root.__name__ for record in _startup_registry().records]
         self.assertEqual(names, [
             'RepositoryCollaborator',
             'TeamRepositoryPermission',
+            'OrganizationOwnership',
+            'OrganizationOwnership',
         ])
         rendered = render_policy_sql_bytes(alias='default').decode('utf-8')
         self.assertIn('schema_version: 1', rendered)
         self.assertIn('RepositoryCollaborator', rendered)
         self.assertIn('TeamRepositoryPermission', rendered)
+        self.assertIn('OrganizationOwnership', rendered)
+        self.assertNotIn('OrganizationMembership', rendered)
         self.assertNotIn('OrganizationOwnerPermission', rendered)
         self.assertNotIn('UserRepositoryPermission', rendered)
-        self.assertNotIn('OrganizationMembership', rendered)
+        self.assertNotIn('is_owner', rendered)
         self.assertNotIn('get_group_permissions', rendered)
         startup_source_models = (
             'Alias',

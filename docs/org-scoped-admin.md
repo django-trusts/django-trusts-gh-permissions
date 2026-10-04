@@ -12,13 +12,14 @@ behavior of a real GitHub team.
 
 ## Result
 
-The reusable scope mixin is unchanged. Staff organization owners are
-not a scope anymore: `OrganizationOwnerPermission` is gone, and the
-`is_owner=True` registration cannot be expressed with the public
-condition grammar, so it is not installed. Non-superusers therefore see
-an empty authorized-organization queryset. Superusers still bypass the
-scope. Conventional organization create, rename, and delete call
-`gh_permissions.services` instead of saving the row directly.
+The reusable scope mixin is unchanged. `OrganizationOwnerPermission`
+is gone. An `OrganizationOwnership` row is the owner grant, and
+startup registers it with no condition. Non-superusers therefore see
+`Organization.objects.authorized(user, manage_organization)`, which is
+the organizations they own. A team member with no ownership row is
+outside that queryset. Superusers still bypass the scope. Conventional
+organization create, rename, and delete call `gh_permissions.services`
+instead of saving the row directly.
 
 The hook plumbing is a private, domain-agnostic mixin. It is not a
 general Core helper, and this note does not promote it to one.
@@ -51,7 +52,7 @@ admins. `OrganizationAdmin` is the one class that defines `save_model`,
 domain services. Team/repository alignment stays on
 `TeamRepositoryPermission.clean`, which `ModelForm` calls and
 `QuerySet.create` does not. `RepositoryCollaborator` and
-`OrganizationMembership` use the same scope mixin. `Alias` is not
+`OrganizationOwnership` use the same scope mixin. `Alias` is not
 registered in admin.
 
 `OrganizationAdmin` overrides `save_model`, `delete_model`, and
@@ -66,13 +67,13 @@ Core API.
 `0003_organization_owner_permission` follows
 `0002_auth_permission_terminal` and does not rewrite it.
 `0004_shared_names_ownership_collaborators` removes
-`OrganizationOwnerPermission`. Ownership is
-`OrganizationMembership.is_owner`. `register_organization_owner` is not
-installed: comparing `is_owner` to `True` is outside the public
-condition grammar, and registering the path without that condition
-would authorize non-owners. A missing `manage_organization` row
-authorizes nothing. The seeded owner group still holds the broad
-permissions, and no active registration reads them.
+`OrganizationOwnerPermission`. Ownership is an
+`OrganizationOwnership` row. `register_organization_owner` is
+installed with no condition, reading `Organization.owner_group`
+permissions for the organization and for that organization's
+repositories. A missing `manage_organization` row authorizes nothing.
+The seeded owner group holds the broad permissions, and the owner
+registration reads them. Team does not.
 
 With no object, `GhAuthorizationBackend.get_all_permissions` is empty,
 so Django model permissions remain the coarse admin entrance and the
@@ -84,21 +85,19 @@ layers.
 ## Can the mixin collapse?
 
 No. Django admin still asks separate questions. The mixin hooks are
-unchanged. What changed is the grant they read. Issue #27 removed
-`OrganizationOwnerPermission`, and the replacement `is_owner=True`
-registration cannot be installed. A staff owner therefore has an empty
-authorized-organization queryset. The earlier request matrix (guessed
-URLs, forged posts, foreign-key choices, bulk delete, cascade, and the
-owner-grant flag cases) depended on that deleted grant. It is not
-rewritten here. `tests/test_org_scoped_admin.py` now runs in the suite
-and covers the mixin contract, the superuser service calls, and the
-empty staff scope.
+unchanged. The grant they read is now an `OrganizationOwnership` row.
+The earlier request matrix (guessed URLs, forged posts, foreign-key
+choices, bulk delete, cascade, and the owner-grant flag cases) was
+written against `OrganizationOwnerPermission` and is not rewritten
+here. `tests/test_org_scoped_admin.py` runs in the suite and covers
+the mixin contract, the superuser service calls, and the ownership
+scope.
 
 The hooks stay for the same reasons as before:
 
 | Hook | Why it stays |
 | --- | --- |
-| `get_queryset` | Non-superusers are filtered to `Organization.objects.authorized`. That queryset is empty until the owner condition can be registered. |
+| `get_queryset` | Non-superusers are filtered to `Organization.objects.authorized`. That queryset is the organizations where the user has an ownership row. |
 | `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin`. |
 | `has_change_permission` / `has_delete_permission` | The flags are consulted even when no object is passed. Object deletes still require `_in_scope`. |
 | `formfield_for_foreignkey` / `formfield_for_manytomany` | Related choices come from the related admin's scoped queryset when that admin is scoped. `RepositoryCollaborator.permissions` points at `auth.Permission`, which is not scoped. |
@@ -110,10 +109,11 @@ There is no user-listing callsite in the scope hooks.
 
 ## Known boundary
 
-Until `is_owner=True` can be registered, staff owners do not administer
-their organizations. Superusers do. A misaligned team grant is still
-rejected by `TeamRepositoryPermission.clean` on a `ModelForm`.
-`QuerySet.create` does not call `clean`.
+Staff owners administer the organizations where they have an ownership
+row. Superusers bypass that filter. A team member with no ownership
+row does not. A misaligned team grant is still rejected by
+`TeamRepositoryPermission.clean` on a `ModelForm`. `QuerySet.create`
+does not call `clean`.
 
 Host projects that turn the admin on must include `ModelBackend` beside
 `GhAuthorizationBackend`.

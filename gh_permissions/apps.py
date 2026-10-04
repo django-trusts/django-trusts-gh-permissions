@@ -65,6 +65,7 @@ class GhPermissionsConfig(TrustsImplementationConfig):
 
         from gh_permissions.policy import (
             register_collaborator,
+            register_organization_owner,
             register_team,
         )
         from gh_permissions.services import seed_owner_group_on_migrate
@@ -82,3 +83,4 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         handle = owner.configured_backend(CANONICAL_BACKEND)
         register_collaborator(handle)
         register_team(handle)
+        register_organization_owner(handle)

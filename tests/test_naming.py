@@ -13,7 +13,7 @@ from django.test import SimpleTestCase, TestCase
 from gh_permissions.models import (
     Alias,
     Organization,
-    OrganizationMembership,
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     Team,
@@ -89,7 +89,8 @@ class GhNamingTest(SimpleTestCase):
         self.assertIn('register_collaborator', source)
         self.assertIn('register_team', source)
         self.assertIn('register_organization_owner', source)
-        self.assertIn('is_owner == True', source)
+        self.assertNotIn('is_owner', source)
+        self.assertNotIn('OrganizationMembership', source)
         self.assertNotIn('register_gh_policy', source)
         self.assertIn('handle.register(', source)
         self.assertIn('trust=TeamRepositoryPermission', source)
@@ -179,8 +180,11 @@ class GhRelationTest(TestCase):
             RepositoryCollaborator._meta.get_field('user').related_model,
             User,
         )
+        owners = Organization._meta.get_field('owners')
+        self.assertTrue(owners.many_to_many)
+        self.assertIs(owners.remote_field.through, OrganizationOwnership)
         self.assertEqual(
-            OrganizationMembership._meta.get_field('user').related_model,
+            OrganizationOwnership._meta.get_field('user').related_model,
             User,
         )
         self.assertEqual(
@@ -212,13 +216,13 @@ class GhRelationTest(TestCase):
         source = Path(inspect.getfile(policy)).read_text()
         self.assertNotIn('Alias', source)
         self.assertNotIn(
-            'trust=OrganizationMembership',
+            'trust=OrganizationOwnership',
             source.split('def register_organization_owner')[0],
         )
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
-            Alias, Organization, OrganizationMembership, Team, Repository,
+            Alias, Organization, OrganizationOwnership, Team, Repository,
             TeamRepositoryPermission, RepositoryCollaborator,
         ):
             leaked = _related_accessor_names(model).intersection(

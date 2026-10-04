@@ -26,6 +26,7 @@ from trusts.apps import (
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     TeamRepositoryPermission,
@@ -80,6 +81,8 @@ class Issue6OwnerProofs(SimpleTestCase):
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,
+            OrganizationOwnership,
+            OrganizationOwnership,
         ])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
@@ -122,7 +125,7 @@ class Issue6OwnerProofs(SimpleTestCase):
         ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
         self.assertIn('register_collaborator(handle)', ready)
         self.assertIn('register_team(handle)', ready)
-        self.assertNotIn('register_organization_owner(handle)', ready)
+        self.assertIn('register_organization_owner(handle)', ready)
         self.assertNotIn('_gh_policy_registry_id', ready)
         self.assertNotIn('.registry.register(', ready)
         self.assertNotIn('register_collaborator(registry)', ready)

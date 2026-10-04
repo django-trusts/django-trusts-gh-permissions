@@ -1,8 +1,9 @@
-"""Admin calls the domain services and does not invent owner authority.
+"""Admin calls the domain services and scopes by ownership rows.
 
-Staff owners are not a scope: the ``is_owner`` registration is not
-installed. Superusers bypass the scope mixin. ``_admin_scope`` stays
-free of GH model nouns.
+An ``OrganizationOwnership`` row is the owner grant. Staff owners see
+those organizations. A team member with no ownership row does not.
+Superusers bypass the scope mixin. ``_admin_scope`` stays free of GH
+model nouns.
 """
 
 from pathlib import Path
@@ -19,7 +20,7 @@ from django.urls import reverse
 from gh_permissions._admin_scope import AuthorizedScopeAdminMixin
 from gh_permissions.admin import (
     OrganizationAdmin,
-    OrganizationMembershipAdmin,
+    OrganizationOwnershipAdmin,
     OrgScopedAdmin,
     RepositoryAdmin,
     RepositoryCollaboratorAdmin,
@@ -29,7 +30,7 @@ from gh_permissions.admin import (
 from gh_permissions.models import (
     Alias,
     Organization,
-    OrganizationMembership,
+    OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     Team,
@@ -50,7 +51,7 @@ CONCRETE_ADMINS = (
     RepositoryAdmin,
     RepositoryCollaboratorAdmin,
     TeamRepositoryPermissionAdmin,
-    OrganizationMembershipAdmin,
+    OrganizationOwnershipAdmin,
 )
 SERVICE_HOOKS = ('save_model', 'delete_model', 'delete_queryset')
 
@@ -59,7 +60,7 @@ def _grant_scoped(user):
     codenames = []
     for model in (
         Organization, Team, Repository, RepositoryCollaborator,
-        TeamRepositoryPermission, OrganizationMembership,
+        TeamRepositoryPermission, OrganizationOwnership,
     ):
         for action in ('view', 'add', 'change', 'delete'):
             codenames.append('%s_%s' % (action, model._meta.model_name))
@@ -124,7 +125,7 @@ class OrgScopedAdminContractTests(SimpleTestCase):
             'Repository',
             'Team',
             'Alias',
-            'OrganizationMembership',
+            'OrganizationOwnership',
             'RepositoryCollaborator',
             'OrganizationOwnerPermission',
             'UserRepositoryPermission',
@@ -336,24 +337,29 @@ class OrganizationAdminServiceTests(TestCase):
         self.assertFalse(Organization.objects.filter(pk=organization.pk).exists())
         self.assertFalse(Alias.objects.filter(name='ada').exists())
 
-    def test_staff_owner_sees_no_organizations(self):
+    def test_staff_owner_sees_only_membership_organizations(self):
         owner = create_user('ada-owner', is_staff=True)
         _grant_scoped(owner)
         organization = create_organization('acme')
-        OrganizationMembership.objects.create(
-            user=owner, organization=organization, is_owner=True,
+        other = create_organization('other')
+        OrganizationOwnership.objects.create(
+            user=owner, organization=organization,
         )
+        team = Team.objects.create(organization=other, name='writers')
+        team.members.add(owner)
         client = Client()
         client.force_login(owner, backend=ADMIN_BACKENDS[1])
         response = client.get(reverse('admin:gh_permissions_organization_changelist'))
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, 'acme')
-        self.assertContains(response, '0 organizations')
+        self.assertContains(response, 'acme')
+        self.assertContains(response, 'ada-owner')
+        self.assertNotContains(response, 'other')
         visible = self.client.get(
             reverse('admin:gh_permissions_organization_changelist'),
         )
         self.assertContains(visible, 'acme')
         self.assertContains(visible, 'ada-owner')
+        self.assertContains(visible, 'other')
 
     def test_staff_save_is_still_rejected_by_the_scope_mixin(self):
         staff = create_user('staff', is_staff=True)

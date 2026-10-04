@@ -8,6 +8,7 @@ from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
 from gh_permissions import policy as gh_policy
 from gh_permissions.models import (
     Organization,
+    OrganizationOwnership,
     RepositoryCollaborator,
     TeamRepositoryPermission,
 )
@@ -22,7 +23,7 @@ from tests.fixtures import GhFixtureMixin, isolated_handle
 # Intentionally unsupported GH behaviors (not defects of this consumer):
 UNSUPPORTED_GH_BEHAVIORS = (
     'permission levels do not imply lower levels unless the team lists them',
-    'no org-owner implicit admin on every repository',
+    'no owner grant on repositories outside that organization',
     'no public-repository anonymous read',
     'no nested teams',
     'no outside-collaborator invitation workflow',
@@ -172,10 +173,15 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(handle.registry.records[1].root, TeamRepositoryPermission)
         with self.assertNumQueries(0):
+            owner_record = register_organization_owner(handle)
+        self.assertEqual(len(handle.registry.records), 4)
+        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
+        self.assertIs(owner_record.root, OrganizationOwnership)
+        self.assertIsNone(owner_record.condition)
+        with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
                 register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 2)
-        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
+        self.assertEqual(len(handle.registry.records), 4)
 
     def test_startup_registers_direct_and_team_roots(self):
         from trusts.apps import implementation_for_path
@@ -189,4 +195,6 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,
+            OrganizationOwnership,
+            OrganizationOwnership,
         ])

@@ -55,10 +55,9 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
-            name='OrganizationMembership',
+            name='OrganizationOwnership',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('is_owner', models.BooleanField(default=False)),
             ],
         ),
         migrations.CreateModel(
@@ -137,14 +136,19 @@ class Migration(migrations.Migration):
             constraint=models.UniqueConstraint(fields=('organization', 'name'), name='unique_repository_name_per_organization'),
         ),
         migrations.AddField(
-            model_name='organizationmembership',
+            model_name='organizationownership',
             name='organization',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='memberships', to='gh_permissions.organization'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ownerships', to='gh_permissions.organization'),
         ),
         migrations.AddField(
-            model_name='organizationmembership',
+            model_name='organizationownership',
             name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='organization_memberships', to=settings.AUTH_USER_MODEL),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='organization_ownerships', to=settings.AUTH_USER_MODEL),
+        ),
+        migrations.AddField(
+            model_name='organization',
+            name='owners',
+            field=models.ManyToManyField(blank=True, related_name='owned_organizations', through='gh_permissions.OrganizationOwnership', through_fields=('organization', 'user'), to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='repositorycollaborator',
@@ -168,8 +172,8 @@ class Migration(migrations.Migration):
             name='UserRepositoryPermission',
         ),
         migrations.AddConstraint(
-            model_name='organizationmembership',
-            constraint=models.UniqueConstraint(fields=('user', 'organization'), name='unique_organization_membership'),
+            model_name='organizationownership',
+            constraint=models.UniqueConstraint(fields=('user', 'organization'), name='unique_organization_ownership'),
         ),
         migrations.AddConstraint(
             model_name='repositorycollaborator',

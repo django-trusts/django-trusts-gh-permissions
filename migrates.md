@@ -715,14 +715,15 @@ membership is not stored. `Organization.name` is required and unique.
 organizations have a null name and `personal_user`. Conventional
 organizations have a name and a null `personal_user`. Every organization
 points at the seeded `organization-owners` group.
-`OrganizationMembership` is one row per user and organization.
-`Repository.name` replaces `title` and is unique per organization.
-`RepositoryCollaborator.permissions` is the direct repository bundle.
+`OrganizationOwnership` is one owner row per user and organization,
+exposed as `Organization.owners`. There is no owner flag. Ordinary
+organization membership is not stored. `Repository.name` replaces `title` and is
+unique per organization. `RepositoryCollaborator.permissions` is the
+direct repository bundle.
 
-`register_collaborator` is installed. `register_organization_owner` is
-not: `is_owner == True` is outside the public condition grammar.
-`Team`, `Team.allowed_operations`, and `TeamRepositoryPermission` are
-unchanged.
+`register_collaborator` and `register_organization_owner` are installed.
+The owner path has no condition. `Team`, `Team.allowed_operations`,
+and `TeamRepositoryPermission` are unchanged.
 
 ## Migration-bot checklist
 
