@@ -21,7 +21,7 @@ from gh_permissions.apps import (
     _load_implementation_config,
 )
 from gh_permissions.models import Repository, TeamRepositoryPermission
-from gh_permissions.policy import register_direct, register_team
+from gh_permissions.policy import register_collaborator, register_team
 from tests.fixtures import GhFixtureMixin
 from trusts.apps import implementation_for_path
 from trusts.core import All, Equal, PermissionIn
@@ -101,7 +101,15 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertNotIn('Equal(', readme)
         self.assertNotIn('All(', readme)
         self.assertNotIn('registry.register(', readme)
-        self.assertIn('UserRepositoryPermission', readme)
+        self.assertIn('RepositoryCollaborator', readme)
+        self.assertIn('permission="permissions"', readme)
+        self.assertIn('Alias', readme)
+        self.assertNotIn('is_owner', readme)
+        self.assertIn('OrganizationOwnership', readme)
+        self.assertNotIn('OrganizationMembership', readme)
+        self.assertIn('Organization.owners', readme)
+        self.assertIn('Organization administration was `OrganizationOwnerPermission`. That\nmodel is gone.', readme)
+        self.assertNotIn('UserRepositoryPermission', readme)
         self.assertIn('AUTH_USER_MODEL', readme)
         self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
         self.assertIn('from trusts.apps import implementation_for_path', readme)
@@ -183,8 +191,15 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertNotIn('All(', policy)
         self.assertNotIn('from trusts.core import All, Equal, Ref, permission_in', policy)
         self.assertNotIn('.registry.register(', policy)
-        self.assertIn(register_direct.__name__, policy)
+        self.assertIn("permission='permissions'", policy)
+        self.assertIn(register_collaborator.__name__, policy)
         self.assertIn(register_team.__name__, policy)
+        self.assertNotIn('is_owner', policy)
+        self.assertNotIn('OrganizationMembership', policy)
+        self.assertIn('trust=OrganizationOwnership', policy)
+        self.assertIn('register_organization_owner', policy)
+        self.assertNotIn('UserRepositoryPermission', policy)
+        self.assertNotIn('OrganizationOwnerPermission', policy)
         self.assertFalse(hasattr(
             __import__('gh_permissions.policy', fromlist=['register_gh_policy']),
             'register_gh_policy',

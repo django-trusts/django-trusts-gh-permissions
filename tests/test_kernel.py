@@ -92,6 +92,7 @@ class KernelMigrationLoaderTest(TestCase):
                 ('gh_permissions', '0001_initial'),
                 ('gh_permissions', '0002_auth_permission_terminal'),
                 ('gh_permissions', '0003_organization_owner_permission'),
+                ('gh_permissions', '0004_shared_names_ownership_collaborators'),
             },
         )
 

@@ -61,18 +61,26 @@ class GhPermissionsConfig(TrustsImplementationConfig):
     def ready(self):
         from trusts.apps import implementation_for_path
 
+        from django.db.models.signals import post_migrate
+
         from gh_permissions.policy import (
-            register_direct,
+            register_collaborator,
             register_organization_owner,
             register_team,
         )
+        from gh_permissions.services import seed_owner_group_on_migrate
 
         super(GhPermissionsConfig, self).ready()
+        post_migrate.connect(
+            seed_owner_group_on_migrate,
+            sender=self,
+            dispatch_uid='gh_permissions.seed_owner_group',
+        )
 
         owner = implementation_for_path(
             CANONICAL_BACKEND, apps_registry=getattr(self, 'apps', None),
         )
         handle = owner.configured_backend(CANONICAL_BACKEND)
-        register_direct(handle)
+        register_collaborator(handle)
         register_team(handle)
         register_organization_owner(handle)

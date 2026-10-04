@@ -12,10 +12,10 @@ from trusts.query import AuthorizedManager, AuthorizedQuerySet
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Organization,
-    OrganizationOwnerPermission,
+    OrganizationOwnership,
     Repository,
+    RepositoryCollaborator,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
 from tests.fixtures import GhFixtureMixin
 
@@ -135,9 +135,10 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
 
     def test_direct_and_team_roots_or_compose(self):
-        UserRepositoryPermission.objects.create(
-            user=self.member, repository=self.repo_b, operation=self.read,
+        collaboration = RepositoryCollaborator.objects.create(
+            user=self.member, repository=self.repo_b,
         )
+        collaboration.permissions.add(self.read)
         self._object_list_agree(self.member, self.read, self.repo_a, True)
         self._object_list_agree(self.member, self.read, self.repo_b, True)
         with self.assertNumQueries(1):
@@ -153,11 +154,11 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         self._object_list_agree(self.member, self.read, self.repo_b, True)
 
     def test_multiple_direct_permission_rows_combine(self):
-        """Two UserRepositoryPermission rows under the one direct registration."""
-        UserRepositoryPermission.objects.create(
+        """Two collaborator rows under the one direct registration."""
+        collaboration = RepositoryCollaborator.objects.create(
             user=self.collaborator, repository=self.repo_a,
-            operation=self.write,
         )
+        collaboration.permissions.add(self.write)
         self._object_list_agree(
             self.collaborator, self.write, self.repo_a, True,
         )
@@ -172,16 +173,15 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         self.assertEqual(listed, [self.repo_a.pk, self.repo_b.pk])
 
     def test_removing_a_direct_permission_row_revokes_only_that_row(self):
-        UserRepositoryPermission.objects.create(
+        collaboration = RepositoryCollaborator.objects.create(
             user=self.collaborator, repository=self.repo_a,
-            operation=self.write,
         )
+        collaboration.permissions.add(self.write)
         self._object_list_agree(
             self.collaborator, self.write, self.repo_a, True,
         )
-        UserRepositoryPermission.objects.filter(
+        RepositoryCollaborator.objects.filter(
             user=self.collaborator, repository=self.repo_a,
-            operation=self.write,
         ).delete()
         self._object_list_agree(
             self.collaborator, self.write, self.repo_a, False,
@@ -208,7 +208,7 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         )
         combined = (exists_sql + list_sql).lower().replace('_', '').replace('"', '')
         self.assertIn('exists', combined)
-        self.assertIn('userrepositorypermission', combined)
+        self.assertIn('repositorycollaborator', combined)
 
     def test_team_listing_is_sql_and_fixed_query_count(self):
         with self.assertNumQueries(1):
@@ -274,9 +274,10 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
         self.assertEqual(
             roots,
             [
-                UserRepositoryPermission,
+                RepositoryCollaborator,
                 TeamRepositoryPermission,
-                OrganizationOwnerPermission,
+                OrganizationOwnership,
+                OrganizationOwnership,
             ],
         )
 

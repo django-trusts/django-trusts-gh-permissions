@@ -1,20 +1,23 @@
 """GH policy registrations on public ``BackendHandle.register``.
 
-Direct is the three-FK user/repository/operation row. Team is the
-accepted mapping: terminal membership hop, team operation ceiling, and
-organization alignment. Organization owner is a third root whose
-content is the organization, so it does not authorize repositories.
-``GhPermissionsConfig.ready`` contributes the three independent roots
-as separate calls, not one aggregate helper. Helpers require a
-``BackendHandle``; a bare registry is ``TypeError``.
+Collaborators are one user/repository row. ``permission`` is the
+terminal many-to-many ``permissions``. Team keeps the accepted mapping:
+terminal membership step, operation ceiling, and organization alignment.
+An owner is one ``OrganizationOwnership`` row. That row reads
+``organization__owner_group__permissions`` for the organization and
+for ``organization__repositories``, with no condition. A user with no
+ownership row is not an owner. Team does not carry this bundle.
+``GhPermissionsConfig.ready`` contributes the three helpers as separate
+calls. Helpers require a ``BackendHandle``; a bare registry is
+``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
 """
 
 from trusts.core import BackendHandle
 
 from gh_permissions.models import (
-    OrganizationOwnerPermission,
+    OrganizationOwnership,
+    RepositoryCollaborator,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
 
 
@@ -27,13 +30,13 @@ def _require_handle(handle):
     return handle
 
 
-def register_direct(handle):
-    """Register the direct-user permission-bearing relation."""
+def register_collaborator(handle):
+    """Register direct repository collaboration."""
     handle = _require_handle(handle)
     return handle.register(
-        trust=UserRepositoryPermission,
+        trust=RepositoryCollaborator,
         user='user',
-        permission='operation',
+        permission='permissions',
         content='repository',
     )
 
@@ -54,11 +57,20 @@ def register_team(handle):
 
 
 def register_organization_owner(handle):
-    """Register organization administration. Content is not a repository."""
+    """Register each ownership row for one organization and its repositories.
+
+    The ownership row is the grant. No condition is applied.
+    """
     handle = _require_handle(handle)
-    return handle.register(
-        trust=OrganizationOwnerPermission,
-        user='owner',
-        permission='operation',
+    handle.register(
+        trust=OrganizationOwnership,
+        user='user',
+        permission='organization__owner_group__permissions',
         content='organization',
+    )
+    return handle.register(
+        trust=OrganizationOwnership,
+        user='user',
+        permission='organization__owner_group__permissions',
+        content='organization__repositories',
     )

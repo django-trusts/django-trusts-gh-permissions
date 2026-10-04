@@ -6,10 +6,11 @@ from django.contrib.auth.models import Permission
 from gh_permissions.models import (
     Organization,
     Repository,
+    RepositoryCollaborator,
     Team,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
+from gh_permissions.services import ensure_owner_group
 
 
 def repository_permission(codename):
@@ -40,8 +41,13 @@ class GhFixtureMixin(object):
     def setUp(self):
         super(GhFixtureMixin, self).setUp()
         User = get_user_model()
-        self.org_a = Organization.objects.create(name='acme')
-        self.org_b = Organization.objects.create(name='other')
+        owner_group = ensure_owner_group()
+        self.org_a = Organization.objects.create(
+            name='acme', owner_group=owner_group,
+        )
+        self.org_b = Organization.objects.create(
+            name='other', owner_group=owner_group,
+        )
         self.writers = Team.objects.create(
             organization=self.org_a, name='writers',
         )
@@ -58,18 +64,18 @@ class GhFixtureMixin(object):
         self.admin = repository_permission('admin_repository')
         self.writers.allowed_operations.add(self.read)
         self.repo_a = Repository.objects.create(
-            organization=self.org_a, title='repo-a',
+            organization=self.org_a, name='repo-a',
         )
         self.repo_b = Repository.objects.create(
-            organization=self.org_a, title='repo-b',
+            organization=self.org_a, name='repo-b',
         )
         self.repo_other = Repository.objects.create(
-            organization=self.org_b, title='repo-other',
+            organization=self.org_b, name='repo-other',
         )
         TeamRepositoryPermission.objects.create(
             team=self.writers, repository=self.repo_a, operation=self.read,
         )
-        UserRepositoryPermission.objects.create(
+        collaboration = RepositoryCollaborator.objects.create(
             user=self.collaborator, repository=self.repo_b,
-            operation=self.write,
         )
+        collaboration.permissions.add(self.write)

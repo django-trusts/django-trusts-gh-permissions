@@ -6,17 +6,18 @@ from pathlib import Path
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import FieldDoesNotExist
 from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import (
+    Alias,
     Organization,
-    OrganizationOwnerPermission,
+    OrganizationOwnership,
     Repository,
+    RepositoryCollaborator,
     Team,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
 
 
@@ -66,10 +67,12 @@ class GhNamingTest(SimpleTestCase):
         import gh_permissions.backends
         import gh_permissions.models
         import gh_permissions.policy
+        import gh_permissions.services
         for module in (
             gh_permissions, gh_permissions._admin_scope, gh_permissions.admin,
             gh_permissions.apps, gh_permissions.backends,
             gh_permissions.models, gh_permissions.policy,
+            gh_permissions.services,
         ):
             source = Path(inspect.getfile(module)).read_text()
             self.assertNotIn('GitHub', source)
@@ -83,9 +86,11 @@ class GhNamingTest(SimpleTestCase):
         self.assertNotIn('trusts.context', source)
         self.assertNotIn('trusts.trustee', source)
         self.assertNotIn('TrustModelBackend', source)
-        self.assertIn('register_direct', source)
+        self.assertIn('register_collaborator', source)
         self.assertIn('register_team', source)
         self.assertIn('register_organization_owner', source)
+        self.assertNotIn('is_owner', source)
+        self.assertNotIn('OrganizationMembership', source)
         self.assertNotIn('register_gh_policy', source)
         self.assertIn('handle.register(', source)
         self.assertIn('trust=TeamRepositoryPermission', source)
@@ -144,7 +149,7 @@ class GhRelationTest(TestCase):
             Permission,
         )
         self.assertEqual(
-            UserRepositoryPermission._meta.get_field('operation').related_model,
+            RepositoryCollaborator._meta.get_field('permissions').related_model,
             Permission,
         )
         self.assertEqual(
@@ -164,15 +169,22 @@ class GhRelationTest(TestCase):
             (('manage_organization', 'Can manage organization'),),
         )
         self.assertEqual(
-            OrganizationOwnerPermission._meta.get_field('operation').related_model,
-            Permission,
+            Organization._meta.get_field('owner_group').related_model,
+            Group,
         )
         self.assertEqual(
             Team._meta.get_field('members').related_model,
             User,
         )
         self.assertEqual(
-            UserRepositoryPermission._meta.get_field('user').related_model,
+            RepositoryCollaborator._meta.get_field('user').related_model,
+            User,
+        )
+        owners = Organization._meta.get_field('owners')
+        self.assertTrue(owners.many_to_many)
+        self.assertIs(owners.remote_field.through, OrganizationOwnership)
+        self.assertEqual(
+            OrganizationOwnership._meta.get_field('user').related_model,
             User,
         )
         self.assertEqual(
@@ -181,7 +193,7 @@ class GhRelationTest(TestCase):
         )
         self.assertTrue(hasattr(User, 'teams'))
         self.assertTrue(hasattr(Team, 'allowed_operations'))
-        user_field = UserRepositoryPermission._meta.get_field('user')
+        user_field = RepositoryCollaborator._meta.get_field('user')
         member_field = Team._meta.get_field('members')
         self.assertIs(apps.get_model(user_field.deconstruct()[3]['to']), configured)
         self.assertIs(apps.get_model(member_field.deconstruct()[3]['to']), configured)
@@ -193,19 +205,25 @@ class GhRelationTest(TestCase):
             User._meta.get_field('organizations')
         self.assertFalse(hasattr(Organization, 'members'))
 
-    def test_organization_membership_is_not_a_grant_edge(self):
-        field_names = {field.name for field in Organization._meta.get_fields()}
-        self.assertNotIn('members', field_names)
+    def test_alias_is_not_an_authorization_edge(self):
+        relations = [
+            field for field in Alias._meta.get_fields()
+            if getattr(field, 'is_relation', False)
+        ]
+        self.assertEqual(relations, [])
+        self.assertTrue(Alias._meta.get_field('name').unique)
         import gh_permissions.policy as policy
         source = Path(inspect.getfile(policy)).read_text()
-        self.assertNotIn('organization.members', source)
-        self.assertNotIn('members.organizations', source)
+        self.assertNotIn('Alias', source)
+        self.assertNotIn(
+            'trust=OrganizationOwnership',
+            source.split('def register_organization_owner')[0],
+        )
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
-            Organization, Team, Repository,
-            TeamRepositoryPermission, UserRepositoryPermission,
-            OrganizationOwnerPermission,
+            Alias, Organization, OrganizationOwnership, Team, Repository,
+            TeamRepositoryPermission, RepositoryCollaborator,
         ):
             leaked = _related_accessor_names(model).intersection(
                 FORBIDDEN_PUBLIC_RELATIONS,
