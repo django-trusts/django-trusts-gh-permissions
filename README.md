@@ -99,6 +99,19 @@ The functions are:
   must be the same row, including when a team or repository is
   replaced.
 - `delete_team` deletes one team.
+- `update_organization_ownership` changes the stored ownership row's
+  user, organization, or both. The stored organization is authorized
+  before a replacement organization is loaded, and that replacement
+  is authorized too.
+- `delete_organization_ownership` deletes one stored ownership row.
+- `delete_user` releases the username and deletes the personal
+  organization with the user. Before that, it locks every conventional
+  organization that user owns, in primary-key order. If any of those
+  would be left with no owner, the call lists each one and deletes
+  nothing.
+- `move_team_organization` and `move_repository_organization` refuse
+  the move. `Team.organization` and `Repository.organization` stay on
+  the stored row.
 
 Changing the user on a collaborator, or the members of a team, does
 not cross an organization boundary: users are global grant targets.
@@ -107,17 +120,37 @@ repository's organization and the replacement repository's
 organization. A team grant cannot point at a repository in a
 different organization.
 
+An ownership update or delete must leave every surviving conventional
+organization with at least one owner. Replacing the user on that same
+organization keeps the row, so the sole owner may be handed to someone
+else. Moving or deleting the last row is refused. An active superuser
+may add the first owner of an organization that has none. The same
+superuser may not remove the last owner. A persisted inactive actor is
+denied before that bypass and before the ownership inquiry.
+
+`delete_user` omits the user's personal organization from that check
+because the personal organization is deleted in the same transaction
+and does not survive. A conventional organization this user solely
+owns does survive, and blocks the whole deletion.
+
+`Team.organization` and `Repository.organization` are immutable on
+this path. A move would re-scope collaborator bundles and team grants,
+and a team grant has to stay inside one organization. Authorizing both
+the stored organization and the replacement would not decide whether
+those grants follow the row, are deleted, or block the move, so the
+supported calls resolve the persisted rows and then refuse.
+
 `manage_organization` is the management operation.
 `read_repository`, `write_repository`, and `admin_repository` are
 repository grants those writes can edit. Team membership and a
 collaborator bundle do not grant `manage_organization`.
 
-Ownership removal, user deletion, and moving
-`Repository.organization` or `Team.organization` are not these
-functions. A raw queryset write does not apply these checks.
-Organization-owner admin does not call them.
+A raw queryset write does not apply these checks. `register(condition=)`
+reads existing trust rows and does not keep an owner on save or delete.
+Organization-owner admin does not call the ownership or move functions.
 `OrganizationOwnership` stays read-only there for anyone who is not
-a superuser.
+a superuser. User admin still calls `delete_user`, so that preflight
+runs there.
 
 Requester, team-member, and collaborator relations use
 `settings.AUTH_USER_MODEL`.
@@ -245,8 +278,11 @@ The shared owner group is seeded with `manage_organization`,
 organizations that user owns. The org-owner admin adapter uses that
 queryset. Conventional organization create, rename, and delete in
 admin call the domain services. User create, rename, and delete call
-them through `ServiceBackedUserAdmin`. `OrganizationOwnership` rows
-are read-only for non-superusers.
+them through `ServiceBackedUserAdmin`. `delete_user` refuses the
+deletion when a surviving conventional organization would have no
+owner. `OrganizationOwnership` rows are read-only for non-superusers.
+Stock admin does not yet call the ownership update, ownership delete,
+or organization-move services.
 
 The runnable example (`tests.settings`, which `manage.py` loads) lists
 both backends:
