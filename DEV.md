@@ -14,7 +14,7 @@ merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
 django-trusts draft
 [#259](https://github.com/django-trusts/django-trusts/pull/259)
-tip `c7c83c3c775bc96a86eb35221de3ce07eca33c83` on
+tip `9cac5d843b58be5174f7ae53920d2861419d14d9` on
 `cursor/reverse-permitted-users-ac91`. That commit is not on `dev` or
 `master`. Do not float the pin to latest `dev`.
 
@@ -151,7 +151,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `c7c83c3c775bc96a86eb35221de3ce07eca33c83`.
+with Django 6.1 against exact paired-core head `9cac5d843b58be5174f7ae53920d2861419d14d9`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or

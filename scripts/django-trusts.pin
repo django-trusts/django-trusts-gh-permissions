@@ -1,5 +1,5 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired with django-trusts draft #259 tip c7c83c3
+# Paired with django-trusts draft #259 tip 9cac5d84
 # (cursor/reverse-permitted-users-ac91). Not on dev or master.
 # Never pin django-trusts-zero. Do not float to latest dev.
-ref=c7c83c3c775bc96a86eb35221de3ce07eca33c83
+ref=9cac5d843b58be5174f7ae53920d2861419d14d9
