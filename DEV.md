@@ -117,7 +117,10 @@ and `&`. Literal Python `in` is unsupported. There is no aggregate
 
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
-`TrustModelBackend`. GH does not use Django auth Permission strings.
+`TrustModelBackend`. `Repository.objects.authorized` takes an
+`auth.Permission` instance, while `has_perm` and the permitted-user
+adapters accept either that instance or its Django permission string
+as documented.
 
 Application authors own ordinary relational models plus compact
 registrations. Core owns validation, correlated query construction,
