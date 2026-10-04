@@ -234,8 +234,9 @@ class FloorMessageTest(SimpleTestCase):
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
     def test_documented_settings_are_the_live_test_settings(self):
-        # README shows the authorization install. The live settings add
-        # the admin harness used by organization-owner request tests.
+        # README's configure block is the object-authorization install.
+        # The live settings add the admin harness and ModelBackend so
+        # stock admin can authenticate and read no-object model permissions.
         self.assertEqual(
             settings.INSTALLED_APPS,
             (
@@ -252,7 +253,10 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertEqual(settings.AUTH_USER_MODEL, 'example.User')
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
-            ('gh_permissions.backends.GhAuthorizationBackend',),
+            (
+                'gh_permissions.backends.GhAuthorizationBackend',
+                'django.contrib.auth.backends.ModelBackend',
+            ),
         )
         self.assertNotIn('trusts', settings.INSTALLED_APPS)
 

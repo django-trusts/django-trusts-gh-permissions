@@ -69,8 +69,11 @@ Requester, team-member, and collaborator relations use
 
 ## Configure
 
-These imports and settings match the project's verified test
-configuration. Core `'trusts'` is absent.
+These imports are the object-authorization install. Core `'trusts'`
+is absent. `GhAuthorizationBackend` answers object checks. With no
+object its permission set is empty, so it does not supply the Django
+model permissions stock admin needs. The runnable example adds
+`ModelBackend` for that entrance; see Organization-owner admin.
 
 ```python
 INSTALLED_APPS = (
@@ -190,6 +193,25 @@ admin call the domain services. User create, rename, and delete call
 them through `ServiceBackedUserAdmin`. `OrganizationOwnership` rows
 are read-only for non-superusers.
 
+The runnable example (`tests.settings`, which `manage.py` loads) lists
+both backends:
+
+```python
+AUTHENTICATION_BACKENDS = (
+    'gh_permissions.backends.GhAuthorizationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+```
+
+`ModelBackend` checks the password and supplies ordinary no-object
+Django model permissions, which is what stock admin requires before it
+will show a changelist. `GhAuthorizationBackend` and the scoped admin
+still decide which organizations and rows that user may see.
+`ModelBackend` returns nothing when an object is passed, so a model
+permission is not an organization grant. The seeded `example-owner`
+proof logs in through this configuration and does not replace
+`AUTHENTICATION_BACKENDS`.
+
 Projects that enable this admin install `django.contrib.admin` and list
 `ModelBackend` beside `GhAuthorizationBackend`. The boundary is written
 up in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
@@ -217,7 +239,7 @@ in production.
 | Username | Development-only password | What it proves |
 | --- | --- | --- |
 | `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
-| `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants the seeded owner group on that organization and its repositories: `manage_organization`, `read_repository`, `write_repository`, and `admin_repository`. Django model permissions cover those rows. |
+| `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants the seeded owner group on that organization and its repositories: `manage_organization`, `read_repository`, `write_repository`, and `admin_repository`. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
 | `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
 | `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |

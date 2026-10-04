@@ -161,6 +161,23 @@ AUTHENTICATION_BACKENDS = (
 )
 ```
 
+`GhAuthorizationBackend` is empty when no object is passed. The
+runnable example (`tests.settings`, loaded by `manage.py`) keeps that
+backend and adds `ModelBackend`:
+
+```python
+AUTHENTICATION_BACKENDS = (
+    'gh_permissions.backends.GhAuthorizationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+```
+
+`ModelBackend` authenticates the password and supplies the no-object
+Django model permissions stock admin requires. It returns no
+permissions when an object is passed, so organization scope stays on
+`GhAuthorizationBackend` and the admin adapter. A model permission is
+not an organization grant.
+
 ## Verification
 
 ```

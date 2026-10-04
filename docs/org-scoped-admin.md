@@ -81,11 +81,22 @@ The seeded owner group holds the broad permissions, and the owner
 registration reads them. Team does not.
 
 With no object, `GhAuthorizationBackend.get_all_permissions` is empty,
-so Django model permissions remain the coarse admin entrance and the
-harness still lists `ModelBackend` for those and for `get_user`. With
-an object, the backend enumerates granted `auth.Permission` codenames.
-Trusts supplies the organization boundary. A staff user needs both
-layers.
+so Django model permissions remain the coarse admin entrance.
+`ModelBackend` supplies those no-object permissions and password
+login. The runnable example settings list both backends, and the
+seeded-owner proof does not replace `AUTHENTICATION_BACKENDS`:
+
+```python
+AUTHENTICATION_BACKENDS = (
+    'gh_permissions.backends.GhAuthorizationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+```
+
+With an object, `ModelBackend` contributes nothing and
+`GhAuthorizationBackend` enumerates granted `auth.Permission`
+codenames. Trusts supplies the organization boundary. A staff user
+needs both layers. A model permission is not an organization grant.
 
 ## Can the mixin collapse?
 
@@ -118,5 +129,9 @@ row does not. A misaligned team grant is still rejected by
 `TeamRepositoryPermission.clean` on a `ModelForm`. `QuerySet.create`
 does not call `clean`.
 
-Host projects that turn the admin on must include `ModelBackend` beside
-`GhAuthorizationBackend`.
+Host projects that turn the admin on, including this runnable example,
+must include `ModelBackend` beside `GhAuthorizationBackend`. Forged
+foreign parents are rejected by the scoped form queryset before a row
+is written. Relationship edits that change ownership, team membership,
+collaborator bundles, or team grants are still stock admin saves
+inside that queryset. They are not a separate mutation service.
