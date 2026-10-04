@@ -132,6 +132,24 @@ does not call `clean`.
 Host projects that turn the admin on, including this runnable example,
 must include `ModelBackend` beside `GhAuthorizationBackend`. Forged
 foreign parents are rejected by the scoped form queryset before a row
-is written. Relationship edits that change ownership, team membership,
-collaborator bundles, or team grants are still stock admin saves
-inside that queryset. They are not a separate mutation service.
+is written. Relationship edits in this admin are still stock admin
+saves inside that queryset. This admin does not call the domain
+services.
+
+## Relationship writes
+
+Settled authorization-bearing writes are domain services in
+`gh_permissions.services`, tested without this admin. The admin
+classes on this page do not call those functions.
+`OrganizationOwnershipAdmin` still sets `scope_allows_add`,
+`scope_allows_change`, and `scope_allows_delete` to false, so a
+non-superuser cannot edit an ownership row here. Superusers still
+bypass the scope mixin.
+
+`manage_organization` on a stored organization is the management
+inquiry those services use. `read_repository`, `write_repository`,
+and `admin_repository` are the repository grants being edited. Moving
+`Repository.organization` or `Team.organization` through admin or a
+raw queryset is outside those services and can re-scope stored
+grants. That path is not closed here. Ownership removal and user
+deletion are not closed here either.
