@@ -41,13 +41,21 @@ configuration. Core `'trusts'` is absent.
 INSTALLED_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.auth',
+    'example.apps.ExampleConfig',
     'gh_permissions.apps.GhPermissionsConfig',
 )
+AUTH_USER_MODEL = 'example.User'
 
 AUTHENTICATION_BACKENDS = (
     'gh_permissions.backends.GhAuthorizationBackend',
 )
 ```
+
+`example.User` is the test project's user. Its manager mixes in
+`PermittedUsersManagerMixin`, which is what makes
+`User.objects.permitted(content, perm)` available. The library models
+use `settings.AUTH_USER_MODEL` and do not import `example`. A project
+that keeps stock `auth.User` still uses `repository.get_permitted_users`.
 
 `GhPermissionsConfig` owns the implementation. The accepted team
 registration (contributed at startup) is:
@@ -73,10 +81,14 @@ The optional direct user/repository grant is the three-FK
 ## Authorize
 
 Object decisions and authorized listings share the same compiled
-policy. Callers pass the configured user model and `Operation`
-instances. The object call uses the supported owner/registry lookup:
+policy. The permission row is `auth.Permission`. Codename shape is
+`gh_permissions.read_repository` and `gh_permissions.write_repository`
+(and `gh_permissions.admin_repository`). `Repository.objects.authorized`
+takes that permission instance. `has_perm` and `permitted` also accept
+the Django permission string as the alias.
 
 ```python
+from example.models import User
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import Repository
 from trusts.apps import implementation_for_path
@@ -86,9 +98,14 @@ registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
 ).registry
 registry.has_permission(user, repository, operation)
 Repository.objects.authorized(user, operation)
+user.has_perm('gh_permissions.read_repository', repository)
+User.objects.permitted(repository, 'gh_permissions.read_repository')
+repository.get_permitted_users('gh_permissions.read_repository')
 ```
 
 `Repository.objects` is the stock core `AuthorizedManager`.
+`Repository` mixes in `PermittedUsersMixin`. With the example user
+manager, the same rows are `User.objects.permitted(repository, perm)`.
 
 ## Install
 

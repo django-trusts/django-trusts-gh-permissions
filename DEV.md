@@ -8,15 +8,38 @@ points at `README.md`, not this file.
 ## Current pairing
 
 This tree is `django-trusts-gh-permissions==0.1.0.dev0` against the
-final core library cut `django-trusts==1.0.0.dev3`
+final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
-merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI and
-`scripts/django-trusts.pin` use the public `handle.register` plus
-symbolic-condition API from django-trusts
+merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
+`requirements.txt`, and `scripts/django-trusts.pin` point at
+django-trusts `dev` commit
+`9cac5d843b58be5174f7ae53920d2861419d14d9`, the merge of
+[#261](https://github.com/django-trusts/django-trusts/pull/261).
+Do not float past that commit.
+
+The permission terminal is `auth.Permission`, with codenames
+`read_repository`, `write_repository`, and `admin_repository`.
+`Repository` mixes in `PermittedUsersMixin`. The example/test user
+(`example.User`) mixes `PermittedUsersManagerMixin` into its manager so
+`User.objects.permitted(content, perm)` is exercised. The library does
+not require that user. `0001_initial` is unchanged.
+`0002_auth_permission_terminal` is an irreversible reset: before either
+operation foreign key is retargeted, it deletes every
+`UserRepositoryPermission` and `TeamRepositoryPermission` row, and
+removing then re-adding `Team.allowed_operations` drops the ceiling
+through-table. Old `operation_id` values are not copied onto
+`auth.Permission`. Migrating backwards raises `IrreversibleError` and
+does not restore those grants. This pairing leaves `OrgScopedAdmin`
+untouched.
+
+The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
+(django-trusts#241) is superseded for this pin. The earlier
+`handle.register` plus symbolic-condition pin from django-trusts
 [#213](https://github.com/django-trusts/django-trusts/pull/213)
 integration train `DEV_register_api_train` head
 `a909eaeb8e087977fb1c1076682aab0b5ad754c5` (stacks approved #206 docs,
-#208 `register(*, trust=...)`, and #211 symbolic `condition=`).
+#208 `register(*, trust=...)`, and #211 symbolic `condition=`) is
+superseded for this pin.
 
 The earlier documented `handle.register_relationship` pair
 [#174](https://github.com/django-trusts/django-trusts/pull/174)
@@ -79,7 +102,10 @@ and never installs `'trusts'`.
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`. Callers pass
-`AUTH_USER_MODEL` and `Operation` **instances**.
+`AUTH_USER_MODEL` and `auth.Permission` **instances**.
+`Repository.objects.authorized` takes the permission instance.
+`has_perm` and `permitted` accept `gh_permissions.read_repository`
+(and the write and admin codenames) as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct is `register_direct`. Both take the configured `BackendHandle`
@@ -90,7 +116,10 @@ and `&`. Literal Python `in` is unsupported. There is no aggregate
 
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
-`TrustModelBackend`. GH does not use Django auth Permission strings.
+`TrustModelBackend`. `Repository.objects.authorized` takes an
+`auth.Permission` instance, while `has_perm` and the permitted-user
+adapters accept either that instance or its Django permission string
+as documented.
 
 Application authors own ordinary relational models plus compact
 registrations. Core owns validation, correlated query construction,
@@ -121,7 +150,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `a909eaeb8e087977fb1c1076682aab0b5ad754c5`.
+with Django 6.1 against exact paired-core head `9cac5d843b58be5174f7ae53920d2861419d14d9`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -137,7 +166,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
+| Domain models | `models.py` + `0001_initial` + `0002_auth_permission_terminal` | Organization, Team, Repository, UserRepositoryPermission, TeamRepositoryPermission. Permission rows are `auth.Permission`. |
 | Policy registrations | `policy.py` | Direct and team `handle.register` with `trust=` and a symbolic team condition; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
 | Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |

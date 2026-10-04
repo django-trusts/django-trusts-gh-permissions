@@ -14,9 +14,10 @@ Content and never expose ``.trusts``, ``.trustees``, ``.contexts``,
 """
 
 from django.conf import settings
+from django.contrib.auth.models import Permission
 from django.db import models
 
-from trusts.query import AuthorizedManager
+from trusts.query import AuthorizedManager, PermittedUsersMixin
 
 
 class Organization(models.Model):
@@ -26,15 +27,6 @@ class Organization(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class Operation(models.Model):
-    """Permission value. Callers pass instances, never Django codenames."""
-
-    code = models.CharField(max_length=40, unique=True)
-
-    def __str__(self):
-        return self.code
 
 
 class Team(models.Model):
@@ -48,7 +40,7 @@ class Team(models.Model):
         settings.AUTH_USER_MODEL, related_name='teams', blank=True,
     )
     allowed_operations = models.ManyToManyField(
-        Operation, related_name='allowed_teams', blank=True,
+        Permission, related_name='allowed_teams', blank=True,
     )
 
     class Meta:
@@ -58,8 +50,8 @@ class Team(models.Model):
         return self.name
 
 
-class Repository(models.Model):
-    """Protected resource. Instance-only ``.authorized(user, operation)``."""
+class Repository(PermittedUsersMixin, models.Model):
+    """Protected resource. ``.authorized(user, operation)`` takes a Permission."""
 
     organization = models.ForeignKey(
         Organization, related_name='repositories', on_delete=models.CASCADE,
@@ -72,6 +64,11 @@ class Repository(models.Model):
         verbose_name = 'repository'
         verbose_name_plural = 'repositories'
         unique_together = ('organization', 'title')
+        permissions = (
+            ('read_repository', 'Can read repository'),
+            ('write_repository', 'Can write repository'),
+            ('admin_repository', 'Can administer repository'),
+        )
 
     def __str__(self):
         return self.title
@@ -89,7 +86,7 @@ class UserRepositoryPermission(models.Model):
         Repository, related_name='user_permissions', on_delete=models.CASCADE,
     )
     operation = models.ForeignKey(
-        Operation,
+        Permission,
         related_name='user_repository_permissions',
         on_delete=models.CASCADE,
     )
@@ -108,7 +105,7 @@ class TeamRepositoryPermission(models.Model):
         Repository, related_name='team_permissions', on_delete=models.CASCADE,
     )
     operation = models.ForeignKey(
-        Operation,
+        Permission,
         related_name='team_repository_permissions',
         on_delete=models.CASCADE,
     )

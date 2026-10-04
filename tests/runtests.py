@@ -18,6 +18,8 @@ SUITE = [
     'tests.test_issue6',
     'tests.test_issue9',
     'tests.test_issue20',
+    'tests.test_permitted_users',
+    'tests.test_migration_0002',
 ]
 
 

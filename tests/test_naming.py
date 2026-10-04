@@ -6,11 +6,11 @@ from pathlib import Path
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.core.exceptions import FieldDoesNotExist
 from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import (
-    Operation,
     Organization,
     Repository,
     Team,
@@ -114,11 +114,13 @@ class GhNamingTest(SimpleTestCase):
         source = Path(inspect.getfile(models)).read_text()
         self.assertIn('settings.AUTH_USER_MODEL', source)
         self.assertNotIn('class Account', source)
+        self.assertNotIn('class Operation', source)
         self.assertNotIn('PermissionBundle', source)
         self.assertNotIn('GhAuthorized', source)
         self.assertNotIn('AccountRepoGrant', source)
         self.assertNotIn('TeamRepoGrant', source)
         self.assertFalse(hasattr(models, 'Account'))
+        self.assertFalse(hasattr(models, 'Operation'))
         self.assertFalse(hasattr(models, 'PermissionBundle'))
         self.assertFalse(hasattr(models, 'GhAuthorizedQuerySet'))
         self.assertFalse(hasattr(models, 'GhAuthorizedManager'))
@@ -134,7 +136,23 @@ class GhRelationTest(TestCase):
         self.assertEqual(User._meta.get_field('teams').related_model, Team)
         self.assertEqual(
             Team._meta.get_field('allowed_operations').related_model,
-            Operation,
+            Permission,
+        )
+        self.assertEqual(
+            UserRepositoryPermission._meta.get_field('operation').related_model,
+            Permission,
+        )
+        self.assertEqual(
+            TeamRepositoryPermission._meta.get_field('operation').related_model,
+            Permission,
+        )
+        self.assertEqual(
+            Repository._meta.permissions,
+            (
+                ('read_repository', 'Can read repository'),
+                ('write_repository', 'Can write repository'),
+                ('admin_repository', 'Can administer repository'),
+            ),
         )
         self.assertEqual(
             Team._meta.get_field('members').related_model,
@@ -172,7 +190,7 @@ class GhRelationTest(TestCase):
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
-            Organization, Team, Operation, Repository,
+            Organization, Team, Repository,
             TeamRepositoryPermission, UserRepositoryPermission,
         ):
             leaked = _related_accessor_names(model).intersection(

@@ -130,12 +130,14 @@ class Issue6AuthorizationProofs(TestCase):
         import trusts.apps as trusts_apps
         from django.contrib.auth import get_user_model
 
-        from gh_permissions.models import Operation, Organization
+        from gh_permissions.models import Organization
+
+        from tests.fixtures import repository_permission
 
         org = Organization.objects.create(name='iib-org')
         repo = Repository.objects.create(organization=org, title='iib-repo')
         user = get_user_model().objects.create(username='iib-account')
-        write = Operation.objects.create(code='iib-write')
+        write = repository_permission('write_repository')
         UserRepositoryPermission.objects.create(
             user=user, repository=repo, operation=write,
         )
