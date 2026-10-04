@@ -22,6 +22,19 @@ exists. Missing parents, duplicate targets, and a team grant whose
 team and repository organizations differ still fail, including for a
 superuser. ``.authorized`` does not list a superuser who has no
 ownership row.
+
+Ownership update and delete keep at least one owner on every
+surviving conventional organization. ``delete_user`` locks each
+conventional organization that user owns, in primary-key order, and
+rolls the deletion back when any of them would be left with none.
+The personal organization is deleted with the user, so it is not one
+of those survivors. ``Team.organization`` and
+``Repository.organization`` stay where they were stored: moving either
+row would re-scope collaborator bundles and team grants, and this
+slice does not decide whether those grants follow the row. A raw
+queryset write does not run these checks. ``register(condition=)`` is
+read-time SQL over existing trust rows and is not where the owner
+count is enforced.
 """
 
 from django.contrib.auth import get_user_model
@@ -257,13 +270,19 @@ def rename_organization(organization, name):
 def delete_user(user):
     """Delete the user and release the username alias.
 
-    The personal organization and its ownership rows follow the user.
-    A user created outside these services may have no alias; deletion
-    still removes the user.
+    The personal organization and its ownership rows follow the user,
+    so that organization is not required to keep an owner. Every
+    conventional organization this user owns is locked in
+    primary-key order inside the same transaction. When any of those
+    would be left with no owner, ``LastOrganizationOwner`` lists each
+    of them and nothing is deleted. A user created outside these
+    services may have no alias; deletion still removes the user when
+    the preflight passes. A raw ``User.delete`` does not run it.
     """
     User = get_user_model()
     with transaction.atomic():
         user = User.objects.select_for_update().get(pk=user.pk)
+        _refuse_ownerless_conventional_organizations(user)
         Alias.objects.filter(name=user.username).delete()
         user.delete()
 
@@ -334,6 +353,30 @@ class ManagementDenied(RelationshipWriteError):
             'manage_organization was denied for organization %s.'
             % (organization_id,)
         )
+
+
+class LastOrganizationOwner(RelationshipWriteError):
+    """A surviving conventional organization would have no owner.
+
+    ``organization_ids`` lists every conventional organization this
+    write would empty, in ascending primary-key order. The personal
+    organization deleted with its user is not included.
+    """
+
+    def __init__(self, organization_ids):
+        self.organization_ids = tuple(sorted(organization_ids))
+        super().__init__(
+            'A conventional organization must keep an owner: %s.'
+            % ', '.join(str(pk) for pk in self.organization_ids)
+        )
+
+
+class ImmutableOrganizationBoundary(RelationshipWriteError):
+    """``Team.organization`` or ``Repository.organization`` was submitted."""
+
+    def __init__(self, label):
+        self.label = label
+        super().__init__('%s.organization cannot be moved.' % (label,))
 
 
 def _require_pk(value, label):
@@ -543,8 +586,8 @@ def replace_team_members_and_ceiling(
 
     Both sequences are the full new sets. Users are global grant
     targets. Permission rows are global ``auth.Permission`` values.
-    The team's stored organization is the boundary. This does not move
-    ``Team.organization``.
+    The team's stored organization is the boundary.
+    ``move_team_organization`` refuses a change to ``Team.organization``.
     """
     team_pk = _require_pk(team_id, 'team')
     user_pks = _require_pk_sequence(user_ids, 'user')
@@ -597,7 +640,8 @@ def update_repository_collaborator(
 
     A different repository authorizes that repository's stored
     organization as well as the collaborator's stored organization.
-    This does not replace ``permissions`` and does not move
+    This does not replace ``permissions``.
+    ``move_repository_organization`` refuses a change to
     ``Repository.organization``.
     """
     if user_id is None and repository_id is None:
@@ -793,3 +837,185 @@ def delete_team(actor, team_id):
         organization = _lock_parent_organization(team)
         _require_manage(actor, [organization])
         team.delete()
+
+
+def _lock_ownership(ownership_id):
+    return _locked_one(
+        OrganizationOwnership,
+        _require_pk(ownership_id, 'organization ownership'),
+        'organization ownership',
+    )
+
+
+def _refuse_unless_another_owner(organization, *, excluding_ownership_pk):
+    """Require another owner when ``organization`` is conventional.
+
+    The organization row is already locked in this transaction. The
+    count is the rows that would remain. ``register(condition=)``
+    cannot do this: at the pinned core it is compiled into the
+    trust-row ``EXISTS`` and reads rows that already exist. It has no
+    aggregate over owners that would remain, and core installs no
+    save or delete signal.
+    """
+    if organization.personal_user_id is not None:
+        return
+    remaining = OrganizationOwnership.objects.filter(
+        organization=organization,
+    ).exclude(pk=excluding_ownership_pk)
+    if not remaining.exists():
+        raise LastOrganizationOwner((organization.pk,))
+
+
+def _refuse_ownerless_conventional_organizations(user):
+    """Lock this user's conventional organizations in primary-key order.
+
+    ``user`` is already ``select_for_update``d, so a new ownership row
+    for that user waits on databases that share the row lock with the
+    foreign-key insert. The personal organization is omitted because
+    ``delete_user`` deletes it with the user. The decision is the
+    recount under each organization lock. Every organization that
+    would be left empty is reported together.
+    """
+    organization_ids = sorted(set(
+        OrganizationOwnership.objects.filter(
+            user=user,
+            organization__personal_user__isnull=True,
+        ).values_list('organization_id', flat=True)
+    ))
+    blocked = []
+    for organization_id in organization_ids:
+        organization = _lock_organization(organization_id)
+        if organization.personal_user_id is not None:
+            continue
+        others = OrganizationOwnership.objects.filter(
+            organization=organization,
+        ).exclude(user=user)
+        if not others.exists():
+            blocked.append(organization.pk)
+    if blocked:
+        raise LastOrganizationOwner(tuple(blocked))
+
+
+def update_organization_ownership(
+    actor, ownership_id, *, user_id=None, organization_id=None,
+):
+    """Change the stored ownership row's user, organization, or both.
+
+    The stored organization is locked and authorized before a
+    replacement organization is loaded. That replacement is authorized
+    on its own stored row. The ownership row being saved is not the
+    inquiry. Reassigning the user leaves the row on the same
+    organization, so the sole owner may be replaced. Moving the row
+    off a conventional organization is refused when no other owner
+    would remain. An active superuser skips only the inquiry.
+    """
+    if user_id is None and organization_id is None:
+        raise UndefinedRelationshipWrite('organization ownership update')
+    ownership_pk = _require_pk(ownership_id, 'organization ownership')
+    user_pk = None if user_id is None else _require_pk(user_id, 'user')
+    organization_pk = (
+        None if organization_id is None
+        else _require_pk(organization_id, 'organization')
+    )
+    with transaction.atomic():
+        actor = _locked_actor(actor)
+        ownership = _lock_ownership(ownership_pk)
+        stored = _lock_organization(ownership.organization_id)
+        _require_manage(actor, [stored])
+        target = stored
+        if organization_pk is not None and organization_pk != stored.pk:
+            target = _lock_organization(organization_pk)
+            _require_manage(actor, [target])
+        if user_pk is None:
+            user = _lock_user(ownership.user_id)
+        else:
+            user = _lock_user(user_pk)
+        moved = (
+            user.pk != ownership.user_id
+            or target.pk != ownership.organization_id
+        )
+        if moved:
+            conflict = OrganizationOwnership.objects.filter(
+                user=user, organization=target,
+            ).exclude(pk=ownership.pk)
+            if conflict.exists():
+                raise DuplicateRelationshipTarget('organization ownership')
+        if target.pk != stored.pk:
+            _refuse_unless_another_owner(
+                stored, excluding_ownership_pk=ownership.pk,
+            )
+        if not moved:
+            return ownership
+        ownership.user = user
+        ownership.organization = target
+        ownership.save(update_fields=['user', 'organization'])
+        return ownership
+
+
+def delete_organization_ownership(actor, ownership_id):
+    """Delete one stored ownership row.
+
+    A conventional organization must still have another owner. An
+    active superuser skips the inquiry and still hits that refusal.
+    A personal organization is not conventional; ``delete_user`` is
+    what removes it with the user.
+    """
+    ownership_pk = _require_pk(ownership_id, 'organization ownership')
+    with transaction.atomic():
+        actor = _locked_actor(actor)
+        ownership = _lock_ownership(ownership_pk)
+        organization = _lock_organization(ownership.organization_id)
+        _require_manage(actor, [organization])
+        _refuse_unless_another_owner(
+            organization, excluding_ownership_pk=ownership.pk,
+        )
+        ownership.delete()
+
+
+def _refuse_organization_boundary_move(
+    actor, model, parent_id, parent_label, organization_id, boundary_label,
+):
+    """Resolve both organizations, then leave the stored boundary in place.
+
+    Moving ``Team.organization`` re-scopes membership, the permission
+    ceiling, and every team-repository grant. Moving
+    ``Repository.organization`` re-scopes collaborator bundles and
+    those same grants. A grant has to stay inside one organization.
+    Authorizing ``manage_organization`` on the stored organization and
+    the replacement would not decide whether the grants follow, are
+    deleted, or block the move. Both organizations are locked in
+    primary-key order so the refusal is about the persisted rows. An
+    inactive actor is denied before the active-superuser bypass. The
+    bypass is not applied: an active superuser receives the same
+    refusal.
+    """
+    parent_pk = _require_pk(parent_id, parent_label)
+    organization_pk = _require_pk(organization_id, 'organization')
+    with transaction.atomic():
+        actor = _locked_actor(actor)
+        parent = _locked_one(model, parent_pk, parent_label)
+        stored_id = parent.organization_id
+        for pk in sorted({stored_id, organization_pk}):
+            _lock_organization(pk)
+        if not actor.is_active:
+            raise ManagementDenied(stored_id)
+        raise ImmutableOrganizationBoundary(boundary_label)
+
+
+def move_team_organization(actor, team_id, organization_id):
+    """Refuse to change the stored ``Team.organization``."""
+    _refuse_organization_boundary_move(
+        actor, Team, team_id, 'team', organization_id, 'Team',
+    )
+
+
+def move_repository_organization(actor, repository_id, organization_id):
+    """Refuse to change the stored ``Repository.organization``."""
+    _refuse_organization_boundary_move(
+        actor,
+        Repository,
+        repository_id,
+        'repository',
+        organization_id,
+        'Repository',
+    )

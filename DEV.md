@@ -56,11 +56,35 @@ inactive superuser who already owns the organization. Existence and
 same-organization checks still apply. `.authorized` does not gain a
 row for that superuser.
 
-Ownership update and delete, the `delete_user` cascade, and moves of
-`Repository.organization` or `Team.organization` are not part of this
-slice. Admin does not call these services.
-`OrganizationOwnershipAdmin` stays read-only for non-superusers. No
-new codename, no new `handle.register`, and no schema migration.
+The next #28 slice adds ownership update and delete, the
+`delete_user` preflight, and a refusal for `Team.organization` and
+`Repository.organization` moves. A conventional organization that
+survives the write must keep an owner. `delete_user` locks every
+conventional organization that user owns, in primary-key order,
+inside the same transaction as the delete. `LastOrganizationOwner`
+lists each organization that would be left empty, and the transaction
+rolls the deletion back. The user's personal organization is deleted
+with the user, so it is not one of those survivors. An active
+superuser may add the first owner of an organization that has none,
+and may not remove the last one. A persisted inactive actor is still
+denied before that bypass and before the ownership inquiry.
+
+`move_team_organization` and `move_repository_organization` lock the
+stored row and both organizations, then refuse. A move would re-scope
+collaborator bundles and team grants. Checking `manage_organization`
+on both boundaries would not decide whether those grants follow, are
+deleted, or block the move. That decision is outside this slice, so
+the supported path leaves the stored foreign key in place. Raw
+queryset writes still do not run the service checks.
+`register(condition=)` was checked at core `7503ae83`: it compiles
+into the trust-row `EXISTS`, reads rows that already exist, has no
+aggregate that can require another owner, and core installs no save
+or delete signal. The owner count stays in the service. No new
+codename, no new `handle.register`, and no schema migration. Admin
+does not call the new ownership or move functions.
+`OrganizationOwnershipAdmin` stays read-only for non-superusers.
+`ServiceBackedUserAdmin` already calls `delete_user`, so the
+preflight applies to that existing hook.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.

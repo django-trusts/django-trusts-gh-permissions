@@ -148,8 +148,15 @@ bypass the scope mixin.
 
 `manage_organization` on a stored organization is the management
 inquiry those services use. `read_repository`, `write_repository`,
-and `admin_repository` are the repository grants being edited. Moving
-`Repository.organization` or `Team.organization` through admin or a
-raw queryset is outside those services and can re-scope stored
-grants. That path is not closed here. Ownership removal and user
-deletion are not closed here either.
+and `admin_repository` are the repository grants being edited.
+`update_organization_ownership` and `delete_organization_ownership`
+keep an owner on every surviving conventional organization.
+`delete_user` locks those organizations in primary-key order and
+rolls the user deletion back when any would be left with none. User
+admin already calls `delete_user`, so that preflight runs for this
+hook. The ownership update and delete functions are not called from
+these admin classes. `move_team_organization` and
+`move_repository_organization` refuse the move; a later admin pass
+must call that refusal or reject the field. A raw queryset write, and
+a stock admin save of `Team.organization` or `Repository.organization`,
+still sits outside the service.

@@ -1,9 +1,11 @@
-"""Issue #28 stage 8: authorization-bearing relationship writes.
+"""Issue #28: authorization-bearing relationship writes.
 
 Domain services are tested without admin. The inquiry is
 ``manage_organization`` on the organization row locked inside the
 write. A submitted instance, a new ownership row, and a permission
-bundle are not that inquiry.
+bundle are not that inquiry. Ownership update and delete keep an
+owner on every surviving conventional organization. ``delete_user``
+applies that rule before it deletes anyone.
 """
 
 from unittest.mock import patch
@@ -18,6 +20,7 @@ from django.test.utils import CaptureQueriesContext
 
 from gh_permissions.admin import OrganizationOwnershipAdmin
 from gh_permissions.models import (
+    Alias,
     Organization,
     OrganizationOwnership,
     Repository,
@@ -25,9 +28,12 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
+from gh_permissions.policy import register_organization_owner
 from gh_permissions.services import (
     CrossOrganizationRelationship,
     DuplicateRelationshipTarget,
+    ImmutableOrganizationBoundary,
+    LastOrganizationOwner,
     ManagementDenied,
     MissingRelationshipTarget,
     RelationshipWriteError,
@@ -37,15 +43,20 @@ from gh_permissions.services import (
     create_repository_collaborator,
     create_team_repository_permission,
     create_user,
+    delete_organization_ownership,
     delete_repository_collaborator,
     delete_team,
     delete_team_repository_permission,
+    delete_user,
+    move_repository_organization,
+    move_team_organization,
     replace_collaborator_permissions,
     replace_team_members_and_ceiling,
+    update_organization_ownership,
     update_repository_collaborator,
     update_team_repository_permission,
 )
-from tests.fixtures import repository_permission
+from tests.fixtures import isolated_handle, repository_permission
 
 
 _READ = 'gh_permissions.read_repository'
@@ -188,6 +199,11 @@ class RelationshipWriteTests(TestCase):
             self.other_owner,
         )
 
+    def _owner_row(self):
+        return OrganizationOwnership.objects.get(
+            user=self.owner, organization=self.org,
+        )
+
     def _writes(self, actor):
         return (
             lambda: add_organization_owner(
@@ -216,6 +232,12 @@ class RelationshipWriteTests(TestCase):
             ),
             lambda: delete_team_repository_permission(actor, self.grant.pk),
             lambda: delete_team(actor, self.team.pk),
+            lambda: update_organization_ownership(
+                actor, self._owner_row().pk, user_id=self.target.pk,
+            ),
+            lambda: delete_organization_ownership(
+                actor, self._owner_row().pk,
+            ),
         )
 
     def test_owner_can_perform_each_settled_write(self):
@@ -946,6 +968,10 @@ class RelationshipWriteTests(TestCase):
             'create_team_repository_permission',
             'update_team_repository_permission',
             'delete_team_repository_permission',
+            'update_organization_ownership',
+            'delete_organization_ownership',
+            'move_team_organization',
+            'move_repository_organization',
         ):
             self.assertNotIn(name, source)
         self.assertNotIn('delete_team(', source)
@@ -973,3 +999,589 @@ class RelationshipWriteTests(TestCase):
             bare,
             set(Organization.objects.authorized(superuser, self.manage)),
         )
+
+
+def _assert_inquiry_not_called(test, call):
+    events = []
+    original = Organization.objects.authorized
+
+    def authorized(self, user, permission, extra_q=None):
+        events.append('inquiry')
+        return original(user, permission, extra_q)
+
+    try:
+        with patch.object(type(Organization.objects), 'authorized', authorized):
+            call()
+    finally:
+        test.assertEqual(events, [])
+
+
+class OwnershipRetentionTests(TestCase):
+    """Surviving conventional organizations keep an owner.
+
+    The check is the service count under the locked organization row.
+    ``register(condition=)`` stays empty on the owner registration.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.owner = create_user('owner')
+        self.other = create_user('other')
+        self.member = create_user('member')
+        self.org = create_organization('acme')
+        self.other_org = create_organization('other-org')
+        self.row = OrganizationOwnership.objects.create(
+            user=self.owner, organization=self.org,
+        )
+        OrganizationOwnership.objects.create(
+            user=self.other, organization=self.other_org,
+        )
+        self.manage = _manage()
+
+    def _superuser(self, username='root'):
+        return get_user_model().objects.create_superuser(
+            username=username, email='%s@example.com' % username, password='secret',
+        )
+
+    def test_another_owner_may_be_removed_or_reassigned(self):
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        delete_organization_ownership(self.owner, second.pk)
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(pk=second.pk).exists()
+        )
+        self.assertEqual(self.org.ownerships.count(), 1)
+        self.assertTrue(self.owner.has_perm(_MANAGE, self.org))
+        self.assertFalse(self.member.has_perm(_MANAGE, self.org))
+        self.assertNotIn(
+            self.org,
+            set(Organization.objects.authorized(self.member, self.manage)),
+        )
+
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        fresh = create_user('fresh')
+        updated = update_organization_ownership(
+            self.owner, second.pk, user_id=fresh.pk,
+        )
+        self.assertEqual(updated.user_id, fresh.pk)
+        self.assertEqual(updated.organization_id, self.org.pk)
+        self.assertTrue(fresh.has_perm(_MANAGE, self.org))
+        self.assertFalse(self.member.has_perm(_MANAGE, self.org))
+        self.assertIn(
+            self.org,
+            set(Organization.objects.authorized(fresh, self.manage)),
+        )
+
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=self.other_org,
+        )
+        moved = update_organization_ownership(
+            self.owner, updated.pk, organization_id=self.other_org.pk,
+        )
+        self.assertEqual(moved.user_id, fresh.pk)
+        self.assertEqual(moved.organization_id, self.other_org.pk)
+        self.assertEqual(
+            set(self.org.ownerships.values_list('user_id', flat=True)),
+            {self.owner.pk},
+        )
+        self.assertTrue(self.owner.has_perm(_MANAGE, self.org))
+        self.assertTrue(fresh.has_perm(_MANAGE, self.other_org))
+
+    def test_sole_owner_may_be_replaced_on_the_same_organization(self):
+        updated = update_organization_ownership(
+            self.owner, self.row.pk, user_id=self.member.pk,
+        )
+        self.assertEqual(updated.organization_id, self.org.pk)
+        self.assertEqual(self.org.ownerships.count(), 1)
+        self.assertTrue(self.member.has_perm(_MANAGE, self.org))
+        self.assertFalse(self.owner.has_perm(_MANAGE, self.org))
+        self.assertIn(
+            self.org,
+            set(Organization.objects.authorized(self.member, self.manage)),
+        )
+        self.assertNotIn(
+            self.org,
+            set(Organization.objects.authorized(self.owner, self.manage)),
+        )
+
+    def test_last_conventional_owner_cannot_be_deleted_or_moved(self):
+        before = _graph()
+        with self.assertRaises(LastOrganizationOwner) as caught:
+            delete_organization_ownership(self.owner, self.row.pk)
+        self.assertEqual(caught.exception.organization_ids, (self.org.pk,))
+        self.assertEqual(_graph(), before)
+
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=self.other_org,
+        )
+        with self.assertRaises(LastOrganizationOwner) as caught:
+            update_organization_ownership(
+                self.owner,
+                self.row.pk,
+                user_id=self.member.pk,
+                organization_id=self.other_org.pk,
+            )
+        self.assertEqual(caught.exception.organization_ids, (self.org.pk,))
+        self.row.refresh_from_db()
+        self.assertEqual(self.row.organization_id, self.org.pk)
+        self.assertEqual(self.row.user_id, self.owner.pk)
+        self.assertTrue(self.owner.has_perm(_MANAGE, self.org))
+
+    def test_stored_boundary_is_authorized_before_a_missing_replacement(self):
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: update_organization_ownership(
+                self.other, self.row.pk, organization_id=_MISSING,
+            ),
+        )
+
+    def test_in_memory_superuser_flag_does_not_remove_an_owner(self):
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        self.other.is_superuser = True
+        self.other.is_active = True
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: delete_organization_ownership(self.other, second.pk),
+        )
+        self.other.refresh_from_db()
+        self.assertFalse(self.other.is_superuser)
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=second.pk).exists()
+        )
+
+    def test_inactive_actor_is_denied_before_the_inquiry(self):
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        self.owner.is_active = False
+        self.owner.save(update_fields=['is_active'])
+
+        def remove_second():
+            delete_organization_ownership(self.owner, second.pk)
+
+        with self.assertRaises(ManagementDenied):
+            _assert_inquiry_not_called(self, remove_second)
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=second.pk).exists()
+        )
+
+        self.owner.is_active = True
+        self.owner.save(update_fields=['is_active'])
+        delete_organization_ownership(self.owner, second.pk)
+        self.owner.is_active = False
+        self.owner.save(update_fields=['is_active'])
+
+        def remove_last():
+            delete_organization_ownership(self.owner, self.row.pk)
+
+        with self.assertRaises(ManagementDenied):
+            _assert_inquiry_not_called(self, remove_last)
+        self.row.refresh_from_db()
+
+        extra = OrganizationOwnership.objects.create(
+            user=self.member, organization=self.org,
+        )
+        superuser = self._superuser()
+        superuser.is_active = False
+        superuser.save(update_fields=['is_active'])
+
+        def superuser_removes_extra():
+            delete_organization_ownership(superuser, extra.pk)
+
+        with self.assertRaises(ManagementDenied):
+            _assert_inquiry_not_called(self, superuser_removes_extra)
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=extra.pk).exists()
+        )
+
+    def test_active_superuser_can_fill_an_empty_organization_but_not_empty_it(self):
+        bare = create_organization('bare')
+        superuser = self._superuser()
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(user=superuser).exists()
+        )
+        added = add_organization_owner(superuser, bare.pk, self.member.pk)
+        self.assertTrue(self.member.has_perm(_MANAGE, bare))
+        self.assertNotIn(
+            bare,
+            set(Organization.objects.authorized(superuser, self.manage)),
+        )
+
+        def remove_only():
+            delete_organization_ownership(superuser, added.pk)
+
+        with self.assertRaises(LastOrganizationOwner) as caught:
+            _assert_inquiry_not_called(self, remove_only)
+        self.assertEqual(caught.exception.organization_ids, (bare.pk,))
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=added.pk).exists()
+        )
+
+        def move_only():
+            update_organization_ownership(
+                superuser, added.pk, organization_id=self.org.pk,
+            )
+
+        with self.assertRaises(LastOrganizationOwner) as caught:
+            _assert_inquiry_not_called(self, move_only)
+        self.assertEqual(caught.exception.organization_ids, (bare.pk,))
+        added.refresh_from_db()
+        self.assertEqual(added.organization_id, bare.pk)
+
+        updated = update_organization_ownership(
+            superuser, added.pk, user_id=self.owner.pk,
+        )
+        self.assertEqual(updated.user_id, self.owner.pk)
+        self.assertEqual(bare.ownerships.count(), 1)
+        second = add_organization_owner(
+            superuser, bare.pk, self.member.pk,
+        )
+        delete_organization_ownership(superuser, second.pk)
+        self.assertEqual(
+            set(bare.ownerships.values_list('user_id', flat=True)),
+            {self.owner.pk},
+        )
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(user=superuser).exists()
+        )
+        self.assertNotIn(
+            bare,
+            set(Organization.objects.authorized(superuser, self.manage)),
+        )
+
+    def test_ownership_delete_locks_the_organization_before_the_inquiry(self):
+        import gh_permissions.services as services
+
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        events = []
+        original_fetch = QuerySet._fetch_all
+        original_atomic = services.transaction.atomic
+        original_authorized = Organization.objects.authorized
+
+        def fetch(queryset):
+            if queryset.query.select_for_update:
+                events.append(('lock', queryset.model))
+            return original_fetch(queryset)
+
+        class RecordingAtomic(object):
+            def __init__(self, context):
+                self.context = context
+
+            def __enter__(self):
+                events.append('atomic')
+                return self.context.__enter__()
+
+            def __exit__(self, exc_type, exc, tb):
+                return self.context.__exit__(exc_type, exc, tb)
+
+        def atomic(*args, **kwargs):
+            return RecordingAtomic(original_atomic(*args, **kwargs))
+
+        def authorized(self, user, permission, extra_q=None):
+            events.append('inquiry')
+            return original_authorized(user, permission, extra_q=extra_q)
+
+        with patch.object(QuerySet, '_fetch_all', fetch):
+            with patch.object(services.transaction, 'atomic', atomic):
+                with patch.object(
+                    type(Organization.objects), 'authorized', authorized,
+                ):
+                    delete_organization_ownership(self.owner, second.pk)
+        lock_at = events.index(('lock', Organization))
+        inquiry_at = events.index('inquiry')
+        self.assertLess(events.index('atomic'), lock_at)
+        self.assertLess(lock_at, inquiry_at)
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(pk=second.pk).exists()
+        )
+
+    def test_undefined_and_duplicate_ownership_writes_do_not_mutate(self):
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: update_organization_ownership(self.owner, self.row.pk),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: update_organization_ownership(
+                self.owner, True, user_id=self.member.pk,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: delete_organization_ownership(self.owner, self.row),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: delete_organization_ownership(self.owner, _MISSING),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: update_organization_ownership(
+                self.owner, self.row.pk, user_id=_MISSING,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: update_organization_ownership(
+                self.owner, self.row.pk, organization_id=_MISSING,
+            ),
+        )
+        second = add_organization_owner(
+            self.owner, self.org.pk, self.member.pk,
+        )
+        _assert_no_mutation(
+            self,
+            DuplicateRelationshipTarget,
+            lambda: update_organization_ownership(
+                self.owner, self.row.pk, user_id=self.member.pk,
+            ),
+        )
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=second.pk).exists()
+        )
+
+    def test_personal_organization_ownership_is_not_the_conventional_rule(self):
+        personal = OrganizationOwnership.objects.get(
+            user=self.owner,
+            organization=self.owner.personal_organization,
+        )
+        delete_organization_ownership(self.owner, personal.pk)
+        self.owner.personal_organization.refresh_from_db()
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(pk=personal.pk).exists()
+        )
+        self.assertFalse(
+            self.owner.has_perm(_MANAGE, self.owner.personal_organization)
+        )
+        self.assertTrue(self.owner.has_perm(_MANAGE, self.org))
+
+    def test_delete_user_reports_every_sole_conventional_organization(self):
+        import gh_permissions.services as services
+
+        user = create_user('departing')
+        personal_pk = user.personal_organization.pk
+        low = create_organization('low-org')
+        mid = create_organization('mid-org')
+        high = create_organization('high-org')
+        self.assertLess(low.pk, mid.pk)
+        self.assertLess(mid.pk, high.pk)
+        OrganizationOwnership.objects.create(user=user, organization=high)
+        OrganizationOwnership.objects.create(user=user, organization=low)
+        OrganizationOwnership.objects.create(user=user, organization=mid)
+        OrganizationOwnership.objects.create(user=self.owner, organization=mid)
+        before = _graph()
+        locked = []
+        original = services._lock_organization
+
+        def lock(pk):
+            locked.append(pk)
+            return original(pk)
+
+        with CaptureQueriesContext(connection) as captured:
+            with patch.object(services, '_lock_organization', lock):
+                with self.assertRaises(LastOrganizationOwner) as caught:
+                    delete_user(user)
+        self.assertEqual(locked, [low.pk, mid.pk, high.pk])
+        self.assertNotIn(personal_pk, locked)
+        self.assertEqual(
+            caught.exception.organization_ids, (low.pk, high.pk),
+        )
+        self.assertEqual(_graph(), before)
+        self.assertTrue(get_user_model().objects.filter(pk=user.pk).exists())
+        self.assertTrue(Alias.objects.filter(name='departing').exists())
+        self.assertTrue(Organization.objects.filter(pk=personal_pk).exists())
+        self.assertTrue(OrganizationOwnership.objects.filter(
+            user=user, organization_id=personal_pk,
+        ).exists())
+        for query in captured.captured_queries:
+            sql = query['sql'].lstrip().upper()
+            self.assertFalse(
+                sql.startswith(('INSERT', 'UPDATE', 'DELETE')),
+                query['sql'],
+            )
+
+    def test_delete_user_keeps_a_co_owner_and_drops_the_personal_organization(self):
+        solo = create_user('solo')
+        solo_personal = solo.personal_organization.pk
+        delete_user(solo)
+        self.assertFalse(get_user_model().objects.filter(pk=solo.pk).exists())
+        self.assertFalse(Organization.objects.filter(pk=solo_personal).exists())
+        self.assertFalse(Alias.objects.filter(name='solo').exists())
+
+        user = create_user('departing')
+        personal_pk = user.personal_organization.pk
+        shared = create_organization('shared')
+        OrganizationOwnership.objects.create(user=user, organization=shared)
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=shared,
+        )
+        delete_user(user)
+        self.assertFalse(
+            get_user_model().objects.filter(username='departing').exists()
+        )
+        self.assertFalse(Alias.objects.filter(name='departing').exists())
+        self.assertFalse(Organization.objects.filter(pk=personal_pk).exists())
+        self.assertTrue(Organization.objects.filter(pk=shared.pk).exists())
+        self.assertEqual(
+            set(shared.ownerships.values_list('user_id', flat=True)),
+            {self.owner.pk},
+        )
+        self.assertTrue(self.owner.has_perm(_MANAGE, shared))
+
+    def test_delete_user_rolls_back_when_a_later_statement_fails(self):
+        user = create_user('later')
+        personal_pk = user.personal_organization.pk
+        shared = create_organization('shared-later')
+        OrganizationOwnership.objects.create(user=user, organization=shared)
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=shared,
+        )
+        User = get_user_model()
+        with patch.object(User, 'delete', side_effect=RuntimeError('stop')):
+            with self.assertRaises(RuntimeError):
+                delete_user(user)
+        user.refresh_from_db()
+        self.assertEqual(user.username, 'later')
+        self.assertTrue(Alias.objects.filter(name='later').exists())
+        self.assertTrue(Organization.objects.filter(pk=personal_pk).exists())
+        self.assertTrue(OrganizationOwnership.objects.filter(
+            user=user, organization=shared,
+        ).exists())
+        self.assertTrue(OrganizationOwnership.objects.filter(
+            user=user, organization_id=personal_pk,
+        ).exists())
+
+    def test_raw_writes_and_register_condition_do_not_keep_an_owner(self):
+        handle = isolated_handle()
+        register_organization_owner(handle)
+        self.assertGreaterEqual(len(handle.registry.records), 1)
+        for record in handle.registry.records:
+            self.assertIsNone(record.condition)
+
+        self.org.owners.remove(self.owner)
+        self.assertFalse(self.org.ownerships.exists())
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=self.org,
+        )
+        OrganizationOwnership.objects.filter(
+            user=self.owner, organization=self.org,
+        ).delete()
+        self.assertFalse(self.org.ownerships.exists())
+
+        user = create_user('raw-user')
+        raw_org = create_organization('raw-org')
+        OrganizationOwnership.objects.create(user=user, organization=raw_org)
+        user.delete()
+        self.assertFalse(get_user_model().objects.filter(pk=user.pk).exists())
+        self.assertTrue(Organization.objects.filter(pk=raw_org.pk).exists())
+        self.assertFalse(raw_org.ownerships.exists())
+        self.assertTrue(Alias.objects.filter(name='raw-user').exists())
+
+    def test_team_and_repository_organization_moves_are_immutable(self):
+        team = Team.objects.create(organization=self.org, name='writers')
+        repository = Repository.objects.create(
+            organization=self.org, name='app',
+        )
+        read = repository_permission('read_repository')
+        grant = TeamRepositoryPermission.objects.create(
+            team=team, repository=repository, operation=read,
+        )
+        superuser = self._superuser()
+        calls = (
+            (
+                'Team',
+                lambda actor: move_team_organization(
+                    actor, team.pk, self.other_org.pk,
+                ),
+            ),
+            (
+                'Repository',
+                lambda actor: move_repository_organization(
+                    actor, repository.pk, self.other_org.pk,
+                ),
+            ),
+        )
+        for label, call in calls:
+            for actor in (self.owner, superuser):
+                before = _graph()
+                with self.assertRaises(ImmutableOrganizationBoundary) as caught:
+                    call(actor)
+                self.assertEqual(caught.exception.label, label)
+                self.assertEqual(_graph(), before)
+        team.refresh_from_db()
+        repository.refresh_from_db()
+        self.assertEqual(team.organization_id, self.org.pk)
+        self.assertEqual(repository.organization_id, self.org.pk)
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=grant.pk).exists()
+        )
+
+        _assert_no_mutation(
+            self,
+            ImmutableOrganizationBoundary,
+            lambda: move_team_organization(
+                self.owner, team.pk, self.org.pk,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: move_repository_organization(
+                self.owner, _MISSING, self.org.pk,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: move_team_organization(
+                self.owner, team.pk, _MISSING,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: move_repository_organization(
+                self.owner, repository.pk, repository,
+            ),
+        )
+
+        self.owner.is_active = False
+        self.owner.save(update_fields=['is_active'])
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: move_team_organization(
+                self.owner, team.pk, self.other_org.pk,
+            ),
+        )
+        superuser.is_active = False
+        superuser.save(update_fields=['is_active'])
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: move_repository_organization(
+                superuser, repository.pk, self.other_org.pk,
+            ),
+        )
+
+        Team.objects.filter(pk=team.pk).update(organization=self.other_org)
+        team.refresh_from_db()
+        self.assertEqual(team.organization_id, self.other_org.pk)
+        grant.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            grant.clean()
