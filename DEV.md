@@ -29,8 +29,10 @@ operation foreign key is retargeted, it deletes every
 removing then re-adding `Team.allowed_operations` drops the ceiling
 through-table. Old `operation_id` values are not copied onto
 `auth.Permission`. Migrating backwards raises `IrreversibleError` and
-does not restore those grants. This pairing leaves `OrgScopedAdmin`
-untouched.
+does not restore those grants. `0003_organization_owner_permission`
+adds `Organization.manage_organization` and
+`OrganizationOwnerPermission` after that reset. It does not rewrite
+`0002_auth_permission_terminal`.
 
 The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
 (django-trusts#241) is superseded for this pin. The earlier
@@ -166,10 +168,12 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` + `0002_auth_permission_terminal` | Organization, Team, Repository, UserRepositoryPermission, TeamRepositoryPermission. Permission rows are `auth.Permission`. |
-| Policy registrations | `policy.py` | Direct and team `handle.register` with `trust=` and a symbolic team condition; no aggregate helper |
-| Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
-| Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |
+| Domain models | `models.py` + migrations | Organization, Team, Repository, UserRepositoryPermission, TeamRepositoryPermission, OrganizationOwnerPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
+| Policy registrations | `policy.py` | Direct, team, and organization-owner `handle.register` calls; no aggregate helper |
+| Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
+| Ready contribution | `apps.py` | `register_direct`, then `register_team`, then `register_organization_owner` |
+| Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
+| GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |
 
 Package version is **0.1.0.dev0**.

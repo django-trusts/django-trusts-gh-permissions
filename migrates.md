@@ -655,3 +655,40 @@ Then:
       Do not tip-chase past that train head. Do not introduce
       `register_ordered_fold`, private registry donation, `Ref`,
       reverse walking, new joins, or Zero.
+
+# Add OrganizationOwnerPermission (issue #22)
+
+This stair follows merged `0002_auth_permission_terminal`. It does not
+rewrite that migration and it does not restore `Operation`.
+
+## Old behavior
+
+After `0002`, repository grants point at `auth.Permission`.
+`Organization` has no administration permission and no grant table.
+An organization row is unowned.
+
+## New behavior
+
+`0003_organization_owner_permission` adds the Organization permission
+`manage_organization` and creates `OrganizationOwnerPermission`:
+one-to-one `organization`, `owner` to `AUTH_USER_MODEL`, and
+`operation` to `auth.Permission`. It does not backfill grant rows.
+Existing organizations stay unowned.
+
+`register_organization_owner` registers that model with
+`content='organization'`, after direct and team. Admin scope is
+`Organization.objects.authorized(user, manage_organization)`.
+A missing permission row, a missing grant, a different owner, or a
+different permission all fail closed. Repository authorization stays
+on the direct and team roots.
+
+## Migration-bot checklist
+
+- [ ] Apply `0003_organization_owner_permission` forward from a database
+      that already has `0002_auth_permission_terminal`. Do not rewrite
+      `0002` and do not regenerate `0001_initial`.
+- [ ] Confirm `0003` does not delete `Operation` again and does not add
+      an `Organization.owner` column.
+- [ ] Confirm pre-existing organization rows remain and have no grant
+      row.
+- [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
