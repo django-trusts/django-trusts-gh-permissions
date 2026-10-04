@@ -31,6 +31,7 @@ from gh_permissions.admin import (
     RepositoryAdmin,
     RepositoryCollaboratorAdmin,
     ServiceBackedUserAdmin,
+    ServiceRoutedAdmin,
     TeamAdmin,
     TeamRepositoryPermissionAdmin,
 )
@@ -64,7 +65,16 @@ CONCRETE_ADMINS = (
     TeamRepositoryPermissionAdmin,
     OrganizationOwnershipAdmin,
 )
-SERVICE_HOOKS = ('save_model', 'delete_model', 'delete_queryset')
+SCOPE_HOOKS = (
+    'get_queryset',
+    'has_change_permission',
+    'has_delete_permission',
+    'has_add_permission',
+    'formfield_for_foreignkey',
+    'formfield_for_manytomany',
+    'get_actions',
+    'check',
+)
 
 
 def _registry():
@@ -120,38 +130,38 @@ def _grant_scoped(user):
 
 class OrgScopedAdminContractTests(SimpleTestCase):
     def test_security_logic_lives_on_the_mixin_only(self):
-        hooks = (
-            'get_queryset',
-            'has_change_permission',
-            'has_delete_permission',
-            'has_add_permission',
-            'formfield_for_foreignkey',
-            'formfield_for_manytomany',
-            'save_model',
-            'get_actions',
-            'check',
-        )
         for admin_cls in CONCRETE_ADMINS:
             self.assertTrue(issubclass(admin_cls, OrgScopedAdmin))
+            self.assertTrue(issubclass(admin_cls, ServiceRoutedAdmin))
             self.assertTrue(issubclass(admin_cls, admin.ModelAdmin))
             self.assertTrue(issubclass(admin_cls, AuthorizedScopeAdminMixin))
-            for hook in hooks:
+            for hook in SCOPE_HOOKS:
                 self.assertIn(hook, AuthorizedScopeAdminMixin.__dict__)
-                if admin_cls is OrganizationAdmin and hook == 'save_model':
-                    self.assertIn(hook, admin_cls.__dict__)
-                else:
-                    self.assertNotIn(hook, admin_cls.__dict__)
+                self.assertNotIn(hook, admin_cls.__dict__)
                 self.assertNotIn(hook, OrgScopedAdmin.__dict__)
+            self.assertIn('save_model', AuthorizedScopeAdminMixin.__dict__)
+            self.assertNotIn('save_model', OrgScopedAdmin.__dict__)
+            self.assertIsNot(
+                admin_cls.save_model,
+                AuthorizedScopeAdminMixin.save_model,
+            )
             self.assertIn('authorization_scope_paths', admin_cls.__dict__)
+            self.assertEqual(admin_cls.actions, ['delete_selected'])
             self.assertEqual(admin_cls.list_filter, ())
             self.assertEqual(admin_cls.search_fields, ())
             self.assertEqual(admin_cls.autocomplete_fields, ())
             self.assertEqual(admin_cls.raw_id_fields, ())
             self.assertEqual(admin_cls.inlines, ())
             self.assertEqual(admin_cls.list_editable, ())
-        for hook in SERVICE_HOOKS:
-            self.assertIn(hook, OrganizationAdmin.__dict__)
-            self.assertNotIn(hook, TeamAdmin.__dict__)
+        self.assertIn('delete_model', OrganizationAdmin.__dict__)
+        self.assertIn('delete_queryset', ServiceRoutedAdmin.__dict__)
+        self.assertNotIn('delete_queryset', OrganizationAdmin.__dict__)
+        self.assertIn('save_related', TeamAdmin.__dict__)
+        self.assertIn('delete_model', TeamAdmin.__dict__)
+        self.assertIn('save_related', RepositoryCollaboratorAdmin.__dict__)
+        self.assertIn('delete_model', RepositoryCollaboratorAdmin.__dict__)
+        self.assertIn('delete_model', TeamRepositoryPermissionAdmin.__dict__)
+        self.assertIn('delete_model', OrganizationOwnershipAdmin.__dict__)
         self.assertNotIn('get_form', AuthorizedScopeAdminMixin.__dict__)
         self.assertNotIn('has_view_permission', AuthorizedScopeAdminMixin.__dict__)
         self.assertFalse(OrganizationAdmin.scope_allows_add)

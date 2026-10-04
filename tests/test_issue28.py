@@ -952,7 +952,7 @@ class RelationshipWriteTests(TestCase):
             lambda: delete_team_repository_permission(superuser, stored.pk),
         )
 
-    def test_admin_is_not_wired_to_the_relationship_services(self):
+    def test_admin_calls_the_relationship_services(self):
         import inspect
 
         from gh_permissions import admin as admin_module
@@ -973,8 +973,9 @@ class RelationshipWriteTests(TestCase):
             'move_team_organization',
             'move_repository_organization',
         ):
-            self.assertNotIn(name, source)
-        self.assertNotIn('delete_team(', source)
+            self.assertIn(name, source)
+        self.assertIn('delete_team(', source)
+        self.assertNotIn('form.save_m2m', source)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_add)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_change)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_delete)

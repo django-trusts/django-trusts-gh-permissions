@@ -738,14 +738,22 @@ class OrgScopedAdminRequestTests(TestCase):
             ),
             {'post': 'yes'},
         )
-        self.assertEqual(removed.status_code, 302)
-        self.assertFalse(TeamRepositoryPermission.objects.filter(pk=grant.pk).exists())
-        deleted = self.owner_client.post(
+        self.assertEqual(removed.status_code, 302, removed.content[:500])
+        self.assertTrue(TeamRepositoryPermission.objects.filter(pk=grant.pk).exists())
+        self.assertTrue(Team.objects.filter(pk=self.team_a.pk).exists())
+        self.assertContains(
+            self.super_client.get(removed['Location']),
+            'must stay inside one organization',
+        )
+        deleted = self.super_client.post(
             reverse('admin:gh_permissions_team_delete', args=[self.team_a.pk]),
             {'post': 'yes'},
         )
-        self.assertEqual(deleted.status_code, 302)
+        self.assertEqual(deleted.status_code, 302, deleted.content[:500])
         self.assertFalse(Team.objects.filter(pk=self.team_a.pk).exists())
+        self.assertFalse(
+            TeamRepositoryPermission.objects.filter(pk=grant.pk).exists(),
+        )
         self.assertTrue(Repository.objects.filter(pk=self.repo_b.pk).exists())
 
     def test_owner_cannot_mint_or_retarget_the_authority_grant(self):
@@ -817,16 +825,26 @@ class OrgScopedAdminRequestTests(TestCase):
         moved = self.owner_client.post(
             reverse('admin:gh_permissions_team_change', args=[self.team_a.pk]),
             {
-                'name': 'alpha-writers',
+                'name': 'alpha-renamed',
                 'organization': str(self.org_a2.pk),
-                'members': [str(self.member.pk)],
-                'allowed_operations': [str(self.read.pk)],
+                'members': [str(self.target.pk)],
+                'allowed_operations': [str(self.write.pk)],
                 '_save': 'Save',
             },
         )
-        self.assertEqual(moved.status_code, 302)
+        self.assertEqual(moved.status_code, 200)
+        self.assertContains(moved, 'Team.organization cannot be moved.')
         self.team_a.refresh_from_db()
-        self.assertEqual(self.team_a.organization_id, self.org_a2.pk)
+        self.assertEqual(self.team_a.name, 'alpha-writers')
+        self.assertEqual(self.team_a.organization_id, self.org_a.pk)
+        self.assertEqual(
+            set(self.team_a.members.values_list('pk', flat=True)),
+            {self.member.pk},
+        )
+        self.assertEqual(
+            set(self.team_a.allowed_operations.values_list('pk', flat=True)),
+            {self.read.pk},
+        )
         self.assertNotContains(
             self.foreign_client.get(reverse('admin:gh_permissions_team_changelist')),
             'alpha-writers',

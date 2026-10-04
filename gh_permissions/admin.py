@@ -5,16 +5,27 @@ manage_organization)``. An ``OrganizationOwnership`` row is what
 puts that organization in the queryset. Conventional organization
 create, rename, and delete call the domain services.
 Personal-organization deletion deletes the user, which releases the
-username alias. Private hook plumbing lives in ``_admin_scope``.
+username alias.
+
+Authorization-bearing edits call the relationship services. A stock
+hook does not ``save()`` or write a many-to-many before that service
+has authorized the persisted parent and validated the mutation in one
+transaction. ``Team.organization`` and ``Repository.organization``
+stay on the stored row. ``LastOrganizationOwner`` is a form or
+message refusal, not an uncaught error. Private hook plumbing lives
+in ``_admin_scope``.
 """
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin.actions import delete_selected as stock_delete_selected
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import router, transaction
+from django.http import HttpResponseRedirect
 
 from gh_permissions._admin_scope import AuthorizedScopeAdminMixin
 from gh_permissions.models import (
@@ -27,14 +38,109 @@ from gh_permissions.models import (
 )
 from gh_permissions.services import (
     AliasConflict,
+    RelationshipWriteError,
+    add_organization_owner,
     create_organization,
+    create_repository_collaborator,
+    create_team_repository_permission,
     create_user,
     delete_organization,
+    delete_organization_ownership,
+    delete_repository_collaborator,
+    delete_team,
+    delete_team_repository_permission,
     delete_user,
+    move_repository_organization,
+    move_team_organization,
     name_is_taken,
     rename_organization,
     rename_user,
+    replace_collaborator_permissions,
+    replace_team_members_and_ceiling,
+    update_organization_ownership,
+    update_repository_collaborator,
+    update_team_repository_permission,
 )
+
+
+def _guard_scope(model_admin, request, obj, change):
+    """Same add/change gate as the scope mixin's ``save_model``."""
+    if model_admin.bypasses_scope(request):
+        return
+    allowed_write = (
+        model_admin.scope_allows_change if change
+        else model_admin.scope_allows_add
+    )
+    if not allowed_write or not model_admin._in_scope(request, obj):
+        raise PermissionDenied
+
+
+def _form_with_actor(form, actor):
+    """Return a form class that carries the acting user into ``clean``."""
+
+    class ActorBoundForm(form):
+        pass
+
+    ActorBoundForm.actor = actor
+    return ActorBoundForm
+
+
+def _pk_list(objects):
+    return [item.pk for item in objects]
+
+
+class ServiceRoutedAdmin:
+    """Present a relationship-service refusal without leaving a partial write.
+
+    ``changeform_view`` and the bulk delete action run inside one
+    transaction. ``delete_view`` already does. A
+    ``RelationshipWriteError`` rolls that transaction back and is shown
+    as a message. ``delete_queryset`` calls ``delete_model`` for each
+    selected row so the built-in bulk action cannot skip the service.
+    """
+
+    actions = ['delete_selected']
+
+    def changeform_view(
+        self, request, object_id=None, form_url='', extra_context=None,
+    ):
+        try:
+            with transaction.atomic(using=router.db_for_write(self.model)):
+                return super().changeform_view(
+                    request, object_id, form_url, extra_context,
+                )
+        except RelationshipWriteError as exc:
+            messages.error(request, str(exc))
+            return HttpResponseRedirect(request.get_full_path())
+
+    def delete_view(self, request, object_id, extra_context=None):
+        try:
+            return super().delete_view(request, object_id, extra_context)
+        except RelationshipWriteError as exc:
+            messages.error(request, str(exc))
+            return HttpResponseRedirect(request.get_full_path())
+
+    def delete_queryset(self, request, queryset):
+        pks = list(queryset.order_by('pk').values_list('pk', flat=True))
+        with transaction.atomic(using=router.db_for_write(self.model)):
+            for pk in pks:
+                try:
+                    obj = self.model.objects.get(pk=pk)
+                except self.model.DoesNotExist:
+                    continue
+                self.delete_model(request, obj)
+
+    @admin.action(
+        permissions=['delete'],
+        description=stock_delete_selected.short_description,
+    )
+    def delete_selected(self, request, queryset):
+        try:
+            with transaction.atomic(using=router.db_for_write(self.model)):
+                return stock_delete_selected(self, request, queryset)
+        except RelationshipWriteError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            return None
 
 
 class OrgScopedAdmin(AuthorizedScopeAdminMixin, admin.ModelAdmin):
@@ -78,7 +184,7 @@ class ConventionalOrganizationForm(forms.ModelForm):
         return name
 
 
-class OrganizationAdmin(OrgScopedAdmin):
+class OrganizationAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
     authorization_scope_paths = ''
     scope_allows_add = False
     ordering = ('pk',)
@@ -89,17 +195,8 @@ class OrganizationAdmin(OrgScopedAdmin):
             return ('name',)
         return ()
 
-    def _reject_out_of_scope(self, request, obj, change):
-        if self.bypasses_scope(request):
-            return
-        allowed_write = (
-            self.scope_allows_change if change else self.scope_allows_add
-        )
-        if not allowed_write or not self._in_scope(request, obj):
-            raise PermissionDenied
-
     def save_model(self, request, obj, form, change):
-        self._reject_out_of_scope(request, obj, change)
+        _guard_scope(self, request, obj, change)
         if getattr(obj, 'personal_user_id', None):
             return
         try:
@@ -123,41 +220,224 @@ class OrganizationAdmin(OrgScopedAdmin):
             return
         delete_organization(obj)
 
-    def delete_queryset(self, request, queryset):
-        for organization in queryset:
-            self.delete_model(request, organization)
+
+class ImmutableOrganizationForm(forms.ModelForm):
+    """Refuse a submitted organization with the move service.
+
+    ``clean`` runs before ``_post_clean`` copies submitted values onto
+    the instance, so ``instance.organization_id`` is the stored
+    boundary. The service refuses every actor, including an active
+    superuser, and writes nothing. ``save_model`` calls it again
+    before a name write.
+    """
+
+    move_boundary = None
+
+    def clean(self):
+        cleaned = super().clean()
+        if (
+            self.errors
+            or not getattr(self.instance, 'pk', None)
+            or self.move_boundary is None
+        ):
+            return cleaned
+        organization = cleaned.get('organization')
+        if (
+            organization is None
+            or organization.pk == self.instance.organization_id
+        ):
+            return cleaned
+        try:
+            self.move_boundary(
+                getattr(self, 'actor', None),
+                self.instance.pk,
+                organization.pk,
+            )
+        except RelationshipWriteError as exc:
+            raise ValidationError(str(exc)) from exc
+        return cleaned
 
 
-class TeamAdmin(OrgScopedAdmin):
+class ImmutableBoundaryAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
+    """Name edits stay on the row. The organization foreign key does not.
+
+    The move service is called before any name ``UPDATE``, and this
+    method does not lock the row first: the service locks the actor
+    and then the parent. ``defer_name_until_related`` leaves the name
+    write until after a many-to-many service in ``save_related``.
+    """
+
+    move_boundary = None
+    defer_name_until_related = False
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        return _form_with_actor(form, request.user)
+
+    def save_model(self, request, obj, form, change):
+        _guard_scope(self, request, obj, change)
+        if not change:
+            obj.save()
+            return
+        stored = self.model.objects.get(pk=obj.pk)
+        if stored.organization_id != obj.organization_id:
+            self.move_boundary(
+                request.user, stored.pk, obj.organization_id,
+            )
+        obj.organization_id = stored.organization_id
+        if self.defer_name_until_related:
+            return
+        if stored.name != obj.name:
+            stored.name = obj.name
+            stored.save(update_fields=['name'])
+        obj.name = stored.name
+
+
+class TeamAdminForm(ImmutableOrganizationForm):
+    move_boundary = staticmethod(move_team_organization)
+
+    class Meta:
+        model = Team
+        fields = ('organization', 'name', 'members', 'allowed_operations')
+
+
+class TeamAdmin(ImmutableBoundaryAdmin):
     authorization_scope_paths = 'organization'
     ordering = ('pk',)
+    form = TeamAdminForm
+    move_boundary = staticmethod(move_team_organization)
+    defer_name_until_related = True
+
+    def save_related(self, request, form, formsets, change):
+        # Do not write the form's many-to-many sets here. The service
+        # replaces both after it authorizes the stored organization.
+        # The name write follows that call, still inside the change
+        # form transaction, so a refusal keeps the previous name.
+        replace_team_members_and_ceiling(
+            request.user,
+            form.instance.pk,
+            _pk_list(form.cleaned_data.get('members', ())),
+            _pk_list(form.cleaned_data.get('allowed_operations', ())),
+        )
+        stored = Team.objects.get(pk=form.instance.pk)
+        submitted_name = form.cleaned_data.get('name', stored.name)
+        if stored.name != submitted_name:
+            stored.name = submitted_name
+            stored.save(update_fields=['name'])
+            form.instance.name = stored.name
+
+    def delete_model(self, request, obj):
+        delete_team(request.user, obj.pk)
 
 
-class RepositoryAdmin(OrgScopedAdmin):
+class RepositoryAdminForm(ImmutableOrganizationForm):
+    move_boundary = staticmethod(move_repository_organization)
+
+    class Meta:
+        model = Repository
+        fields = ('organization', 'name')
+
+
+class RepositoryAdmin(ImmutableBoundaryAdmin):
     authorization_scope_paths = 'organization'
     ordering = ('pk',)
+    form = RepositoryAdminForm
+    move_boundary = staticmethod(move_repository_organization)
 
 
-class RepositoryCollaboratorAdmin(OrgScopedAdmin):
+class RepositoryCollaboratorAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
     authorization_scope_paths = 'repository__organization'
     ordering = ('pk',)
 
+    def save_model(self, request, obj, form, change):
+        _guard_scope(self, request, obj, change)
 
-class TeamRepositoryPermissionAdmin(OrgScopedAdmin):
+    def save_related(self, request, form, formsets, change):
+        obj = form.instance
+        permission_ids = _pk_list(form.cleaned_data.get('permissions', ()))
+        actor = request.user
+        if not change:
+            created = create_repository_collaborator(
+                actor, obj.repository_id, obj.user_id, permission_ids,
+            )
+            obj.pk = created.pk
+            return
+        stored = RepositoryCollaborator.objects.get(pk=obj.pk)
+        user_id = obj.user_id if obj.user_id != stored.user_id else None
+        repository_id = (
+            obj.repository_id
+            if obj.repository_id != stored.repository_id
+            else None
+        )
+        with transaction.atomic():
+            if user_id is not None or repository_id is not None:
+                update_repository_collaborator(
+                    actor,
+                    stored.pk,
+                    user_id=user_id,
+                    repository_id=repository_id,
+                )
+            replace_collaborator_permissions(
+                actor, stored.pk, permission_ids,
+            )
+
+    def delete_model(self, request, obj):
+        delete_repository_collaborator(request.user, obj.pk)
+
+
+class TeamRepositoryPermissionAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
     authorization_scope_paths = (
         'team__organization',
         'repository__organization',
     )
     ordering = ('pk',)
 
+    def save_model(self, request, obj, form, change):
+        _guard_scope(self, request, obj, change)
+        actor = request.user
+        if not change:
+            created = create_team_repository_permission(
+                actor, obj.team_id, obj.repository_id, obj.operation_id,
+            )
+            obj.pk = created.pk
+            return
+        stored = TeamRepositoryPermission.objects.get(pk=obj.pk)
+        team_id = obj.team_id if obj.team_id != stored.team_id else None
+        repository_id = (
+            obj.repository_id
+            if obj.repository_id != stored.repository_id
+            else None
+        )
+        permission_id = (
+            obj.operation_id
+            if obj.operation_id != stored.operation_id
+            else None
+        )
+        if (
+            team_id is None
+            and repository_id is None
+            and permission_id is None
+        ):
+            return
+        update_team_repository_permission(
+            actor,
+            stored.pk,
+            team_id=team_id,
+            repository_id=repository_id,
+            permission_id=permission_id,
+        )
 
-class OrganizationOwnershipAdmin(OrgScopedAdmin):
-    """Ownership rows stay read-only for non-superusers.
+    def delete_model(self, request, obj):
+        delete_team_repository_permission(request.user, obj.pk)
 
-    Adding an owner is a domain service. This admin does not call it.
-    Non-superusers cannot add, change, or delete the row that grants
-    their own ``manage_organization`` authority. Superusers still
-    bypass the scope mixin.
+
+class OrganizationOwnershipAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
+    """Non-superusers cannot add, change, or delete an ownership row.
+
+    That disablement is the scoped owner admin. A superuser bypasses
+    it, and those writes call the ownership services. The retain-one
+    owner rule is the service's, so removing the last owner is a
+    refusal rather than a raw delete.
     """
 
     authorization_scope_paths = 'organization'
@@ -166,6 +446,37 @@ class OrganizationOwnershipAdmin(OrgScopedAdmin):
     scope_allows_delete = False
     list_display = ('user', 'organization')
     ordering = ('pk',)
+
+    def save_model(self, request, obj, form, change):
+        if not self.bypasses_scope(request):
+            raise PermissionDenied
+        actor = request.user
+        if not change:
+            created = add_organization_owner(
+                actor, obj.organization_id, obj.user_id,
+            )
+            obj.pk = created.pk
+            return
+        stored = OrganizationOwnership.objects.get(pk=obj.pk)
+        user_id = obj.user_id if obj.user_id != stored.user_id else None
+        organization_id = (
+            obj.organization_id
+            if obj.organization_id != stored.organization_id
+            else None
+        )
+        if user_id is None and organization_id is None:
+            return
+        update_organization_ownership(
+            actor,
+            stored.pk,
+            user_id=user_id,
+            organization_id=organization_id,
+        )
+
+    def delete_model(self, request, obj):
+        if not self.bypasses_scope(request):
+            raise PermissionDenied
+        delete_organization_ownership(request.user, obj.pk)
 
 
 class ServiceUserCreationForm(AdminUserCreationForm):
@@ -192,11 +503,14 @@ class ServiceUserChangeForm(UserChangeForm):
         return username
 
 
-class ServiceBackedUserAdmin(UserAdmin):
+class ServiceBackedUserAdmin(ServiceRoutedAdmin, UserAdmin):
     """Create, rename, and delete users through the shared-name services.
 
     Register this on the project's user model. It is not registered
     here, because the library does not own ``AUTH_USER_MODEL``.
+    ``delete_user`` raises ``LastOrganizationOwner`` when a surviving
+    conventional organization would be left with none. The delete
+    hooks present that as a message and leave the user in place.
     """
 
     form = ServiceUserChangeForm
@@ -232,10 +546,6 @@ class ServiceBackedUserAdmin(UserAdmin):
 
     def delete_model(self, request, obj):
         delete_user(obj)
-
-    def delete_queryset(self, request, queryset):
-        for user in queryset:
-            delete_user(user)
 
 
 admin.site.register(Organization, OrganizationAdmin)
