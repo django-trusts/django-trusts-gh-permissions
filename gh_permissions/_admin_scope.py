@@ -1,12 +1,18 @@
-"""Reusable stock-admin scope plumbing.
+"""Private stock-admin scope plumbing for one bounded configuration.
 
 The application supplies one authorized-scope queryset and declarative
-paths from each model to that scope. This module does not know the
-application's models and does not import Trusts.
+paths from each model to that scope. Paths are ``''`` or forward
+single-valued foreign-key or one-to-one lookups. Every path ends at
+the same scope model, and multiple paths are AND. Authorized scopes
+and protected objects use the same database. This module does not
+know the application's models and does not import Trusts.
 
-Unsupported and rejected by ``check()``: inlines, ``list_editable``,
-raw-id fields, autocomplete fields, and any action other than
-``delete_selected``.
+A relation filters related choices only when that model has a
+registered scoped admin. Stock admin routes only. ``check()`` rejects
+inlines, ``list_editable``, raw-id fields, autocomplete fields, and
+any action other than ``delete_selected``. Many-to-many paths, reverse
+paths, multiple databases, dynamic inlines, and custom forms are
+outside this contract.
 """
 
 from django.contrib import admin
@@ -24,21 +30,15 @@ def _as_paths(scope_paths):
     return tuple(scope_paths)
 
 
-def _resolve_scope(obj, path, cleaned=None):
-    """Walk ``path`` to a scope row.
+def _resolve_scope(obj, path):
+    """Walk a forward path to a scope row.
 
-    ``path == ''`` means ``obj`` is the scope row. When ``cleaned``
-    contains the first hop, that value wins so a pre-save check sees
-    the foreign key ``save_form`` has not written yet.
+    ``path == ''`` means ``obj`` is the scope row.
     """
     if path == '':
         return obj
-    parts = path.split('__')
     current = obj
-    if cleaned is not None and parts[0] in cleaned:
-        current = cleaned[parts[0]]
-        parts = parts[1:]
-    for part in parts:
+    for part in path.split('__'):
         if current is None:
             return None
         current = getattr(current, part, None)
@@ -48,16 +48,17 @@ def _resolve_scope(obj, path, cleaned=None):
 class AuthorizedScopeAdminMixin:
     """Filter stock admin hooks by ``get_authorized_scopes(request)``.
 
-    ``authorization_scope_paths`` is ``''``, a lookup, or a tuple of
-    lookups. Every path must land in the authorized queryset.
-    ``scope_allows_add`` gates adds. ``scope_allows_change`` false
-    denies change and delete. ``bypasses_scope`` skips the filter;
-    the default is a superuser.
+    ``authorization_scope_paths`` is ``''``, one forward single-valued
+    lookup, or a tuple of them. Every path must end on the authorized
+    queryset's concrete model in the same database. ``scope_allows_add``,
+    ``scope_allows_change``, and ``scope_allows_delete`` are independent.
+    ``bypasses_scope`` skips the filter; the default is a superuser.
     """
 
     authorization_scope_paths = None
     scope_allows_add = True
     scope_allows_change = True
+    scope_allows_delete = True
 
     def get_authorized_scopes(self, request):
         raise NotImplementedError
@@ -69,25 +70,38 @@ class AuthorizedScopeAdminMixin:
     def _paths(self):
         return _as_paths(self.authorization_scope_paths)
 
-    def _scope_rows(self, obj, cleaned=None):
-        return [
-            _resolve_scope(obj, path, cleaned=cleaned) for path in self._paths()
-        ]
+    def _scope_rows(self, obj):
+        return [_resolve_scope(obj, path) for path in self._paths()]
 
-    def _in_scope(self, request, obj, cleaned=None):
-        rows = self._scope_rows(obj, cleaned=cleaned)
-        if not rows or any(row is None or not row.pk for row in rows):
+    def _in_scope(self, request, obj):
+        rows = self._scope_rows(obj)
+        if not rows:
             return False
-        found = set(
-            self.get_authorized_scopes(request).filter(
-                pk__in=[row.pk for row in rows],
-            ).values_list('pk', flat=True)
-        )
-        return all(row.pk in found for row in rows)
+        allowed = self.get_authorized_scopes(request)
+        scope_model = allowed.model._meta.concrete_model
+        pks = []
+        for row in rows:
+            if row is None or not getattr(row, 'pk', None):
+                return False
+            if row._meta.concrete_model is not scope_model:
+                return False
+            if row._state.db != allowed.db:
+                return False
+            pks.append(row.pk)
+        found = set(allowed.filter(pk__in=pks).values_list('pk', flat=True))
+        return all(pk in found for pk in pks)
 
     def _apply_scope(self, queryset, request):
         allowed = self.get_authorized_scopes(request)
+        if queryset.db != allowed.db:
+            return queryset.none()
+        scope_model = allowed.model._meta.concrete_model
         for path in self._paths():
+            if (
+                path == ''
+                and queryset.model._meta.concrete_model is not scope_model
+            ):
+                return queryset.none()
             lookup = 'pk__in' if path == '' else '%s__in' % path
             queryset = queryset.filter(**{lookup: allowed})
         return queryset
@@ -178,7 +192,7 @@ class AuthorizedScopeAdminMixin:
             return False
         if obj is None or self.bypasses_scope(request):
             return True
-        if not self.scope_allows_change:
+        if not self.scope_allows_delete:
             return False
         return self._in_scope(request, obj)
 

@@ -2,7 +2,7 @@
 
 Scope rows come from ``Organization.objects.authorized(user,
 manage_organization)``. Registrations stay here. Team/repository
-alignment is ``TeamRepositoryPermission.clean``. Reusable hook
+alignment is ``TeamRepositoryPermission.clean``. Private hook
 plumbing lives in ``_admin_scope``.
 """
 
@@ -72,6 +72,7 @@ class OrganizationOwnerPermissionAdmin(OrgScopedAdmin):
     authorization_scope_paths = 'organization'
     scope_allows_add = False
     scope_allows_change = False
+    scope_allows_delete = False
     ordering = ('pk',)
 
 

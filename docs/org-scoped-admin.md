@@ -12,16 +12,30 @@ behavior of a real GitHub team.
 
 ## Result
 
-The proof succeeded, and the reusable part is no longer GH-specific.
+The proof succeeded for this bounded stock-admin shape. The hook
+plumbing is a private, domain-agnostic mixin. It is not a general Core
+helper, and this proof does not promote it to one.
 
-`gh_permissions/_admin_scope.py` (`AuthorizedScopeAdminMixin`, 190
-physical lines) owns stock-admin scope plumbing. It does not name a GH
-model and it does not call Trusts. The application contract is
+`gh_permissions/_admin_scope.py` (`AuthorizedScopeAdminMixin`, 204
+physical lines) owns that plumbing. It does not name a GH model and it
+does not call Trusts. The application supplies
 `authorization_scope_paths`, `get_authorized_scopes(request)`,
-`scope_allows_add`, `scope_allows_change`, and `bypasses_scope`
-(superuser by default).
+`scope_allows_add`, `scope_allows_change`, `scope_allows_delete`, and
+`bypasses_scope` (superuser by default).
 
-`gh_permissions/admin.py` (83 physical lines) is the GH adapter. It
+Proven only for this configuration:
+
+- paths are `''` or a forward single-valued foreign key or one-to-one lookup;
+- every path terminates at the same scope model, and multiple paths are AND;
+- authorized scopes and protected objects use the same database;
+- each relation that drives a scope path must have a registered scoped admin, otherwise related choices are not automatically filtered;
+- stock admin routes only. Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` are rejected.
+
+Many-to-many paths, reverse paths, multiple databases, dynamic inlines,
+and custom forms are outside this contract. A second real consumer
+should decide those.
+
+`gh_permissions/admin.py` (84 physical lines) is the GH adapter. It
 resolves the Organization-scoped `auth.Permission` `manage_organization`,
 returns `Organization.objects.authorized(request.user, permission)`,
 declares each model's path and add/change flags, and registers the
@@ -79,10 +93,10 @@ Retained, with the path that fails if the hook is removed:
 | `get_queryset` | `test_owner_sees_only_owned_rows_on_each_changelist` and `test_owner_changelist_is_sql_filtered_before_pagination`. The changelist SQL includes the grant table and `LIMIT`. |
 | `has_add_permission` | `test_staff_with_permissions_and_no_owned_organization_mutates_nothing` and the organization-add 403 in `test_owner_cannot_mint_or_retarget_the_authority_grant`. Add has no object. |
 | `has_change_permission` | `scope_allows_change` is false on the authority grant. Stock `has_change_permission` ignores the object. `_changeform_view` then returns 200 instead of 403 (`test_owner_cannot_mint_or_retarget_the_authority_grant`, `AssertionError: 200 != 403`). |
-| `has_delete_permission` | `django.contrib.admin.utils.get_deleted_objects` calls `has_delete_permission(request, obj)` on each collected related object, not only rows from the parent's queryset. Without the scope check, `test_misaligned_grant_blocks_owner_cascade_until_superuser_removes_it` no longer sees the protected grant. `scope_allows_change` false also denies deleting the authority grant. |
+| `has_delete_permission` | `django.contrib.admin.utils.get_deleted_objects` calls `has_delete_permission(request, obj)` on each collected related object, not only rows from the parent's queryset. Without the scope check, `test_misaligned_grant_blocks_owner_cascade_until_superuser_removes_it` no longer sees the protected grant. `scope_allows_delete` is independent of change. It is false on the authority grant, so `test_owner_cannot_mint_or_retarget_the_authority_grant` still gets 403 on delete. |
 | `formfield_for_foreignkey` | `test_foreign_key_choices_are_limited_to_owned_rows`. Choices come from the related admin's scoped `get_queryset`. |
 | `formfield_for_manytomany` | Same related-queryset call. No current GH model has a many-to-many to a scoped model, so the behavioral suite does not fail if this method is deleted. It stays so that hook cannot silently use the unscoped stock queryset. |
-| `save_model` | Called after `save_form(commit=False)`. `test_save_model_rejects_an_out_of_scope_instance` posts a foreign team straight to `save_model` and requires `PermissionDenied`. |
+| `save_model` | Called after `save_form(commit=False)`. `test_save_model_rejects_an_out_of_scope_instance` posts a foreign team straight to `save_model` and requires `PermissionDenied`. `_in_scope` compares primary keys only after the resolved row's concrete model and database alias match the authorized queryset, so `test_save_model_rejects_a_wrong_path_with_colliding_pks` and `test_save_model_rejects_a_scope_row_from_another_database` stay denied. |
 | `get_actions` / `check` | Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` fail closed (`admin_scope.E001`, `admin_scope.E002`, and `get_actions`). `test_unsupported_surfaces_fail_checks`. |
 
 `User.objects.permitted` and `get_permitted_users` are not used here.

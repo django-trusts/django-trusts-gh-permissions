@@ -145,6 +145,9 @@ class OrgScopedAdminContractTests(SimpleTestCase):
             self.assertEqual(admin_cls.list_editable, ())
         self.assertNotIn('get_form', AuthorizedScopeAdminMixin.__dict__)
         self.assertNotIn('has_view_permission', AuthorizedScopeAdminMixin.__dict__)
+        self.assertFalse(OrganizationOwnerPermissionAdmin.scope_allows_change)
+        self.assertFalse(OrganizationOwnerPermissionAdmin.scope_allows_delete)
+        self.assertTrue(TeamAdmin.scope_allows_delete)
 
     def test_auth_permission_is_not_organization_scoped(self):
         registered = admin.site._registry[Permission]
@@ -1247,3 +1250,41 @@ class OrgScopedAdminRequestTests(TestCase):
                 request, team, form=None, change=False,
             )
         self.assertFalse(Team.objects.filter(name='smuggled-save').exists())
+
+    def test_save_model_rejects_a_wrong_path_with_colliding_pks(self):
+        request = RequestFactory().post('/')
+        request.user = self.owner_a
+        team = Team.objects.filter(pk=self.org_a.pk).first()
+        if team is None:
+            team = Team.objects.create(
+                pk=self.org_a.pk,
+                organization=self.org_a,
+                name='pk-collision',
+            )
+        self.assertEqual(team.pk, self.org_a.pk)
+        self.assertIn(
+            team.pk,
+            Organization.objects.authorized(
+                self.owner_a, self.manage,
+            ).values_list('pk', flat=True),
+        )
+        team_admin = admin.site._registry[Team]
+        previous = team_admin.authorization_scope_paths
+        team_admin.authorization_scope_paths = ''
+        try:
+            with self.assertRaises(PermissionDenied):
+                team_admin.save_model(request, team, form=None, change=True)
+        finally:
+            team_admin.authorization_scope_paths = previous
+
+    def test_save_model_rejects_a_scope_row_from_another_database(self):
+        request = RequestFactory().post('/')
+        request.user = self.owner_a
+        scope = Organization.objects.get(pk=self.org_a.pk)
+        scope._state.db = _ALIAS
+        team = Team(organization=scope, name='other-db-scope')
+        with self.assertRaises(PermissionDenied):
+            admin.site._registry[Team].save_model(
+                request, team, form=None, change=False,
+            )
+        self.assertFalse(Team.objects.filter(name='other-db-scope').exists())
