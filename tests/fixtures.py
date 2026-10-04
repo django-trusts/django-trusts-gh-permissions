@@ -1,15 +1,24 @@
 """Shared GH fixtures. Not authorization policy."""
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 
 from gh_permissions.models import (
-    Operation,
     Organization,
     Repository,
     Team,
     TeamRepositoryPermission,
     UserRepositoryPermission,
 )
+
+
+def repository_permission(codename):
+    """Saved ``auth.Permission`` for a Repository codename."""
+    return Permission.objects.get(
+        content_type__app_label='gh_permissions',
+        content_type__model='repository',
+        codename=codename,
+    )
 
 
 def isolated_handle(registry=None):
@@ -44,9 +53,9 @@ class GhFixtureMixin(object):
         self.unattached = User.objects.create(username='unattached')
         self.stranger = User.objects.create(username='stranger')
         self.writers.members.add(self.member)
-        self.read = Operation.objects.create(code='read')
-        self.write = Operation.objects.create(code='write')
-        self.admin = Operation.objects.create(code='admin')
+        self.read = repository_permission('read_repository')
+        self.write = repository_permission('write_repository')
+        self.admin = repository_permission('admin_repository')
         self.writers.allowed_operations.add(self.read)
         self.repo_a = Repository.objects.create(
             organization=self.org_a, title='repo-a',

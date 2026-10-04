@@ -1,8 +1,9 @@
 """Mixin-only Trusts handle so GH can contribute registrations.
 
-Not ``TrustModelBackend``: GH does not use Django permission strings or
-the historical TrustGroup compiler. The mixin default is
-``PlanQueryCompiler``.
+Not ``TrustModelBackend``: GH does not use the historical TrustGroup
+compiler. The mixin default is ``PlanQueryCompiler``. The permission
+terminal is ``auth.Permission``, so string enumeration stays on the
+mixin ``_perm_codes`` path.
 """
 
 from django.contrib.auth.backends import BaseBackend
@@ -11,15 +12,8 @@ from trusts.backends import TrustModelBackendMixin
 
 
 class GhAuthorizationBackend(TrustModelBackendMixin, BaseBackend):
-    """Instance-only registry host. Not ``TrustModelBackend``.
+    """Instance registry host. Not ``TrustModelBackend``.
 
-    Django permission-string enumeration is not a GH surface.
-    ``Operation`` is not ``auth.Permission``, so these methods opt out
-    instead of inheriting ``_perm_codes()``.
+    ``get_all_permissions`` and ``get_group_permissions`` are the mixin
+    implementations. They enumerate real ``auth.Permission`` codenames.
     """
-
-    def get_all_permissions(self, user_obj, obj=None):
-        return set()
-
-    def get_group_permissions(self, user_obj, obj=None):
-        return set()

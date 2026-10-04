@@ -1,8 +1,8 @@
-"""#20: instance-only backend opts out of Django permission strings.
+"""Permission-string enumeration follows the mixin once the terminal is real.
 
-``GhAuthorizationBackend`` must not inherit ``_perm_codes()``. That helper
-reads ``auth.Permission`` fields ``content_type__app_label`` and
-``codename``, which ``Operation`` does not have.
+``GhAuthorizationBackend`` does not override ``get_all_permissions`` or
+``get_group_permissions``. ``_perm_codes`` reads ``auth.Permission``
+``content_type__app_label`` and ``codename``.
 """
 
 from django.contrib.auth.models import AnonymousUser
@@ -19,6 +19,7 @@ from tests.fixtures import GhFixtureMixin
 
 _OTHER_ALL = {'other.view_repository'}
 _OTHER_GROUP = {'other.change_repository'}
+_READ = 'gh_permissions.read_repository'
 
 
 class StringContributingBackend(object):
@@ -38,19 +39,19 @@ def _registry():
 
 
 class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
-    def test_backend_enumeration_on_repository_is_empty(self):
-        self.assertIsNot(
+    def test_backend_enumeration_uses_the_mixin_perm_codes(self):
+        self.assertIs(
             GhAuthorizationBackend.get_all_permissions,
             TrustModelBackendMixin.get_all_permissions,
         )
-        self.assertIsNot(
+        self.assertIs(
             GhAuthorizationBackend.get_group_permissions,
             TrustModelBackendMixin.get_group_permissions,
         )
         backend = GhAuthorizationBackend()
         self.assertEqual(
             backend.get_all_permissions(self.member, self.repo_a),
-            set(),
+            {_READ},
         )
         self.assertEqual(
             backend.get_group_permissions(self.member, self.repo_a),
@@ -59,7 +60,7 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
         queryset = Repository.objects.filter(pk=self.repo_a.pk)
         self.assertEqual(
             backend.get_all_permissions(self.member, queryset),
-            set(),
+            {_READ},
         )
         self.assertEqual(
             backend.get_group_permissions(self.member, queryset),
@@ -76,8 +77,8 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
         )
         self.assertEqual(backend.get_group_permissions(self.member), set())
 
-    def test_user_enumeration_gh_contributes_empty(self):
-        self.assertEqual(self.member.get_all_permissions(self.repo_a), set())
+    def test_user_enumeration_returns_the_granted_codename(self):
+        self.assertEqual(self.member.get_all_permissions(self.repo_a), {_READ})
         self.assertEqual(self.member.get_group_permissions(self.repo_a), set())
         self.assertEqual(self.member.get_all_permissions(), set())
         self.assertEqual(self.member.get_group_permissions(), set())
@@ -89,7 +90,7 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
     def test_user_enumeration_unions_other_backends_only(self):
         self.assertEqual(
             self.member.get_all_permissions(self.repo_a),
-            _OTHER_ALL,
+            _OTHER_ALL | {_READ},
         )
         self.assertEqual(
             self.member.get_group_permissions(self.repo_a),
@@ -154,7 +155,7 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
         backend = GhAuthorizationBackend()
         self.assertEqual(
             backend.get_all_permissions(self.member, self.repo_a),
-            set(),
+            {_READ},
         )
         self.assertTrue(
             registry.has_permission(self.member, self.repo_a, self.read),

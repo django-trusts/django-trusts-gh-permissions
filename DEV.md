@@ -18,11 +18,14 @@ tip `c7c83c3c775bc96a86eb35221de3ce07eca33c83` on
 `cursor/reverse-permitted-users-ac91`. That commit is not on `dev` or
 `master`. Do not float the pin to latest `dev`.
 
-`User.objects.permitted(content, perm)` is not called. Every registered
-permission terminal is `Operation`. Core's singular object agreement
-accepts `auth.Permission` only, and GH `Operation` is outside that
-agreement. Stock `auth.User` does not grow `permitted`. This pairing
-leaves `OrgScopedAdmin` untouched.
+The permission terminal is `auth.Permission`, with codenames
+`read_repository`, `write_repository`, and `admin_repository`.
+`Repository` mixes in `PermittedUsersMixin`. The example/test user
+(`example.User`) mixes `PermittedUsersManagerMixin` into its manager so
+`User.objects.permitted(content, perm)` is exercised. The library does
+not require that user. `0001_initial` is unchanged. `0002_auth_permission_terminal`
+retargets the operation foreign keys and replaces the team-ceiling
+relation. This pairing leaves `OrgScopedAdmin` untouched.
 
 The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
 (django-trusts#241) is superseded for this pin. The earlier
@@ -94,7 +97,10 @@ and never installs `'trusts'`.
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`. Callers pass
-`AUTH_USER_MODEL` and `Operation` **instances**.
+`AUTH_USER_MODEL` and `auth.Permission` **instances**.
+`Repository.objects.authorized` takes the permission instance.
+`has_perm` and `permitted` accept `gh_permissions.read_repository`
+(and the write and admin codenames) as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct is `register_direct`. Both take the configured `BackendHandle`
@@ -152,7 +158,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + `0001_initial` | Organization, Team, Repository, Operation, TeamRepositoryPermission, UserRepositoryPermission |
+| Domain models | `models.py` + `0001_initial` + `0002_auth_permission_terminal` | Organization, Team, Repository, UserRepositoryPermission, TeamRepositoryPermission. Permission rows are `auth.Permission`. |
 | Policy registrations | `policy.py` | Direct and team `handle.register` with `trust=` and a symbolic team condition; no aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; not a compiler copy |
 | Ready contribution | `apps.py` | `TrustsImplementationConfig` owner; `register_direct` then `register_team` on the handle |

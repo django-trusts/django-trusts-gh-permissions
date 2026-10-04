@@ -149,10 +149,12 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             "INSTALLED_APPS = (\n"
             "    'django.contrib.contenttypes',\n"
             "    'django.contrib.auth',\n"
+            "    'example.apps.ExampleConfig',\n"
             "    'gh_permissions.apps.GhPermissionsConfig',\n"
             ")",
             readme,
         )
+        self.assertIn("AUTH_USER_MODEL = 'example.User'", readme)
         self.assertIn(
             "AUTHENTICATION_BACKENDS = (\n"
             "    'gh_permissions.backends.GhAuthorizationBackend',\n"
@@ -222,9 +224,11 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
             (
                 'django.contrib.contenttypes',
                 'django.contrib.auth',
+                'example.apps.ExampleConfig',
                 'gh_permissions.apps.GhPermissionsConfig',
             ),
         )
+        self.assertEqual(settings.AUTH_USER_MODEL, 'example.User')
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
             ('gh_permissions.backends.GhAuthorizationBackend',),
