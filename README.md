@@ -194,6 +194,50 @@ Projects that enable this admin install `django.contrib.admin` and list
 `ModelBackend` beside `GhAuthorizationBackend`. The boundary is written
 up in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
 
+## Example data
+
+From this repository checkout, migrate and seed one organization. The
+command lives in the example project, not in the `gh_permissions` package.
+
+```console
+python manage.py migrate
+python manage.py seed_example
+```
+
+`--organization-name` is optional. The default is `Example Organization`.
+The value is checked against `Organization.name` before any rows are
+written. The same name with an exact matching graph is safe to run
+again: the command reuses those rows and does not create duplicates.
+A missing, partial, or different graph for that name fails before it
+changes anything. Rows outside that graph are left alone.
+
+The accounts below are development-only. Do not reuse these passwords
+in production.
+
+| Username | Development-only password | What it proves |
+| --- | --- | --- |
+| `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
+| `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants the seeded owner group on that organization and its repositories: `manage_organization`, `read_repository`, `write_repository`, and `admin_repository`. Django model permissions cover those rows. |
+| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
+| `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
+| `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |
+
+Users and the conventional organization are created through
+`gh_permissions.services`. Each user reserves an alias and a personal
+organization with its own ownership row. Ordinary organization
+membership is not modeled.
+
+Team `readers` allows `read_repository` only. A team grant for
+`write_repository` on `shared-repo` is stored and excluded by that
+ceiling. Repository `shared-repo` carries both the direct collaborator
+and the team path, so those paths can be compared on one repository.
+
+Repeat the default seed with an explicit name:
+
+```console
+python manage.py seed_example --organization-name "Example Organization"
+```
+
 ## Limitations
 
 There is no implicit permission-level hierarchy. Owners receive the
