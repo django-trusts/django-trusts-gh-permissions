@@ -3,10 +3,10 @@
 ``User.username`` and ``Organization.name`` stay the stored names.
 ``Alias`` only reserves the current name. The database cannot keep
 those columns identical, so these functions are the supported write
-path. A raw ``QuerySet`` write, including Django's own user admin and
+path. ``ServiceBackedUserAdmin`` calls them for user create, rename,
+and delete. A raw ``QuerySet`` write, including
 ``User.objects.create``, does not reserve, rename, or release an alias
-and does not create a personal organization. That bypass is an
-example limitation, not a second implementation of the rules.
+and does not create a personal organization.
 """
 
 from django.contrib.auth import get_user_model
@@ -234,7 +234,7 @@ def rename_organization(organization, name):
 def delete_user(user):
     """Delete the user and release the username alias.
 
-    The personal organization and its memberships follow the user.
+    The personal organization and its ownership rows follow the user.
     A user created outside these services may have no alias; deletion
     still removes the user.
     """

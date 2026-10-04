@@ -44,9 +44,9 @@ Deleting the named object releases its current alias.
 
 `User.username` and `Organization.name` stay the real names. The schema
 cannot keep them identical to `Alias`, so the supported writes are
-`gh_permissions.services`. A raw queryset write, stock user admin, or
-any other user create/rename bypasses that ledger. That bypass is an
-example limitation.
+`gh_permissions.services`. The example admin registers
+`ServiceBackedUserAdmin` for user create, rename, and delete. A raw
+queryset write still bypasses that ledger.
 
 A conventional organization has `name` set and `personal_user` null. A
 personal organization has `name` null and `personal_user` set, one-to-one
@@ -186,7 +186,9 @@ The shared owner group is seeded with `manage_organization`,
 `Organization.objects.authorized(user, manage_organization)` is the
 organizations that user owns. The org-owner admin adapter uses that
 queryset. Conventional organization create, rename, and delete in
-admin call the domain services. Stock user admin does not.
+admin call the domain services. User create, rename, and delete call
+them through `ServiceBackedUserAdmin`. `OrganizationOwnership` rows
+are read-only for non-superusers.
 
 Projects that enable this admin install `django.contrib.admin` and list
 `ModelBackend` beside `GhAuthorizationBackend`. The boundary is written

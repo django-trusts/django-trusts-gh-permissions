@@ -30,8 +30,8 @@ A user with no ownership row is not an owner. Ordinary organization
 membership is deferred. Team does not carry
 that bundle. The shared owner `Group` is seeded with
 `manage_organization`, `read_repository`, `write_repository`, and
-`admin_repository`. Raw user creates and renames, including stock
-user admin, do not touch `Alias`.
+`admin_repository`. The example admin uses `ServiceBackedUserAdmin`.
+A raw queryset user create or rename does not touch `Alias`.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.

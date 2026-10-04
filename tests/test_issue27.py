@@ -8,9 +8,12 @@ the owner bundle.
 
 from unittest.mock import patch
 
+from django.apps import apps as global_apps
 from django.contrib.auth import get_user_model
+from django.contrib.auth.management import create_permissions
 from django.contrib.auth.models import Group, Permission
-from django.db import IntegrityError, connections, transaction
+from django.contrib.contenttypes.models import ContentType
+from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
@@ -423,10 +426,21 @@ class OwnershipAndCollaborationTest(TestCase):
 class SharedNameMigrationTest(TransactionTestCase):
     databases = {'default', _ALIAS}
 
-    def test_0004_reserves_existing_organization_names(self):
-        connection = connections[_ALIAS]
-        _wipe(connection)
-        executor = MigrationExecutor(connection)
+    def _permission(self, using, model, codename, name):
+        content_type, _created = ContentType.objects.using(using).get_or_create(
+            app_label='gh_permissions', model=model,
+        )
+        permission, _created = Permission.objects.using(using).get_or_create(
+            content_type=content_type,
+            codename=codename,
+            defaults={'name': name},
+        )
+        return permission
+
+    def test_0004_preserves_grants_and_backfills_users(self):
+        reset = connections[_ALIAS]
+        _wipe(reset)
+        executor = MigrationExecutor(reset)
         executor.migrate([
             ('gh_permissions', '0003_organization_owner_permission'),
         ])
@@ -436,13 +450,62 @@ class SharedNameMigrationTest(TransactionTestCase):
         HistoricalOrganization = apps.get_model('gh_permissions', 'Organization')
         HistoricalRepository = apps.get_model('gh_permissions', 'Repository')
         HistoricalUser = apps.get_model('example', 'User')
+        HistoricalGrant = apps.get_model(
+            'gh_permissions', 'OrganizationOwnerPermission',
+        )
+        HistoricalDirect = apps.get_model(
+            'gh_permissions', 'UserRepositoryPermission',
+        )
+        HistoricalTeam = apps.get_model('gh_permissions', 'Team')
+        HistoricalTeamGrant = apps.get_model(
+            'gh_permissions', 'TeamRepositoryPermission',
+        )
+        read = self._permission(
+            _ALIAS, 'repository', 'read_repository', 'Can read repository',
+        )
+        write = self._permission(
+            _ALIAS, 'repository', 'write_repository', 'Can write repository',
+        )
+        manage = self._permission(
+            _ALIAS, 'organization', 'manage_organization',
+            'Can manage organization',
+        )
+        # The stored owner operation is intentionally not manage_organization.
+        # Forward migration keeps the ownership row and drops that operation.
+        # Reverse can only restore manage_organization.
+        other_operation = self._permission(
+            _ALIAS, 'repository', 'admin_repository',
+            'Can administer repository',
+        )
         organization = HistoricalOrganization.objects.using(_ALIAS).create(
             name='legacy-org',
         )
-        HistoricalRepository.objects.using(_ALIAS).create(
+        repository = HistoricalRepository.objects.using(_ALIAS).create(
             organization=organization, title='legacy-repo',
         )
-        HistoricalUser.objects.using(_ALIAS).create(username='legacy-user')
+        owner = HistoricalUser.objects.using(_ALIAS).create(
+            username='legacy-owner', is_active=True,
+        )
+        direct = HistoricalUser.objects.using(_ALIAS).create(
+            username='legacy-direct', is_active=True,
+        )
+        HistoricalGrant.objects.using(_ALIAS).create(
+            organization=organization,
+            owner=owner,
+            operation_id=other_operation.pk,
+        )
+        HistoricalDirect.objects.using(_ALIAS).create(
+            user=direct, repository=repository, operation_id=read.pk,
+        )
+        HistoricalDirect.objects.using(_ALIAS).create(
+            user=direct, repository=repository, operation_id=write.pk,
+        )
+        team = HistoricalTeam.objects.using(_ALIAS).create(
+            organization=organization, name='legacy-team',
+        )
+        HistoricalTeamGrant.objects.using(_ALIAS).create(
+            team=team, repository=repository, operation_id=read.pk,
+        )
 
         executor.loader.build_graph()
         executor.migrate([
@@ -455,23 +518,247 @@ class SharedNameMigrationTest(TransactionTestCase):
             new_apps.get_model('gh_permissions', 'OrganizationOwnerPermission')
         with self.assertRaises(LookupError):
             new_apps.get_model('gh_permissions', 'UserRepositoryPermission')
-        migrated = new_apps.get_model(
-            'gh_permissions', 'Organization',
-        ).objects.using(_ALIAS).get()
-        self.assertEqual(migrated.name, 'legacy-org')
-        self.assertIsNone(migrated.personal_user_id)
-        self.assertEqual(migrated.owner_group.name, OWNER_GROUP_NAME)
-        alias_model = new_apps.get_model('gh_permissions', 'Alias')
+        Organization = new_apps.get_model('gh_permissions', 'Organization')
+        conventional = Organization.objects.using(_ALIAS).get(name='legacy-org')
+        self.assertIsNone(conventional.personal_user_id)
+        self.assertEqual(conventional.owner_group.name, OWNER_GROUP_NAME)
+        AliasModel = new_apps.get_model('gh_permissions', 'Alias')
         self.assertTrue(
-            alias_model.objects.using(_ALIAS).filter(name='legacy-org').exists(),
+            AliasModel.objects.using(_ALIAS).filter(name='legacy-org').exists(),
         )
-        self.assertFalse(
-            alias_model.objects.using(_ALIAS).filter(name='legacy-user').exists(),
+        for username in ('legacy-owner', 'legacy-direct'):
+            self.assertTrue(
+                AliasModel.objects.using(_ALIAS).filter(name=username).exists(),
+            )
+            personal = Organization.objects.using(_ALIAS).get(
+                personal_user__username=username,
+            )
+            self.assertIsNone(personal.name)
+            self.assertEqual(personal.owner_group_id, conventional.owner_group_id)
+        Ownership = new_apps.get_model('gh_permissions', 'OrganizationOwnership')
+        self.assertEqual(
+            set(Ownership.objects.using(_ALIAS).filter(
+                organization=conventional,
+            ).values_list('user_id', flat=True)),
+            {owner.pk},
         )
+        self.assertEqual(Ownership.objects.using(_ALIAS).count(), 3)
         repository = new_apps.get_model(
             'gh_permissions', 'Repository',
         ).objects.using(_ALIAS).get()
         self.assertEqual(repository.name, 'legacy-repo')
+        Collaborator = new_apps.get_model(
+            'gh_permissions', 'RepositoryCollaborator',
+        )
+        self.assertEqual(Collaborator.objects.using(_ALIAS).count(), 1)
+        collaborator = Collaborator.objects.using(_ALIAS).get()
+        self.assertEqual(collaborator.user_id, direct.pk)
+        self.assertEqual(collaborator.repository_id, repository.pk)
+        self.assertEqual(
+            set(collaborator.permissions.values_list('pk', flat=True)),
+            {read.pk, write.pk},
+        )
+        team_grant = new_apps.get_model(
+            'gh_permissions', 'TeamRepositoryPermission',
+        ).objects.using(_ALIAS).get()
+        self.assertEqual(team_grant.operation_id, read.pk)
+        self.assertEqual(team_grant.team_id, team.pk)
+        repository_pk = repository.pk
+
+        try:
+            executor.loader.build_graph()
+            executor.migrate([
+                ('gh_permissions', '0003_organization_owner_permission'),
+            ])
+            restored_apps = executor.loader.project_state(
+                ('gh_permissions', '0003_organization_owner_permission'),
+            ).apps
+            restored_direct = restored_apps.get_model(
+                'gh_permissions', 'UserRepositoryPermission',
+            )
+            self.assertEqual(
+                set(restored_direct.objects.using(_ALIAS).values_list(
+                    'user_id', 'repository_id', 'operation_id',
+                )),
+                {
+                    (direct.pk, repository_pk, read.pk),
+                    (direct.pk, repository_pk, write.pk),
+                },
+            )
+            restored_grant = restored_apps.get_model(
+                'gh_permissions', 'OrganizationOwnerPermission',
+            ).objects.using(_ALIAS).get()
+            self.assertEqual(restored_grant.owner_id, owner.pk)
+            self.assertEqual(restored_grant.organization_id, organization.pk)
+            self.assertEqual(restored_grant.operation_id, manage.pk)
+            self.assertNotEqual(restored_grant.operation_id, other_operation.pk)
+            self.assertEqual(
+                restored_apps.get_model(
+                    'gh_permissions', 'Organization',
+                ).objects.using(_ALIAS).count(),
+                1,
+            )
+        finally:
+            executor.loader.build_graph()
+            executor.migrate([
+                ('gh_permissions', '0004_shared_names_ownership_collaborators'),
+            ])
+
+    def test_0004_aborts_when_a_username_collides_with_an_organization(self):
+        reset = connections[_ALIAS]
+        _wipe(reset)
+        executor = MigrationExecutor(reset)
+        executor.migrate([
+            ('gh_permissions', '0003_organization_owner_permission'),
+        ])
+        apps = executor.loader.project_state(
+            ('gh_permissions', '0003_organization_owner_permission'),
+        ).apps
+        HistoricalOrganization = apps.get_model('gh_permissions', 'Organization')
+        HistoricalUser = apps.get_model('example', 'User')
+        organization = HistoricalOrganization.objects.using(_ALIAS).create(
+            name='shared-name',
+        )
+        user = HistoricalUser.objects.using(_ALIAS).create(username='shared-name')
+        HistoricalUser.objects.using(_ALIAS).create(username='untouched-user')
+        executor.loader.build_graph()
+        with self.assertRaises(RuntimeError) as caught:
+            executor.migrate([
+                ('gh_permissions', '0004_shared_names_ownership_collaborators'),
+            ])
+        message = str(caught.exception)
+        self.assertIn('stopped before writing', message)
+        self.assertIn('user pk=%s' % user.pk, message)
+        self.assertIn('username=%r' % 'shared-name', message)
+        self.assertIn('organization pk=%s' % organization.pk, message)
+        tables = set(reset.introspection.table_names())
+        self.assertNotIn('gh_permissions_alias', tables)
+        self.assertNotIn('gh_permissions_organizationownership', tables)
+        with reset.cursor() as cursor:
+            cursor.execute(
+                'SELECT username FROM example_user ORDER BY username'
+            )
+            self.assertEqual(
+                [row[0] for row in cursor.fetchall()],
+                ['shared-name', 'untouched-user'],
+            )
+            cursor.execute('SELECT name FROM gh_permissions_organization')
+            self.assertEqual([row[0] for row in cursor.fetchall()], ['shared-name'])
+
+    def test_0004_preserves_authorization_on_the_default_database(self):
+        create_permissions(
+            global_apps.get_app_config('gh_permissions'),
+            verbosity=0,
+            interactive=False,
+        )
+        executor = MigrationExecutor(connection)
+        try:
+            executor.migrate([
+                ('gh_permissions', '0003_organization_owner_permission'),
+            ])
+            apps = executor.loader.project_state(
+                ('gh_permissions', '0003_organization_owner_permission'),
+            ).apps
+            HistoricalOrganization = apps.get_model('gh_permissions', 'Organization')
+            HistoricalRepository = apps.get_model('gh_permissions', 'Repository')
+            HistoricalUser = apps.get_model('example', 'User')
+            HistoricalGrant = apps.get_model(
+                'gh_permissions', 'OrganizationOwnerPermission',
+            )
+            HistoricalDirect = apps.get_model(
+                'gh_permissions', 'UserRepositoryPermission',
+            )
+            manage = Permission.objects.get(
+                content_type__app_label='gh_permissions',
+                content_type__model='organization',
+                codename='manage_organization',
+            )
+            read = Permission.objects.get(
+                content_type__app_label='gh_permissions',
+                content_type__model='repository',
+                codename='read_repository',
+            )
+            write = Permission.objects.get(
+                content_type__app_label='gh_permissions',
+                content_type__model='repository',
+                codename='write_repository',
+            )
+            organization = HistoricalOrganization.objects.create(name='kept-org')
+            repository = HistoricalRepository.objects.create(
+                organization=organization, title='kept-repo',
+            )
+            owner = HistoricalUser.objects.create(
+                username='kept-owner', is_active=True,
+            )
+            direct = HistoricalUser.objects.create(
+                username='kept-direct', is_active=True,
+            )
+            HistoricalGrant.objects.create(
+                organization_id=organization.pk,
+                owner_id=owner.pk,
+                operation_id=manage.pk,
+            )
+            HistoricalDirect.objects.create(
+                user_id=direct.pk,
+                repository_id=repository.pk,
+                operation_id=read.pk,
+            )
+            HistoricalDirect.objects.create(
+                user_id=direct.pk,
+                repository_id=repository.pk,
+                operation_id=write.pk,
+            )
+            executor.loader.build_graph()
+            executor.migrate([
+                ('gh_permissions', '0004_shared_names_ownership_collaborators'),
+            ])
+            ensure_owner_group()
+            User = get_user_model()
+            owner = User.objects.get(username='kept-owner')
+            direct = User.objects.get(username='kept-direct')
+            organization = Organization.objects.get(name='kept-org')
+            repository = Repository.objects.get(name='kept-repo')
+            self.assertTrue(owner.has_perm(
+                'gh_permissions.manage_organization', organization,
+            ))
+            self.assertFalse(direct.has_perm(
+                'gh_permissions.manage_organization', organization,
+            ))
+            self.assertTrue(direct.has_perm(
+                'gh_permissions.read_repository', repository,
+            ))
+            self.assertTrue(direct.has_perm(
+                'gh_permissions.write_repository', repository,
+            ))
+            self.assertFalse(direct.has_perm(
+                'gh_permissions.admin_repository', repository,
+            ))
+            # The owner row grants the seeded group, a superset of the
+            # single manage_organization operation stored before 0004.
+            for codename in (
+                'read_repository', 'write_repository', 'admin_repository',
+            ):
+                self.assertTrue(owner.has_perm(
+                    'gh_permissions.%s' % codename, repository,
+                ))
+            collaborator = RepositoryCollaborator.objects.get(
+                user=direct, repository=repository,
+            )
+            self.assertEqual(
+                set(collaborator.permissions.values_list('codename', flat=True)),
+                {'read_repository', 'write_repository'},
+            )
+            self.assertTrue(Alias.objects.filter(name='kept-owner').exists())
+            self.assertTrue(Alias.objects.filter(name='kept-direct').exists())
+            self.assertTrue(Alias.objects.filter(name='kept-org').exists())
+            self.assertIsNone(owner.personal_organization.name)
+            self.assertTrue(OrganizationOwnership.objects.filter(
+                user=owner, organization=owner.personal_organization,
+            ).exists())
+        finally:
+            MigrationExecutor(connection).migrate([
+                ('gh_permissions', '0004_shared_names_ownership_collaborators'),
+            ])
 
 
 class CollaboratorRegistrationTest(TestCase):

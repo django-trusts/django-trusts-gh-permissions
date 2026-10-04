@@ -57,7 +57,12 @@ registered in admin.
 
 `OrganizationAdmin` overrides `save_model`, `delete_model`, and
 `delete_queryset` so those writes call the domain services. The other
-concrete admins do not override the security methods. No custom
+concrete admins do not override the security methods.
+`OrganizationOwnershipAdmin` sets `scope_allows_add`,
+`scope_allows_change`, and `scope_allows_delete` to false, so a
+non-superuser cannot edit the row that grants their authority.
+Superusers still bypass that scope. The example user admin is
+`ServiceBackedUserAdmin`, which calls the domain services. No custom
 grant-management view was added. The mixin is private. It is not a
 Core API.
 
@@ -86,19 +91,17 @@ layers.
 
 No. Django admin still asks separate questions. The mixin hooks are
 unchanged. The grant they read is now an `OrganizationOwnership` row.
-The earlier request matrix (guessed URLs, forged posts, foreign-key
-choices, bulk delete, cascade, and the owner-grant flag cases) was
-written against `OrganizationOwnerPermission` and is not rewritten
-here. `tests/test_org_scoped_admin.py` runs in the suite and covers
-the mixin contract, the superuser service calls, and the ownership
-scope.
+The request matrix (guessed URLs, forged posts, foreign-key choices,
+bulk delete, cascade, and the ownership-flag cases) is adapted to
+`OrganizationOwnership` and `RepositoryCollaborator` and runs in
+`tests/test_org_scoped_admin.py`.
 
 The hooks stay for the same reasons as before:
 
 | Hook | Why it stays |
 | --- | --- |
 | `get_queryset` | Non-superusers are filtered to `Organization.objects.authorized`. That queryset is the organizations where the user has an ownership row. |
-| `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin`. |
+| `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin` and on `OrganizationOwnershipAdmin`. |
 | `has_change_permission` / `has_delete_permission` | The flags are consulted even when no object is passed. Object deletes still require `_in_scope`. |
 | `formfield_for_foreignkey` / `formfield_for_manytomany` | Related choices come from the related admin's scoped queryset when that admin is scoped. `RepositoryCollaborator.permissions` points at `auth.Permission`, which is not scoped. |
 | `save_model` | `OrganizationAdmin` checks the same add/change flags and `_in_scope`, then calls the domain services. Other admins keep the mixin backstop. |

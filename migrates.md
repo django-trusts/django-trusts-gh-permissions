@@ -721,6 +721,17 @@ organization membership is not stored. `Repository.name` replaces `title` and is
 unique per organization. `RepositoryCollaborator.permissions` is the
 direct repository bundle.
 
+`0004_shared_names_ownership_collaborators` copies
+`OrganizationOwnerPermission` into `OrganizationOwnership` and
+collapses `UserRepositoryPermission` into one `RepositoryCollaborator`
+per user and repository, with `permissions` populated. Every existing
+user receives an `Alias`, a personal organization, and an ownership
+row. A username that equals an organization name aborts that data
+migration before those ledger rows are written. The ownership row
+grants the seeded owner group, which is broader than the old single
+owner operation. A non-owner's direct repository permissions are
+copied as stored.
+
 `register_collaborator` and `register_organization_owner` are installed.
 The owner path has no condition. `Team`, `Team.allowed_operations`,
 and `TeamRepositoryPermission` are unchanged.
@@ -730,9 +741,14 @@ and `TeamRepositoryPermission` are unchanged.
 - [ ] Apply `0004_shared_names_ownership_collaborators` forward from a
       database that already has `0003`. Do not rewrite earlier
       migrations.
-- [ ] Confirm existing organization names become `Alias` rows and point
-      at group `organization-owners`. Historical users are not aliased.
-- [ ] Confirm `Repository.title` was renamed to `name`, and
-      `UserRepositoryPermission` / `OrganizationOwnerPermission` are
-      gone.
+- [ ] Confirm existing organization names and usernames become `Alias`
+      rows. Each user has a personal organization and an
+      `OrganizationOwnership` row. Organizations point at group
+      `organization-owners`.
+- [ ] Confirm a username that matches an organization name aborts
+      `0004` and leaves no partial alias ledger.
+- [ ] Confirm `Repository.title` was renamed to `name`.
+      `OrganizationOwnerPermission` rows became ownership rows, and
+      `UserRepositoryPermission` rows became `RepositoryCollaborator`
+      permissions. Both old models are gone.
 - [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.

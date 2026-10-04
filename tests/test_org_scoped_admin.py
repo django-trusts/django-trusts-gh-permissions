@@ -2,20 +2,26 @@
 
 An ``OrganizationOwnership`` row is the owner grant. Staff owners see
 those organizations. A team member with no ownership row does not.
+Non-superusers cannot add, change, or delete ownership rows.
 Superusers bypass the scope mixin. ``_admin_scope`` stays free of GH
 model nouns.
 """
 
+from html.parser import HTMLParser
 from pathlib import Path
 
 from django.contrib import admin
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
-from django.db import connections
+from django.db import connection, connections
 from django.db.migrations.executor import MigrationExecutor
-from django.test import Client, RequestFactory, SimpleTestCase, TestCase, TransactionTestCase, override_settings
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from gh_permissions._admin_scope import AuthorizedScopeAdminMixin
 from gh_permissions.admin import (
@@ -24,9 +30,11 @@ from gh_permissions.admin import (
     OrgScopedAdmin,
     RepositoryAdmin,
     RepositoryCollaboratorAdmin,
+    ServiceBackedUserAdmin,
     TeamAdmin,
     TeamRepositoryPermissionAdmin,
 )
+from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -37,7 +45,10 @@ from gh_permissions.models import (
     TeamRepositoryPermission,
 )
 from gh_permissions.services import create_organization, create_user
+from tests.fixtures import repository_permission
 from tests.test_migration_0002 import _ALIAS, _wipe
+from tests.test_org_scoped_requests import OrgScopedAdminRequestTests
+from trusts.apps import implementation_for_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +65,43 @@ CONCRETE_ADMINS = (
     OrganizationOwnershipAdmin,
 )
 SERVICE_HOOKS = ('save_model', 'delete_model', 'delete_queryset')
+
+
+def _registry():
+    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
+        CANONICAL_BACKEND,
+    ).registry
+
+
+class _SelectParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._select = None
+        self.values = {}
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == 'select':
+            self._select = attrs.get('name')
+            self.values.setdefault(self._select, [])
+        elif tag == 'option' and self._select:
+            self.values[self._select].append(attrs.get('value'))
+
+    def handle_endtag(self, tag):
+        if tag == 'select':
+            self._select = None
+
+
+def _select_values(html, name):
+    parser = _SelectParser()
+    parser.feed(html)
+    return [value for value in parser.values.get(name, []) if value]
+
+
+def _client_for(user):
+    client = Client()
+    client.force_login(user, backend=ADMIN_BACKENDS[1])
+    return client
 
 
 def _grant_scoped(user):
@@ -107,7 +155,19 @@ class OrgScopedAdminContractTests(SimpleTestCase):
         self.assertNotIn('get_form', AuthorizedScopeAdminMixin.__dict__)
         self.assertNotIn('has_view_permission', AuthorizedScopeAdminMixin.__dict__)
         self.assertFalse(OrganizationAdmin.scope_allows_add)
+        self.assertFalse(OrganizationOwnershipAdmin.scope_allows_add)
+        self.assertFalse(OrganizationOwnershipAdmin.scope_allows_change)
+        self.assertFalse(OrganizationOwnershipAdmin.scope_allows_delete)
         self.assertTrue(TeamAdmin.scope_allows_delete)
+
+    def test_example_user_admin_calls_the_shared_name_services(self):
+        registered = admin.site._registry[get_user_model()]
+        self.assertIsInstance(registered, ServiceBackedUserAdmin)
+        self.assertNotEqual(type(registered), UserAdmin)
+        admin_source = (ROOT / 'gh_permissions' / 'admin.py').read_text()
+        self.assertIn('create_user', admin_source)
+        self.assertIn('rename_user', admin_source)
+        self.assertIn('delete_user', admin_source)
 
     def test_auth_permission_is_not_organization_scoped(self):
         registered = admin.site._registry[Permission]
@@ -337,7 +397,7 @@ class OrganizationAdminServiceTests(TestCase):
         self.assertFalse(Organization.objects.filter(pk=organization.pk).exists())
         self.assertFalse(Alias.objects.filter(name='ada').exists())
 
-    def test_staff_owner_sees_only_membership_organizations(self):
+    def test_staff_owner_sees_only_owned_organizations(self):
         owner = create_user('ada-owner', is_staff=True)
         _grant_scoped(owner)
         organization = create_organization('acme')
@@ -374,3 +434,68 @@ class OrganizationAdminServiceTests(TestCase):
             model_admin.save_model(request, fresh, None, change=False)
         organization.refresh_from_db()
         self.assertEqual(organization.name, 'acme')
+
+    def test_superuser_user_admin_keeps_the_alias_and_personal_organization(self):
+        response = self.client.post(
+            reverse('admin:example_user_add'),
+            {
+                'username': 'ada',
+                'usable_password': 'true',
+                'password1': 'secret-pass-1',
+                'password2': 'secret-pass-1',
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(response.status_code, 302, response.content[:800])
+        user = get_user_model().objects.get(username='ada')
+        self.assertTrue(user.check_password('secret-pass-1'))
+        self.assertTrue(Alias.objects.filter(name='ada').exists())
+        self.assertIsNone(user.personal_organization.name)
+        self.assertTrue(OrganizationOwnership.objects.filter(
+            user=user, organization=user.personal_organization,
+        ).exists())
+
+        joined = timezone.localtime(user.date_joined)
+        response = self.client.post(
+            reverse('admin:example_user_change', args=[user.pk]),
+            {
+                'username': 'ada-renamed',
+                'first_name': '',
+                'last_name': '',
+                'email': '',
+                'is_active': 'on',
+                'date_joined_0': joined.strftime('%Y-%m-%d'),
+                'date_joined_1': joined.strftime('%H:%M:%S'),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(response.status_code, 302, response.content[:800])
+        user.refresh_from_db()
+        self.assertEqual(user.username, 'ada-renamed')
+        self.assertFalse(Alias.objects.filter(name='ada').exists())
+        self.assertTrue(Alias.objects.filter(name='ada-renamed').exists())
+
+        response = self.client.post(
+            reverse('admin:example_user_delete', args=[user.pk]),
+            {'post': 'yes'},
+        )
+        self.assertEqual(response.status_code, 302, response.content[:800])
+        self.assertFalse(get_user_model().objects.filter(pk=user.pk).exists())
+        self.assertFalse(Alias.objects.filter(name='ada-renamed').exists())
+        self.assertFalse(Organization.objects.filter(personal_user_id=user.pk).exists())
+
+    def test_user_admin_rejects_a_name_held_by_an_organization(self):
+        create_organization('acme')
+        response = self.client.post(
+            reverse('admin:example_user_add'),
+            {
+                'username': 'acme',
+                'usable_password': 'true',
+                'password1': 'secret-pass-1',
+                'password2': 'secret-pass-1',
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'already reserved')
+        self.assertFalse(get_user_model().objects.filter(username='acme').exists())

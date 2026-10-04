@@ -3,19 +3,67 @@
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
+from django.db.migrations.exceptions import IrreversibleError
 
 
-def assign_shared_owner_group(apps, schema_editor):
-    """Point existing organizations at one group and reserve their names.
+def _historical_user(apps):
+    app_label, model_name = settings.AUTH_USER_MODEL.split('.')
+    return apps.get_model(app_label, model_name)
 
-    Permission rows are not assigned here. ``post_migrate`` seeds those
-    after ``auth`` creates them. Historical users are left alone: this
-    example did not previously share their names with organizations.
+
+def _name_collisions(organization_model, user_model, alias):
+    """Usernames that already are conventional organization names."""
+    organizations_by_name = {}
+    for organization in organization_model.objects.using(alias).iterator():
+        if not organization.name:
+            continue
+        organizations_by_name.setdefault(organization.name, []).append(
+            organization.pk,
+        )
+    collisions = []
+    for user in user_model.objects.using(alias).iterator():
+        for organization_pk in organizations_by_name.get(user.username, ()):
+            collisions.append((user.pk, user.username, organization_pk))
+    return collisions
+
+
+def preserve_and_backfill(apps, schema_editor):
+    """Copy grants forward and give every existing user a personal ledger.
+
+    ``OrganizationOwnerPermission`` becomes one ``OrganizationOwnership``
+    row. ``UserRepositoryPermission`` rows for the same user and
+    repository collapse into one ``RepositoryCollaborator`` whose
+    ``permissions`` are those operations. Each user then receives an
+    ``Alias``, a personal organization, and an ownership row.
+
+    A username that equals an organization name aborts this function
+    before those writes. The old single owner operation is not stored:
+    the new row grants the seeded owner group, which is broader than
+    that one permission. Direct grants of a non-owner are copied as
+    stored.
     """
     alias = schema_editor.connection.alias
     Group = apps.get_model('auth', 'Group')
     Organization = apps.get_model('gh_permissions', 'Organization')
     Alias = apps.get_model('gh_permissions', 'Alias')
+    Ownership = apps.get_model('gh_permissions', 'OrganizationOwnership')
+    Collaborator = apps.get_model('gh_permissions', 'RepositoryCollaborator')
+    OwnerGrant = apps.get_model('gh_permissions', 'OrganizationOwnerPermission')
+    Direct = apps.get_model('gh_permissions', 'UserRepositoryPermission')
+    User = _historical_user(apps)
+
+    collisions = _name_collisions(Organization, User, alias)
+    if collisions:
+        details = ' '.join(
+            'user pk=%s username=%r collides with organization pk=%s'
+            % (user_pk, username, organization_pk)
+            for user_pk, username, organization_pk in collisions
+        )
+        raise RuntimeError(
+            'Shared-name ledger backfill stopped before writing any '
+            'alias, personal organization, or ownership row. ' + details
+        )
+
     group, _created = Group.objects.using(alias).get_or_create(
         name='organization-owners',
     )
@@ -26,16 +74,118 @@ def assign_shared_owner_group(apps, schema_editor):
             organization.owner_group_id = group.pk
             organization.save(update_fields=['owner_group'])
 
+    for grant in OwnerGrant.objects.using(alias).iterator():
+        Ownership.objects.using(alias).get_or_create(
+            user_id=grant.owner_id,
+            organization_id=grant.organization_id,
+        )
 
-def clear_shared_owner_group(apps, schema_editor):
+    grouped = {}
+    for row in Direct.objects.using(alias).iterator():
+        grouped.setdefault((row.user_id, row.repository_id), set()).add(
+            row.operation_id,
+        )
+    for (user_id, repository_id), operation_ids in grouped.items():
+        collaborator, _created = Collaborator.objects.using(alias).get_or_create(
+            user_id=user_id,
+            repository_id=repository_id,
+        )
+        collaborator.permissions.add(*operation_ids)
+
+    for user in User.objects.using(alias).iterator():
+        Alias.objects.using(alias).get_or_create(name=user.username)
+        personal = Organization.objects.using(alias).create(
+            personal_user_id=user.pk,
+            owner_group_id=group.pk,
+        )
+        Ownership.objects.using(alias).get_or_create(
+            user_id=user.pk,
+            organization_id=personal.pk,
+        )
+
+
+def reverse_preserve_and_backfill(apps, schema_editor):
+    """Restore one owner grant and expand collaborator permissions.
+
+    ``OrganizationOwnerPermission`` can store one owner and one
+    operation. Multiple owners on one conventional organization cannot
+    be represented. The restored operation is ``manage_organization``,
+    not whatever operation the old row held. Personal organizations
+    created by the forward migration are removed before ``name`` becomes
+    required again.
+    """
     alias = schema_editor.connection.alias
     Organization = apps.get_model('gh_permissions', 'Organization')
     Alias = apps.get_model('gh_permissions', 'Alias')
-    for organization in Organization.objects.using(alias).iterator():
-        if organization.name:
-            Alias.objects.using(alias).filter(name=organization.name).delete()
-        organization.owner_group_id = None
-        organization.save(update_fields=['owner_group'])
+    Ownership = apps.get_model('gh_permissions', 'OrganizationOwnership')
+    Collaborator = apps.get_model('gh_permissions', 'RepositoryCollaborator')
+    OwnerGrant = apps.get_model('gh_permissions', 'OrganizationOwnerPermission')
+    Direct = apps.get_model('gh_permissions', 'UserRepositoryPermission')
+    Permission = apps.get_model('auth', 'Permission')
+
+    conventional = list(
+        Organization.objects.using(alias).filter(personal_user__isnull=True)
+    )
+    owners_by_organization = {}
+    for organization in conventional:
+        owners_by_organization[organization.pk] = list(
+            Ownership.objects.using(alias).filter(
+                organization_id=organization.pk,
+            ).values_list('user_id', flat=True)
+        )
+        if len(owners_by_organization[organization.pk]) > 1:
+            raise IrreversibleError(
+                'Cannot reverse 0004: organization pk=%s name=%r has %s '
+                'ownership rows, and OrganizationOwnerPermission stores '
+                'one owner.'
+                % (
+                    organization.pk,
+                    organization.name,
+                    len(owners_by_organization[organization.pk]),
+                )
+            )
+
+    needs_owner_grant = any(owners_by_organization.values())
+    manage = Permission.objects.using(alias).filter(
+        content_type__app_label='gh_permissions',
+        content_type__model='organization',
+        codename='manage_organization',
+    ).first()
+    if needs_owner_grant and manage is None:
+        raise IrreversibleError(
+            'Cannot reverse 0004: auth permission manage_organization is '
+            'missing, so OrganizationOwnerPermission.operation cannot be '
+            'restored. No grant rows were written.'
+        )
+
+    for collaborator in Collaborator.objects.using(alias).iterator():
+        permission_ids = list(
+            collaborator.permissions.values_list('pk', flat=True),
+        )
+        for permission_id in permission_ids:
+            Direct.objects.using(alias).get_or_create(
+                user_id=collaborator.user_id,
+                repository_id=collaborator.repository_id,
+                operation_id=permission_id,
+            )
+
+    if manage is not None:
+        for organization in conventional:
+            owner_ids = owners_by_organization[organization.pk]
+            if len(owner_ids) == 1:
+                OwnerGrant.objects.using(alias).get_or_create(
+                    organization_id=organization.pk,
+                    defaults={
+                        'owner_id': owner_ids[0],
+                        'operation_id': manage.pk,
+                    },
+                )
+
+    Organization.objects.using(alias).filter(
+        personal_user__isnull=False,
+    ).delete()
+    Alias.objects.using(alias).all().delete()
+    Organization.objects.using(alias).update(owner_group=None)
 
 
 class Migration(migrations.Migration):
@@ -58,41 +208,18 @@ class Migration(migrations.Migration):
             name='OrganizationOwnership',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ownerships', to='gh_permissions.organization')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='organization_ownerships', to=settings.AUTH_USER_MODEL)),
             ],
         ),
         migrations.CreateModel(
             name='RepositoryCollaborator',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('permissions', models.ManyToManyField(blank=True, related_name='repository_collaborators', to='auth.permission')),
+                ('repository', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='collaborators', to='gh_permissions.repository')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='repository_collaborations', to=settings.AUTH_USER_MODEL)),
             ],
-        ),
-        migrations.RemoveField(
-            model_name='organizationownerpermission',
-            name='operation',
-        ),
-        migrations.RemoveField(
-            model_name='organizationownerpermission',
-            name='organization',
-        ),
-        migrations.RemoveField(
-            model_name='organizationownerpermission',
-            name='owner',
-        ),
-        migrations.AlterUniqueTogether(
-            name='userrepositorypermission',
-            unique_together=None,
-        ),
-        migrations.RemoveField(
-            model_name='userrepositorypermission',
-            name='operation',
-        ),
-        migrations.RemoveField(
-            model_name='userrepositorypermission',
-            name='repository',
-        ),
-        migrations.RemoveField(
-            model_name='userrepositorypermission',
-            name='user',
         ),
         migrations.RenameField(
             model_name='repository',
@@ -118,9 +245,14 @@ class Migration(migrations.Migration):
             name='name',
             field=models.CharField(blank=True, max_length=40, null=True, unique=True),
         ),
+        migrations.AddField(
+            model_name='organization',
+            name='owners',
+            field=models.ManyToManyField(blank=True, related_name='owned_organizations', through='gh_permissions.OrganizationOwnership', through_fields=('organization', 'user'), to=settings.AUTH_USER_MODEL),
+        ),
         migrations.RunPython(
-            assign_shared_owner_group,
-            clear_shared_owner_group,
+            preserve_and_backfill,
+            reverse_preserve_and_backfill,
         ),
         migrations.AlterField(
             model_name='organization',
@@ -134,36 +266,6 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name='repository',
             constraint=models.UniqueConstraint(fields=('organization', 'name'), name='unique_repository_name_per_organization'),
-        ),
-        migrations.AddField(
-            model_name='organizationownership',
-            name='organization',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ownerships', to='gh_permissions.organization'),
-        ),
-        migrations.AddField(
-            model_name='organizationownership',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='organization_ownerships', to=settings.AUTH_USER_MODEL),
-        ),
-        migrations.AddField(
-            model_name='organization',
-            name='owners',
-            field=models.ManyToManyField(blank=True, related_name='owned_organizations', through='gh_permissions.OrganizationOwnership', through_fields=('organization', 'user'), to=settings.AUTH_USER_MODEL),
-        ),
-        migrations.AddField(
-            model_name='repositorycollaborator',
-            name='permissions',
-            field=models.ManyToManyField(blank=True, related_name='repository_collaborators', to='auth.permission'),
-        ),
-        migrations.AddField(
-            model_name='repositorycollaborator',
-            name='repository',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='collaborators', to='gh_permissions.repository'),
-        ),
-        migrations.AddField(
-            model_name='repositorycollaborator',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='repository_collaborations', to=settings.AUTH_USER_MODEL),
         ),
         migrations.DeleteModel(
             name='OrganizationOwnerPermission',

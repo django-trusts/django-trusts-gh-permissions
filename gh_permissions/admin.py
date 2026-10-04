@@ -10,6 +10,9 @@ username alias. Private hook plumbing lives in ``_admin_scope``.
 
 from django import forms
 from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 
@@ -25,10 +28,12 @@ from gh_permissions.models import (
 from gh_permissions.services import (
     AliasConflict,
     create_organization,
+    create_user,
     delete_organization,
     delete_user,
     name_is_taken,
     rename_organization,
+    rename_user,
 )
 
 
@@ -147,8 +152,89 @@ class TeamRepositoryPermissionAdmin(OrgScopedAdmin):
 
 
 class OrganizationOwnershipAdmin(OrgScopedAdmin):
+    """Ownership rows stay read-only until relationship protection exists.
+
+    Non-superusers cannot add, change, or delete the row that grants
+    their own ``manage_organization`` authority. Superusers still
+    bypass the scope mixin.
+    """
+
     authorization_scope_paths = 'organization'
+    scope_allows_add = False
+    scope_allows_change = False
+    scope_allows_delete = False
+    list_display = ('user', 'organization')
     ordering = ('pk',)
+
+
+class ServiceUserCreationForm(AdminUserCreationForm):
+    """Reject a username the shared ledger already holds."""
+
+    def clean_username(self):
+        username = super().clean_username()
+        if username and name_is_taken(username):
+            raise ValidationError('That name is already reserved.')
+        return username
+
+
+class ServiceUserChangeForm(UserChangeForm):
+    """Reject a rename onto a name the shared ledger already holds."""
+
+    def clean_username(self):
+        username = self.cleaned_data.get('username')
+        if not username:
+            return username
+        if self.instance.pk and username == self.instance.username:
+            return username
+        if name_is_taken(username, ignoring_user_id=self.instance.pk):
+            raise ValidationError('That name is already reserved.')
+        return username
+
+
+class ServiceBackedUserAdmin(UserAdmin):
+    """Create, rename, and delete users through the shared-name services.
+
+    Register this on the project's user model. It is not registered
+    here, because the library does not own ``AUTH_USER_MODEL``.
+    """
+
+    form = ServiceUserChangeForm
+    add_form = ServiceUserCreationForm
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            stored = get_user_model().objects.get(pk=obj.pk)
+            if obj.username != stored.username:
+                try:
+                    rename_user(stored, obj.username)
+                except (AliasConflict, ValueError) as exc:
+                    raise ValidationError(str(exc))
+            super().save_model(request, obj, form, change)
+            return
+        extra = {}
+        for field_name in (
+            'email', 'is_staff', 'is_active', 'is_superuser',
+            'first_name', 'last_name',
+        ):
+            if field_name in form.cleaned_data:
+                extra[field_name] = form.cleaned_data[field_name]
+        try:
+            created = create_user(
+                form.cleaned_data['username'],
+                password=form.cleaned_data.get('password1'),
+                **extra,
+            )
+        except (AliasConflict, ValueError) as exc:
+            raise ValidationError(str(exc))
+        obj.pk = created.pk
+        obj.password = created.password
+
+    def delete_model(self, request, obj):
+        delete_user(obj)
+
+    def delete_queryset(self, request, queryset):
+        for user in queryset:
+            delete_user(user)
 
 
 admin.site.register(Organization, OrganizationAdmin)
