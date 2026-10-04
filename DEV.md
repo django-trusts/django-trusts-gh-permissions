@@ -23,9 +23,15 @@ The permission terminal is `auth.Permission`, with codenames
 `Repository` mixes in `PermittedUsersMixin`. The example/test user
 (`example.User`) mixes `PermittedUsersManagerMixin` into its manager so
 `User.objects.permitted(content, perm)` is exercised. The library does
-not require that user. `0001_initial` is unchanged. `0002_auth_permission_terminal`
-retargets the operation foreign keys and replaces the team-ceiling
-relation. This pairing leaves `OrgScopedAdmin` untouched.
+not require that user. `0001_initial` is unchanged.
+`0002_auth_permission_terminal` is an irreversible reset: before either
+operation foreign key is retargeted, it deletes every
+`UserRepositoryPermission` and `TeamRepositoryPermission` row, and
+removing then re-adding `Team.allowed_operations` drops the ceiling
+through-table. Old `operation_id` values are not copied onto
+`auth.Permission`. Migrating backwards raises `IrreversibleError` and
+does not restore those grants. This pairing leaves `OrgScopedAdmin`
+untouched.
 
 The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
 (django-trusts#241) is superseded for this pin. The earlier

@@ -22,7 +22,15 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',
-    }
+    },
+    # Empty on purpose. The 0002 upgrade test migrates it itself.
+    # The runner must not apply 0002 here, because that migration
+    # refuses to run backwards.
+    'gh_permission_reset': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',
+        'TEST': {'MIGRATE': False},
+    },
 }
 
 ROOT_URLCONF = 'tests.urls'
