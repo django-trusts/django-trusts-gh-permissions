@@ -50,9 +50,10 @@ class AuthorizedScopeAdminMixin:
 
     ``authorization_scope_paths`` is ``''``, one forward single-valued
     lookup, or a tuple of them. Every path must end on the authorized
-    queryset's concrete model in the same database. ``scope_allows_add``,
-    ``scope_allows_change``, and ``scope_allows_delete`` are independent.
-    ``bypasses_scope`` skips the filter; the default is a superuser.
+    queryset's concrete model in the same database.     ``scope_allows_add``, ``scope_allows_change``, and
+    ``scope_allows_delete`` are independent, including when no object
+    is passed. Creates consult the add flag; updates consult the change
+    flag. ``bypasses_scope`` skips the filter; the default is a superuser.
     """
 
     authorization_scope_paths = None
@@ -183,22 +184,26 @@ class AuthorizedScopeAdminMixin:
     def has_change_permission(self, request, obj=None):
         if not super().has_change_permission(request, obj):
             return False
-        if obj is None or self.bypasses_scope(request):
+        if self.bypasses_scope(request):
             return True
         return self.scope_allows_change
 
     def has_delete_permission(self, request, obj=None):
         if not super().has_delete_permission(request, obj):
             return False
-        if obj is None or self.bypasses_scope(request):
+        if self.bypasses_scope(request):
             return True
         if not self.scope_allows_delete:
             return False
+        if obj is None:
+            return True
         return self._in_scope(request, obj)
 
     def save_model(self, request, obj, form, change):
-        if not self.bypasses_scope(request) and (
-            not self.scope_allows_change or not self._in_scope(request, obj)
-        ):
-            raise PermissionDenied
+        if not self.bypasses_scope(request):
+            allowed_write = (
+                self.scope_allows_change if change else self.scope_allows_add
+            )
+            if not allowed_write or not self._in_scope(request, obj):
+                raise PermissionDenied
         super().save_model(request, obj, form, change)

@@ -968,7 +968,9 @@ class OrgScopedAdminRequestTests(TestCase):
                 ACTION_CHECKBOX_NAME: [str(self.grant_a.pk)],
             },
         )
-        self.assertEqual(bulk.status_code, 403)
+        self.assertEqual(bulk.status_code, 200)
+        self.assertNotContains(bulk, 'delete_selected')
+        self.assertNotContains(bulk, 'Successfully deleted')
         self.assertTrue(
             OrganizationOwnerPermission.objects.filter(pk=self.grant_a.pk).exists(),
         )
@@ -1288,3 +1290,53 @@ class OrgScopedAdminRequestTests(TestCase):
                 request, team, form=None, change=False,
             )
         self.assertFalse(Team.objects.filter(name='other-db-scope').exists())
+
+    def test_save_model_honors_add_and_change_flags_independently(self):
+        request = RequestFactory().post('/')
+        request.user = self.owner_a
+        team_admin = admin.site._registry[Team]
+        previous_add = team_admin.scope_allows_add
+        previous_change = team_admin.scope_allows_change
+        team_admin.scope_allows_add = True
+        team_admin.scope_allows_change = False
+        try:
+            self.assertTrue(team_admin.has_add_permission(request))
+            self.assertFalse(team_admin.has_change_permission(request, None))
+            created = Team(organization=self.org_a, name='create-only')
+            team_admin.save_model(request, created, form=None, change=False)
+            self.assertTrue(
+                Team.objects.filter(name='create-only', organization=self.org_a).exists(),
+            )
+            created.name = 'create-only-edited'
+            with self.assertRaises(PermissionDenied):
+                team_admin.save_model(request, created, form=None, change=True)
+            self.assertFalse(Team.objects.filter(name='create-only-edited').exists())
+            foreign = Team(organization=self.org_b, name='create-only-foreign')
+            with self.assertRaises(PermissionDenied):
+                team_admin.save_model(request, foreign, form=None, change=False)
+            self.assertFalse(Team.objects.filter(name='create-only-foreign').exists())
+        finally:
+            team_admin.scope_allows_add = previous_add
+            team_admin.scope_allows_change = previous_change
+
+    def test_owner_grant_flags_apply_without_an_object(self):
+        request = RequestFactory().get('/')
+        request.user = self.owner_a
+        grant_admin = admin.site._registry[OrganizationOwnerPermission]
+        self.assertFalse(grant_admin.scope_allows_change)
+        self.assertFalse(grant_admin.scope_allows_delete)
+        self.assertFalse(grant_admin.has_change_permission(request, None))
+        self.assertFalse(grant_admin.has_delete_permission(request, None))
+        self.assertFalse(grant_admin.has_change_permission(request, self.grant_a))
+        self.assertFalse(grant_admin.has_delete_permission(request, self.grant_a))
+        super_request = RequestFactory().get('/')
+        super_request.user = self.superuser
+        self.assertTrue(grant_admin.has_change_permission(super_request, None))
+        self.assertTrue(grant_admin.has_delete_permission(super_request, None))
+        listing = self.owner_client.get(
+            reverse('admin:gh_permissions_organizationownerpermission_changelist'),
+        )
+        self.assertEqual(listing.status_code, 200)
+        self.assertContains(listing, 'owned-alpha')
+        self.assertNotContains(listing, 'foreign-beta')
+        self.assertNotContains(listing, 'delete_selected')
