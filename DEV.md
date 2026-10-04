@@ -13,9 +13,23 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
 django-trusts `dev` commit
-`9cac5d843b58be5174f7ae53920d2861419d14d9`, the merge of
-[#261](https://github.com/django-trusts/django-trusts/pull/261).
-Do not float past that commit.
+`7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
+[#264](https://github.com/django-trusts/django-trusts/pull/264).
+Do not float past that commit. That merge is what lets `permission=`
+end on one forward to-many step to `auth.Permission`.
+
+[#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
+adds `Alias`, personal versus conventional organizations,
+`OrganizationMembership`, and `RepositoryCollaborator`. It removes
+`UserRepositoryPermission` and `OrganizationOwnerPermission`. Team,
+`Team.allowed_operations`, and `TeamRepositoryPermission` are unchanged.
+The owner registration is written and not installed: public `condition=`
+cannot compare `is_owner` to `True`, and a named filter cannot walk the
+membership from the organization or the user. Startup therefore does not
+register an unfiltered membership path. The shared owner `Group` is still
+seeded with `manage_organization`, `read_repository`, `write_repository`,
+and `admin_repository`. Raw user creates and renames, including stock
+user admin, do not touch `Alias`.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.
@@ -93,25 +107,28 @@ and never installs `'trusts'`.
   to an organization
 - `Repository` belongs to an organization
 - A `Team` has a direct `allowed_operations` ceiling
-- A user may receive a direct `UserRepositoryPermission`
+- A user may receive a direct `RepositoryCollaborator` bundle
 - A team may receive a repository-scoped `TeamRepositoryPermission`
-- Complete relation roots OR-compose (direct + team). A partial
+- Complete relation roots OR-compose (collaborator + team). A partial
   membership or attachment grants nothing.
 - Team permissions are capped by grant-row organization equality and by
   the team operation ceiling (`.contains` / `==` / `&`)
 - Revocation and malformed configuration fail closed
-- Organization membership is not modeled and is not a Trusts grant edge
+- `OrganizationMembership` is stored. It is not a startup Trusts edge:
+  `is_owner == True` is outside the public condition grammar
 
 Public relations used to authorize: `user.teams`,
-`team.allowed_operations`, `repository.organization`. Callers pass
-`AUTH_USER_MODEL` and `auth.Permission` **instances**.
-`Repository.objects.authorized` takes the permission instance.
-`has_perm` and `permitted` accept `gh_permissions.read_repository`
-(and the write and admin codenames) as the string alias.
+`team.allowed_operations`, `repository.organization`, and
+`collaborator.permissions`. Callers pass `AUTH_USER_MODEL` and
+`auth.Permission` **instances**. `Repository.objects.authorized` takes
+the permission instance. `has_perm` and `permitted` accept
+`gh_permissions.read_repository` (and the write and admin codenames)
+as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
-Direct is `register_direct`. Both take the configured `BackendHandle`
-and call `handle.register` with `trust=` plus Django `__` path strings.
+Direct repository access is `register_collaborator`. Both take the
+configured `BackendHandle` and call `handle.register` with `trust=`
+plus Django `__` path strings.
 Team adds a one-argument symbolic `condition=` using `.contains`, `==`,
 and `&`. Literal Python `in` is unsupported. There is no aggregate
 `register_gh_policy()`.
@@ -152,7 +169,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `9cac5d843b58be5174f7ae53920d2861419d14d9`.
+with Django 6.1 against exact paired-core head `7503ae83267771abdce920f26ad762a4ee491f36`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -168,10 +185,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Organization, Team, Repository, UserRepositoryPermission, TeamRepositoryPermission, OrganizationOwnerPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
-| Policy registrations | `policy.py` | Direct, team, and organization-owner `handle.register` calls; no aggregate helper |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationMembership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
+| Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group. Not admin. |
+| Policy registrations | `policy.py` | Collaborator and team `handle.register` calls. Owner helper is present and not installed. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | `register_direct`, then `register_team`, then `register_organization_owner` |
+| Ready contribution | `apps.py` | `register_collaborator`, then `register_team`, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

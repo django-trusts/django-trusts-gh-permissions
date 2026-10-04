@@ -86,15 +86,15 @@ class PermittedUsersAgreementTest(GhFixtureMixin, TestCase):
         self.assertFalse(self.member.has_perm(_WRITE, self.repo_a))
 
     def test_revocation_drops_the_user_from_both_adapters(self):
-        from gh_permissions.models import UserRepositoryPermission
+        from gh_permissions.models import RepositoryCollaborator
 
         User = get_user_model()
         self.assertIn(
             self.collaborator,
             set(User.objects.permitted(self.repo_b, _WRITE)),
         )
-        UserRepositoryPermission.objects.filter(
-            user=self.collaborator, repository=self.repo_b, operation=self.write,
+        RepositoryCollaborator.objects.filter(
+            user=self.collaborator, repository=self.repo_b,
         ).delete()
         self.assertNotIn(
             self.collaborator,

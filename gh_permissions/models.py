@@ -5,30 +5,63 @@ Public relations used to authorize:
     user.teams
     team.allowed_operations
     repository.organization
+    collaborator.permissions
 
-``organization.teams`` / ``organization.repositories`` are owner
-containment. They are not a grant. Organization membership is not
-modeled here and is not a Trusts grant edge. These models never inherit
-Content and never expose ``.trusts``, ``.trustees``, ``.contexts``,
-``.roles``, or ``.groups``.
+``organization.teams`` and ``organization.repositories`` are containment.
+``Alias`` reserves the shared current name. Authorization does not
+traverse it, and it stores no redirects or name history.
+``OrganizationMembership`` is ordinary membership and ownership.
+Startup does not register that relationship: the public condition
+grammar cannot express ``is_owner == True``, and an unfiltered path
+would hand the owner bundle to every membership. These models never
+inherit Content and never expose ``.trusts``, ``.trustees``,
+``.contexts``, ``.roles``, or ``.groups``.
 """
 
 from django.conf import settings
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from trusts.query import AuthorizedManager, PermittedUsersMixin
 
 
-class Organization(models.Model):
-    """Containment. Not a membership roster and not a repository grant.
+class Alias(models.Model):
+    """Shared current-name ledger for users and conventional organizations.
 
-    Administration is ``OrganizationOwnerPermission`` for the
-    ``manage_organization`` permission. No such row means unowned.
+    ``User.username`` and ``Organization.name`` remain the real names.
+    Nothing here points at either row, so authorization cannot traverse
+    the ledger and the schema cannot keep the three columns identical.
     """
 
-    name = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=150, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Organization(models.Model):
+    """Conventional named organization, or one user's personal organization.
+
+    Conventional rows set ``name`` and leave ``personal_user`` null.
+    Personal rows leave ``name`` null and set ``personal_user``. A
+    personal organization's displayed name is that user's username.
+    Every row points at the same seeded owner ``Group`` for now.
+    """
+
+    name = models.CharField(max_length=40, unique=True, null=True, blank=True)
+    personal_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name='personal_organization',
+        on_delete=models.CASCADE,
+    )
+    owner_group = models.ForeignKey(
+        Group,
+        related_name='owner_organizations',
+        on_delete=models.PROTECT,
+    )
 
     objects = AuthorizedManager()
 
@@ -36,9 +69,61 @@ class Organization(models.Model):
         permissions = (
             ('manage_organization', 'Can manage organization'),
         )
+        constraints = (
+            models.CheckConstraint(
+                condition=(
+                    models.Q(name__isnull=False, personal_user__isnull=True)
+                    & ~models.Q(name='')
+                ) | models.Q(name__isnull=True, personal_user__isnull=False),
+                name='organization_personal_or_conventional',
+            ),
+        )
+
+    def clean(self):
+        super().clean()
+        named = bool(self.name)
+        personal = self.personal_user_id is not None
+        if named == personal:
+            raise ValidationError(
+                'An organization is conventional (a name, and no personal '
+                'user) or personal (a personal user, and no name).'
+            )
+
+    @property
+    def display_name(self):
+        if self.personal_user_id is not None:
+            return self.personal_user.username
+        return self.name
 
     def __str__(self):
-        return self.name
+        return self.display_name or ''
+
+
+class OrganizationMembership(models.Model):
+    """One row per user and organization. Ownership is ``is_owner``."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='organization_memberships',
+        on_delete=models.CASCADE,
+    )
+    organization = models.ForeignKey(
+        Organization,
+        related_name='memberships',
+        on_delete=models.CASCADE,
+    )
+    is_owner = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'organization'),
+                name='unique_organization_membership',
+            ),
+        )
+
+    def __str__(self):
+        return '%s @ %s' % (self.user_id, self.organization_id)
 
 
 class Team(models.Model):
@@ -68,14 +153,19 @@ class Repository(PermittedUsersMixin, models.Model):
     organization = models.ForeignKey(
         Organization, related_name='repositories', on_delete=models.CASCADE,
     )
-    title = models.CharField(max_length=40)
+    name = models.CharField(max_length=40)
 
     objects = AuthorizedManager()
 
     class Meta:
         verbose_name = 'repository'
         verbose_name_plural = 'repositories'
-        unique_together = ('organization', 'title')
+        constraints = (
+            models.UniqueConstraint(
+                fields=('organization', 'name'),
+                name='unique_repository_name_per_organization',
+            ),
+        )
         permissions = (
             ('read_repository', 'Can read repository'),
             ('write_repository', 'Can write repository'),
@@ -83,28 +173,42 @@ class Repository(PermittedUsersMixin, models.Model):
         )
 
     def __str__(self):
-        return self.title
+        return self.name
 
 
-class UserRepositoryPermission(models.Model):
-    """Direct user → repository permission. Three direct FKs."""
+class RepositoryCollaborator(models.Model):
+    """Direct user access to one repository.
+
+    One row per user and repository. ``permissions`` is the selected
+    bundle. Organization membership is not required.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='repository_permissions',
+        related_name='repository_collaborations',
         on_delete=models.CASCADE,
     )
     repository = models.ForeignKey(
-        Repository, related_name='user_permissions', on_delete=models.CASCADE,
-    )
-    operation = models.ForeignKey(
-        Permission,
-        related_name='user_repository_permissions',
+        Repository,
+        related_name='collaborators',
         on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='repository_collaborators',
+        blank=True,
     )
 
     class Meta:
-        unique_together = ('user', 'repository', 'operation')
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'repository'),
+                name='unique_repository_collaborator',
+            ),
+        )
+
+    def __str__(self):
+        return '%s @ %s' % (self.user_id, self.repository_id)
 
 
 class TeamRepositoryPermission(models.Model):
@@ -137,32 +241,3 @@ class TeamRepositoryPermission(models.Model):
                 raise ValidationError(
                     'Repository grants must stay inside one organization.'
                 )
-
-
-class OrganizationOwnerPermission(models.Model):
-    """Organization administration grant. Not a repository permission.
-
-    ``operation`` is an ``auth.Permission`` scoped to ``Organization``,
-    normally ``manage_organization``. No row means unowned. Deleting
-    the user or the organization deletes the grant and leaves the other
-    side in place.
-    """
-
-    organization = models.OneToOneField(
-        Organization,
-        related_name='owner_grant',
-        on_delete=models.CASCADE,
-    )
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name='organization_owner_grants',
-        on_delete=models.CASCADE,
-    )
-    operation = models.ForeignKey(
-        Permission,
-        related_name='organization_owner_grants',
-        on_delete=models.CASCADE,
-    )
-
-    def __str__(self):
-        return '%s:%s' % (self.organization, self.operation_id)

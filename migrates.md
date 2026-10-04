@@ -692,3 +692,46 @@ on the direct and team roots.
 - [ ] Confirm pre-existing organization rows remain and have no grant
       row.
 - [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
+
+# Shared names, ownership, and collaborators (issue #27)
+
+This stair follows `0003_organization_owner_permission`. It does not
+rewrite `0001_initial`, `0002_auth_permission_terminal`, or `0003`.
+Pair Core `dev` at `7503ae83267771abdce920f26ad762a4ee491f36`
+(django-trusts#264). Do not float past that commit.
+
+## Old behavior
+
+`UserRepositoryPermission` is one user/repository/operation row.
+`OrganizationOwnerPermission` is the organization administration grant.
+`Repository.title` is unique with its organization. Organization
+membership is not stored. `Organization.name` is required and unique.
+
+## New behavior
+
+`Alias.name` is the shared current-name ledger. Services in
+`gh_permissions.services` reserve, rename, and release it together with
+`User.username` or conventional `Organization.name`. Personal
+organizations have a null name and `personal_user`. Conventional
+organizations have a name and a null `personal_user`. Every organization
+points at the seeded `organization-owners` group.
+`OrganizationMembership` is one row per user and organization.
+`Repository.name` replaces `title` and is unique per organization.
+`RepositoryCollaborator.permissions` is the direct repository bundle.
+
+`register_collaborator` is installed. `register_organization_owner` is
+not: `is_owner == True` is outside the public condition grammar.
+`Team`, `Team.allowed_operations`, and `TeamRepositoryPermission` are
+unchanged.
+
+## Migration-bot checklist
+
+- [ ] Apply `0004_shared_names_ownership_collaborators` forward from a
+      database that already has `0003`. Do not rewrite earlier
+      migrations.
+- [ ] Confirm existing organization names become `Alias` rows and point
+      at group `organization-owners`. Historical users are not aliased.
+- [ ] Confirm `Repository.title` was renamed to `name`, and
+      `UserRepositoryPermission` / `OrganizationOwnerPermission` are
+      gone.
+- [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.

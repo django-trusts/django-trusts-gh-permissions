@@ -26,10 +26,9 @@ from trusts.apps import (
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
-    OrganizationOwnerPermission,
     Repository,
+    RepositoryCollaborator,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
 
 
@@ -79,9 +78,8 @@ class Issue6OwnerProofs(SimpleTestCase):
             for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
         ]
         self.assertEqual(roots, [
-            UserRepositoryPermission,
+            RepositoryCollaborator,
             TeamRepositoryPermission,
-            OrganizationOwnerPermission,
         ])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
@@ -122,12 +120,12 @@ class Issue6OwnerProofs(SimpleTestCase):
         self.assertNotIn('trusts', django_settings.INSTALLED_APPS)
         self.assertNotIn('trusts.apps.AppConfig', django_settings.INSTALLED_APPS)
         ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
-        self.assertIn('register_direct(handle)', ready)
+        self.assertIn('register_collaborator(handle)', ready)
         self.assertIn('register_team(handle)', ready)
-        self.assertIn('register_organization_owner(handle)', ready)
+        self.assertNotIn('register_organization_owner(handle)', ready)
         self.assertNotIn('_gh_policy_registry_id', ready)
         self.assertNotIn('.registry.register(', ready)
-        self.assertNotIn('register_direct(registry)', ready)
+        self.assertNotIn('register_collaborator(registry)', ready)
         self.assertNotIn('register_team(registry)', ready)
         self.assertNotIn('register_organization_owner(registry)', ready)
 
@@ -138,16 +136,20 @@ class Issue6AuthorizationProofs(TestCase):
         from django.contrib.auth import get_user_model
 
         from gh_permissions.models import Organization
+        from gh_permissions.services import ensure_owner_group
 
         from tests.fixtures import repository_permission
 
-        org = Organization.objects.create(name='iib-org')
-        repo = Repository.objects.create(organization=org, title='iib-repo')
+        org = Organization.objects.create(
+            name='iib-org', owner_group=ensure_owner_group(),
+        )
+        repo = Repository.objects.create(organization=org, name='iib-repo')
         user = get_user_model().objects.create(username='iib-account')
         write = repository_permission('write_repository')
-        UserRepositoryPermission.objects.create(
-            user=user, repository=repo, operation=write,
+        collaboration = RepositoryCollaborator.objects.create(
+            user=user, repository=repo,
         )
+        collaboration.permissions.add(write)
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
         backend = GhAuthorizationBackend()

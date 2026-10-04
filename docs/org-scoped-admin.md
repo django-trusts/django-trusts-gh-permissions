@@ -12,9 +12,16 @@ behavior of a real GitHub team.
 
 ## Result
 
-The proof succeeded for this bounded stock-admin shape. The hook
-plumbing is a private, domain-agnostic mixin. It is not a general Core
-helper, and this proof does not promote it to one.
+The reusable scope mixin is unchanged. Staff organization owners are
+not a scope anymore: `OrganizationOwnerPermission` is gone, and the
+`is_owner=True` registration cannot be expressed with the public
+condition grammar, so it is not installed. Non-superusers therefore see
+an empty authorized-organization queryset. Superusers still bypass the
+scope. Conventional organization create, rename, and delete call
+`gh_permissions.services` instead of saving the row directly.
+
+The hook plumbing is a private, domain-agnostic mixin. It is not a
+general Core helper, and this note does not promote it to one.
 
 `gh_permissions/_admin_scope.py` (`AuthorizedScopeAdminMixin`, 209
 physical lines) owns that plumbing. It does not name a GH model and it
@@ -35,15 +42,21 @@ Many-to-many paths, reverse paths, multiple databases, dynamic inlines,
 and custom forms are outside this contract. A second real consumer
 should decide those.
 
-`gh_permissions/admin.py` (84 physical lines) is the GH adapter. It
-resolves the Organization-scoped `auth.Permission` `manage_organization`,
-returns `Organization.objects.authorized(request.user, permission)`,
-declares each model's path and add/change flags, and registers the
-concrete admins. Team/repository alignment stays on
+`gh_permissions/admin.py` is the GH adapter. It resolves the
+Organization-scoped `auth.Permission` `manage_organization`, returns
+`Organization.objects.authorized(request.user, permission)`, declares
+each model's path and add/change flags, and registers the concrete
+admins. `OrganizationAdmin` is the one class that defines `save_model`,
+`delete_model`, and `delete_queryset`, and those methods call the
+domain services. Team/repository alignment stays on
 `TeamRepositoryPermission.clean`, which `ModelForm` calls and
-`QuerySet.create` does not.
+`QuerySet.create` does not. `RepositoryCollaborator` and
+`OrganizationMembership` use the same scope mixin. `Alias` is not
+registered in admin.
 
-Concrete admins do not override the security methods. No custom
+`OrganizationAdmin` overrides `save_model`, `delete_model`, and
+`delete_queryset` so those writes call the domain services. The other
+concrete admins do not override the security methods. No custom
 grant-management view was added. The mixin is private. It is not a
 Core API.
 
@@ -51,15 +64,15 @@ Core API.
 
 `Organization` has no `owner` column. `Operation` stays deleted.
 `0003_organization_owner_permission` follows
-`0002_auth_permission_terminal` and does not rewrite it. It adds
-`manage_organization` and `OrganizationOwnerPermission` (`organization`,
-`owner`, `operation` → `auth.Permission`). No grant row means unowned.
-
-`register_organization_owner` is a third root with
-`content='organization'`. It does not authorize repository operations.
-Deleting the grant, retargeting `owner`, or pointing `operation` at
-another permission drops admin access on the next request. A missing
-`manage_organization` row authorizes nothing.
+`0002_auth_permission_terminal` and does not rewrite it.
+`0004_shared_names_ownership_collaborators` removes
+`OrganizationOwnerPermission`. Ownership is
+`OrganizationMembership.is_owner`. `register_organization_owner` is not
+installed: comparing `is_owner` to `True` is outside the public
+condition grammar, and registering the path without that condition
+would authorize non-owners. A missing `manage_organization` row
+authorizes nothing. The seeded owner group still holds the broad
+permissions, and no active registration reads them.
 
 With no object, `GhAuthorizationBackend.get_all_permissions` is empty,
 so Django model permissions remain the coarse admin entrance and the
@@ -70,53 +83,37 @@ layers.
 
 ## Can the mixin collapse?
 
-No. Django admin still asks separate questions. What did get smaller
-is the GH adapter: it no longer contains the hook matrix.
+No. Django admin still asks separate questions. The mixin hooks are
+unchanged. What changed is the grant they read. Issue #27 removed
+`OrganizationOwnerPermission`, and the replacement `is_owner=True`
+registration cannot be installed. A staff owner therefore has an empty
+authorized-organization queryset. The earlier request matrix (guessed
+URLs, forged posts, foreign-key choices, bulk delete, cascade, and the
+owner-grant flag cases) depended on that deleted grant. It is not
+rewritten here. `tests/test_org_scoped_admin.py` now runs in the suite
+and covers the mixin contract, the superuser service calls, and the
+empty staff scope.
 
-Removed after the hostile suite stayed green:
-
-- dynamic `get_form()`. Scoped foreign-key querysets already reject an
-  out-of-scope choice (`test_forged_add_and_change_posts_cannot_name_another_organization`
-  still expects the invalid-choice response). `save_model` still
-  rejects an instance that bypassed the form
-  (`test_save_model_rejects_an_out_of_scope_instance`). A 403 from that
-  backstop is enough.
-- `has_view_permission` scope check. Stock `get_object()` loads through
-  `get_queryset()`. A guessed foreign URL never returns the row, so
-  the view redirects to the admin index
-  (`test_guessed_cross_org_change_history_and_delete_urls_fail_closed`).
-
-Retained, with the path that fails if the hook is removed:
+The hooks stay for the same reasons as before:
 
 | Hook | Why it stays |
 | --- | --- |
-| `get_queryset` | `test_owner_sees_only_owned_rows_on_each_changelist` and `test_owner_changelist_is_sql_filtered_before_pagination`. The changelist SQL includes the grant table and `LIMIT`. |
-| `has_add_permission` | `test_staff_with_permissions_and_no_owned_organization_mutates_nothing` and the organization-add 403 in `test_owner_cannot_mint_or_retarget_the_authority_grant`. Add has no object. |
-| `has_change_permission` | `scope_allows_change` is false on the authority grant, including when `obj` is None (`test_owner_grant_flags_apply_without_an_object`). Stock `has_change_permission` ignores the object. `_changeform_view` then returns 200 instead of 403 on a POST (`test_owner_cannot_mint_or_retarget_the_authority_grant`, `AssertionError: 200 != 403`). |
-| `has_delete_permission` | `django.contrib.admin.utils.get_deleted_objects` calls `has_delete_permission(request, obj)` on each collected related object, not only rows from the parent's queryset. Without the scope check, `test_misaligned_grant_blocks_owner_cascade_until_superuser_removes_it` no longer sees the protected grant. `scope_allows_delete` is consulted before the `obj is None` return, so a no-delete admin does not advertise `delete_selected` (`test_owner_grant_flags_apply_without_an_object`). |
-| `formfield_for_foreignkey` | `test_foreign_key_choices_are_limited_to_owned_rows`. Choices come from the related admin's scoped `get_queryset`. |
-| `formfield_for_manytomany` | Same related-queryset call. No current GH model has a many-to-many to a scoped model, so the behavioral suite does not fail if this method is deleted. It stays so that hook cannot silently use the unscoped stock queryset. |
-| `save_model` | Called after `save_form(commit=False)`. Creates use `scope_allows_add` and updates use `scope_allows_change`, then the same `_in_scope` backstop (`test_save_model_honors_add_and_change_flags_independently`). `test_save_model_rejects_an_out_of_scope_instance` posts a foreign team straight to `save_model` and requires `PermissionDenied`. `_in_scope` compares primary keys only after the resolved row's concrete model and database alias match the authorized queryset, so `test_save_model_rejects_a_wrong_path_with_colliding_pks` and `test_save_model_rejects_a_scope_row_from_another_database` stay denied. |
-| `get_actions` / `check` | Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` fail closed (`admin_scope.E001`, `admin_scope.E002`, and `get_actions`). `test_unsupported_surfaces_fail_checks`. |
+| `get_queryset` | Non-superusers are filtered to `Organization.objects.authorized`. That queryset is empty until the owner condition can be registered. |
+| `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin`. |
+| `has_change_permission` / `has_delete_permission` | The flags are consulted even when no object is passed. Object deletes still require `_in_scope`. |
+| `formfield_for_foreignkey` / `formfield_for_manytomany` | Related choices come from the related admin's scoped queryset when that admin is scoped. `RepositoryCollaborator.permissions` points at `auth.Permission`, which is not scoped. |
+| `save_model` | `OrganizationAdmin` checks the same add/change flags and `_in_scope`, then calls the domain services. Other admins keep the mixin backstop. |
+| `get_actions` / `check` | Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` fail closed (`admin_scope.E001`, `admin_scope.E002`). |
 
 `User.objects.permitted` and `get_permitted_users` are not used here.
 There is no user-listing callsite in the scope hooks.
 
-## Hostile matrix
-
-Real admin requests still cover guessed URLs, forged POSTs, foreign-key
-choices, bulk delete, cascade, staff with no grant, ordinary users, and
-superusers. Added proofs: no grant row, then adding one; deleting it,
-retargeting its owner, or changing its permission; team membership or a
-repository permission never opens the admin; a missing
-`manage_organization` permission authorizes nothing;
-`Organization.objects.authorized` agrees with the owner changelist.
-
 ## Known boundary
 
-A misaligned team grant is hidden from the owner, and cascade delete of
-the parent team stays blocked until a superuser removes the grant.
-Aligned grants cascade inside the organization.
+Until `is_owner=True` can be registered, staff owners do not administer
+their organizations. Superusers do. A misaligned team grant is still
+rejected by `TeamRepositoryPermission.clean` on a `ModelForm`.
+`QuerySet.create` does not call `clean`.
 
 Host projects that turn the admin on must include `ModelBackend` beside
 `GhAuthorizationBackend`.

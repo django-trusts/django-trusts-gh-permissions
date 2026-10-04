@@ -1,20 +1,27 @@
 """GH policy registrations on public ``BackendHandle.register``.
 
-Direct is the three-FK user/repository/operation row. Team is the
-accepted mapping: terminal membership hop, team operation ceiling, and
-organization alignment. Organization owner is a third root whose
-content is the organization, so it does not authorize repositories.
-``GhPermissionsConfig.ready`` contributes the three independent roots
-as separate calls, not one aggregate helper. Helpers require a
-``BackendHandle``; a bare registry is ``TypeError``.
+Collaborators are one user/repository row. ``permission`` is the
+terminal many-to-many ``permissions``. Team keeps the accepted mapping:
+terminal membership step, operation ceiling, and organization alignment.
+``GhPermissionsConfig.ready`` contributes those two roots as separate
+calls. Helpers require a ``BackendHandle``; a bare registry is
+``TypeError``.
+
+``register_organization_owner`` is the owner relationship:
+``OrganizationMembership`` filtered with ``is_owner == True``, reading
+``organization__owner_group__permissions``, for the organization and
+for ``organization__repositories``. The public condition grammar
+rejects a boolean comparison, so startup does not call that helper.
+An unfiltered membership registration would grant every membership
+the owner bundle. ``permission=`` does not feed ``get_group_permissions``.
 """
 
 from trusts.core import BackendHandle
 
 from gh_permissions.models import (
-    OrganizationOwnerPermission,
+    OrganizationMembership,
+    RepositoryCollaborator,
     TeamRepositoryPermission,
-    UserRepositoryPermission,
 )
 
 
@@ -27,13 +34,13 @@ def _require_handle(handle):
     return handle
 
 
-def register_direct(handle):
-    """Register the direct-user permission-bearing relation."""
+def register_collaborator(handle):
+    """Register direct repository collaboration."""
     handle = _require_handle(handle)
     return handle.register(
-        trust=UserRepositoryPermission,
+        trust=RepositoryCollaborator,
         user='user',
-        permission='operation',
+        permission='permissions',
         content='repository',
     )
 
@@ -53,12 +60,29 @@ def register_team(handle):
     )
 
 
+def _owner_condition(membership):
+    return membership.is_owner == True  # noqa: E712
+
+
 def register_organization_owner(handle):
-    """Register organization administration. Content is not a repository."""
+    """Register owner memberships for one organization and its repositories.
+
+    ``condition`` is ``is_owner == True``. Core rejects that spelling.
+    This helper raises ``TrustsConfigurationError`` and stores nothing.
+    Startup does not call it.
+    """
     handle = _require_handle(handle)
-    return handle.register(
-        trust=OrganizationOwnerPermission,
-        user='owner',
-        permission='operation',
+    handle.register(
+        trust=OrganizationMembership,
+        user='user',
+        permission='organization__owner_group__permissions',
         content='organization',
+        condition=_owner_condition,
+    )
+    return handle.register(
+        trust=OrganizationMembership,
+        user='user',
+        permission='organization__owner_group__permissions',
+        content='organization__repositories',
+        condition=_owner_condition,
     )

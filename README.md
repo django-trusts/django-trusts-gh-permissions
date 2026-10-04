@@ -18,23 +18,50 @@ library, not a Django app.
 
 ## Persisted graph
 
-Authorization is compiled from stored rows. A complete path needs:
+Authorization is compiled from stored rows. A complete team path needs:
 
 - user membership in a team
 - team ownership by an organization
 - repository ownership by an organization
 - a team/repository permission plus a team operation ceiling
-- optionally, a direct user/repository permission
+
+A direct path is one `RepositoryCollaborator` row: the user, the
+repository, and the selected `permissions`. Organization membership is
+not required, so an outside collaborator is just that row.
 
 Organization alignment and the team's allowed operations constrain a
 complete team path. Direct and team paths OR together. Deleting any
 required persisted relationship removes that path. Malformed,
 incomplete, or revoked paths fail closed.
 
-Organization membership is not stored here and is not a Trusts grant
-edge. Team-membership consistency is application-validated domain data.
+`Alias` is the shared current-name ledger (`name` unique). It is not an
+authorization edge and it does not store redirects or older names.
+Creating a user reserves an alias, creates the user, creates a personal
+organization, and creates an owner membership. Creating a conventional
+organization reserves an alias, then creates the organization. Renaming
+either name updates the alias and the named object in one transaction.
+Deleting the named object releases its current alias.
 
-Requester, team-member, and direct-grant relations use
+`User.username` and `Organization.name` stay the real names. The schema
+cannot keep them identical to `Alias`, so the supported writes are
+`gh_permissions.services`. A raw queryset write, stock user admin, or
+any other user create/rename bypasses that ledger. That bypass is an
+example limitation.
+
+A conventional organization has `name` set and `personal_user` null. A
+personal organization has `name` null and `personal_user` set, one-to-one
+with the user. Its displayed name follows `personal_user.username`.
+Exactly one of those shapes is allowed. Every organization points at the
+same seeded owner `Group`. There is no `Plan`.
+
+`OrganizationMembership` is one row per user and organization, with
+`is_owner`. An organization can have several owners. A non-owner
+membership does not receive owner permissions.
+
+`Repository.name` is unique per organization and may repeat across
+organizations.
+
+Requester, team-member, and collaborator relations use
 `settings.AUTH_USER_MODEL`.
 
 ## Configure
@@ -80,8 +107,23 @@ backend.register(
 )
 ```
 
-The optional direct user/repository grant is the three-FK
-`UserRepositoryPermission` relation registered beside that team path.
+Direct repository access is the `RepositoryCollaborator` relation
+registered beside that team path. `permission` is the terminal
+many-to-many to `auth.Permission`:
+
+```python
+from gh_permissions.models import RepositoryCollaborator
+
+backend.register(
+    trust=RepositoryCollaborator,
+    user="user",
+    permission="permissions",
+    content="repository",
+)
+```
+
+A `permission=` registration does not contribute to
+`get_group_permissions()`.
 
 ## Authorize
 
@@ -129,33 +171,40 @@ Requires **Python 3.12–3.14** and **Django 6.1**.
 
 ## Organization-owner admin
 
-Organization administration is a registered relationship,
-`OrganizationOwnerPermission`. Its permission is the Organization-scoped
-`auth.Permission` `manage_organization`. No row means the organization
-is unowned. The relationship is separate from the direct and team
-repository roots, so it does not authorize repository operations.
+Organization administration was `OrganizationOwnerPermission`. That
+model is gone. Ownership is `OrganizationMembership.is_owner`, and the
+intended registration reads `Organization.owner_group` permissions for
+the organization and for that organization's repositories, restricted
+to `is_owner=True`.
 
-A staff user who holds that grant, and who holds the Django model
-permissions for that organization's rows, can manage those rows through
-Django's built-in admin. `Organization.objects.authorized(user,
-manage_organization)` is the allowed-organization queryset. Django model
-permissions are the coarse admin entrance. With no object, the GH
-backend returns no permission strings, so staff model permissions still
-come from `ModelBackend`. With an object, the GH backend enumerates the
-granted `auth.Permission` codenames. The owner cannot create, retarget,
-or delete the grant. A superuser assigns it.
+The public condition grammar accepts path equality, collection
+membership, and `&`. It does not accept `is_owner == True`. A named
+filter is selected by the caller and cannot walk from the organization
+or the user back to the membership row. Startup therefore does not
+register the membership path. Registering it without the condition
+would give every membership the owner bundle, including non-owners.
+
+The shared owner group is still seeded with `manage_organization`,
+`read_repository`, `write_repository`, and `admin_repository`. Until
+the condition can be expressed, those rows do not authorize owners.
+`Organization.objects.authorized(user, manage_organization)` is empty
+for anyone who is not a superuser. The org-owner admin adapter still
+uses that queryset. Conventional organization create, rename, and
+delete in admin call the domain services. Stock user admin does not.
 
 Projects that enable this admin install `django.contrib.admin` and list
-`ModelBackend` beside `GhAuthorizationBackend`. The result is written up
-in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
+`ModelBackend` beside `GhAuthorizationBackend`. The boundary is written
+up in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
 
 ## Limitations
 
-There is no implicit permission-level hierarchy and no org-owner admin
-grant on repositories. There is no public anonymous read, nested teams,
+There is no implicit permission-level hierarchy. There is no org-owner
+admin grant on repositories while the `is_owner` condition cannot be
+registered. There is no public anonymous read, nested teams,
 invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
-repository permission.
+repository permission. `Team.allowed_operations` and
+`TeamRepositoryPermission` are unchanged.
 
 ## Documentation
 

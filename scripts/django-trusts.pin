@@ -1,4 +1,4 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired with promoted django-trusts dev commit 9cac5d84.
+# Paired with promoted django-trusts dev commit 7503ae83.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=9cac5d843b58be5174f7ae53920d2861419d14d9
+ref=7503ae83267771abdce920f26ad762a4ee491f36
