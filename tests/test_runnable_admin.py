@@ -9,9 +9,9 @@ permissions. Object and organization scope stay on
 ``GhAuthorizationBackend`` and the admin adapter. Forged foreign
 parents are rejected by that scoped form before a write.
 
-Relationship mutation services (ownership edits, team membership,
-collaborator bundles, and team grants) are not in this tree. This
-proof stops at admin entry and the queryset boundary.
+Relationship writes live in ``gh_permissions.services`` and are tested
+without this admin. This proof stops at admin entry and the queryset
+boundary. Admin saves are not those services.
 """
 
 from io import StringIO

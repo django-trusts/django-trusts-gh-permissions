@@ -152,8 +152,9 @@ class TeamRepositoryPermissionAdmin(OrgScopedAdmin):
 
 
 class OrganizationOwnershipAdmin(OrgScopedAdmin):
-    """Ownership rows stay read-only until relationship protection exists.
+    """Ownership rows stay read-only for non-superusers.
 
+    Adding an owner is a domain service. This admin does not call it.
     Non-superusers cannot add, change, or delete the row that grants
     their own ``manage_organization`` authority. Superusers still
     bypass the scope mixin.

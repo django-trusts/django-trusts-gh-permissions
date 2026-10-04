@@ -33,6 +33,35 @@ that bundle. The shared owner `Group` is seeded with
 `admin_repository`. The example admin uses `ServiceBackedUserAdmin`.
 A raw queryset user create or rename does not touch `Alias`.
 
+[#28](https://github.com/django-trusts/django-trusts-gh-permissions/issues/28)
+stage 8 adds domain services for the settled authorization-bearing
+writes: add an owner; replace team members and the team ceiling
+together; collaborator create, update, delete, and permission-bundle
+replacement; team-repository grant create, update, and delete; and
+team delete. Each call is one `transaction.atomic`. It
+`select_for_update`s the persisted organization before
+`Organization.objects.authorized(..., manage_organization)` and before
+the mutation. Submitted instances are not evidence: the functions
+resolve primary keys inside that transaction. An update authorizes the
+stored organization and any replacement organization. A team-repository
+grant requires the locked team organization and the locked repository
+organization to be the same row, on the stored pair and on any
+replacement. `QuerySet.create` still does not call `clean`, so the
+service performs that comparison itself. Missing, duplicate,
+cross-organization, and undefined shapes raise before any write. An
+active superuser (`is_active and is_superuser`) skips only the
+inquiry. A persisted inactive actor is denied before that bypass and
+before the ownership inquiry, including an inactive owner and an
+inactive superuser who already owns the organization. Existence and
+same-organization checks still apply. `.authorized` does not gain a
+row for that superuser.
+
+Ownership update and delete, the `delete_user` cascade, and moves of
+`Repository.organization` or `Team.organization` are not part of this
+slice. Admin does not call these services.
+`OrganizationOwnershipAdmin` stays read-only for non-superusers. No
+new codename, no new `handle.register`, and no schema migration.
+
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.
 `Repository` mixes in `PermittedUsersMixin`. The example/test user
@@ -205,7 +234,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 | Category | Files | Why consumer-owned |
 |---|---|---|
 | Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
-| Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group. Not admin. |
+| Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
 | Policy registrations | `policy.py` | Collaborator, team, and owner `handle.register` calls. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
 | Ready contribution | `apps.py` | `register_collaborator`, `register_team`, `register_organization_owner`, then owner-group seed on `post_migrate` |

@@ -64,6 +64,61 @@ grant this bundle.
 `Repository.name` is unique per organization and may repeat across
 organizations.
 
+## Changing authorization relationships
+
+Supported writes for authorization-bearing rows are
+`gh_permissions.services`. Each function loads the persisted
+organization by primary key, locks that row, and then requires
+`manage_organization` on it. The actor's authority is an
+`OrganizationOwnership` row that already exists. A row being created,
+a permission being submitted, or an in-memory organization is not
+that authority.
+
+An active superuser skips only that inquiry. A persisted inactive
+actor is denied before that bypass and before the ownership inquiry,
+including an inactive owner and an inactive superuser who already
+owns the organization. The same calls still require every parent row
+to exist, and a team repository grant still has to stay inside one
+organization. A superuser with no ownership row still does not appear
+in `.authorized`.
+
+The functions are:
+
+- `add_organization_owner` adds one owner. That is the supported
+  `OrganizationOwnership` create and `Organization.owners` add.
+- `replace_team_members_and_ceiling` replaces `Team.members` and
+  `Team.allowed_operations` together.
+- `create_repository_collaborator`, `update_repository_collaborator`,
+  `delete_repository_collaborator`, and
+  `replace_collaborator_permissions` maintain a direct collaborator
+  and that collaborator's permission bundle.
+- `create_team_repository_permission`,
+  `update_team_repository_permission`, and
+  `delete_team_repository_permission` maintain a team grant. The
+  stored team organization and the stored repository organization
+  must be the same row, including when a team or repository is
+  replaced.
+- `delete_team` deletes one team.
+
+Changing the user on a collaborator, or the members of a team, does
+not cross an organization boundary: users are global grant targets.
+Moving a collaborator to another repository authorizes the stored
+repository's organization and the replacement repository's
+organization. A team grant cannot point at a repository in a
+different organization.
+
+`manage_organization` is the management operation.
+`read_repository`, `write_repository`, and `admin_repository` are
+repository grants those writes can edit. Team membership and a
+collaborator bundle do not grant `manage_organization`.
+
+Ownership removal, user deletion, and moving
+`Repository.organization` or `Team.organization` are not these
+functions. A raw queryset write does not apply these checks.
+Organization-owner admin does not call them.
+`OrganizationOwnership` stays read-only there for anyone who is not
+a superuser.
+
 Requester, team-member, and collaborator relations use
 `settings.AUTH_USER_MODEL`.
 
@@ -267,8 +322,9 @@ seeded group permissions on their organization and its repositories.
 Team membership does not grant that bundle. There is no public anonymous read, nested teams,
 invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
-repository permission. `Team.allowed_operations` and
-`TeamRepositoryPermission` are unchanged.
+repository permission. Team membership, the team ceiling, collaborator
+bundles, and team grants change through the domain services above. A
+raw queryset write does not.
 
 ## Documentation
 
