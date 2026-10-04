@@ -16,9 +16,11 @@ It reads stored ``OrganizationOwnership`` rows. A submitted instance,
 a new ownership row, or a permission bundle is not that evidence.
 
 An active superuser (``is_active`` and ``is_superuser``) skips only
-the inquiry. Missing parents, duplicate targets, and a team grant
-whose team and repository organizations differ still fail, including
-for a superuser. ``.authorized`` does not list a superuser who has no
+the inquiry. A persisted inactive actor is denied before that bypass
+and before the ownership inquiry, whether or not an ownership row
+exists. Missing parents, duplicate targets, and a team grant whose
+team and repository organizations differ still fail, including for a
+superuser. ``.authorized`` does not list a superuser who has no
 ownership row.
 """
 
@@ -391,7 +393,7 @@ def _inquiry_bypassed(actor):
 
     This skips only the ``manage_organization`` inquiry. It is not an
     ownership row, and it does not skip existence or same-organization
-    checks.
+    checks. Inactive actors are rejected before this is consulted.
     """
     return bool(actor.is_active and actor.is_superuser)
 
@@ -405,6 +407,14 @@ def _manage_permission():
 
 
 def _require_manage(actor, organizations):
+    """Require ``manage_organization`` on each locked organization.
+
+    ``actor`` is the row reloaded inside the write. An inactive actor
+    is denied before the active-superuser bypass and before
+    ``Organization.objects.authorized``, matching ``User.has_perm``.
+    """
+    if not actor.is_active:
+        raise ManagementDenied(organizations[0].pk)
     if _inquiry_bypassed(actor):
         return
     permission = _manage_permission()

@@ -832,7 +832,31 @@ class RelationshipWriteTests(TestCase):
             set(self.collaboration.permissions.all()), {self.read},
         )
 
-    def test_inactive_superuser_is_denied_without_an_ownership_row(self):
+    def test_inactive_ordinary_owner_is_denied(self):
+        self.owner.is_active = False
+        self.owner.save(update_fields=['is_active'])
+        self.owner.refresh_from_db()
+        self.assertFalse(self.owner.is_active)
+        self.assertFalse(self.owner.is_superuser)
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(
+                user=self.owner, organization=self.org,
+            ).exists()
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: add_organization_owner(
+                self.owner, self.org.pk, self.target.pk,
+            ),
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: delete_team(self.owner, self.team.pk),
+        )
+
+    def test_inactive_superuser_is_denied_even_with_ownership(self):
         User = get_user_model()
         superuser = User.objects.create_superuser(
             username='root', email='root@example.com', password='secret',
@@ -856,8 +880,18 @@ class RelationshipWriteTests(TestCase):
         OrganizationOwnership.objects.create(
             user=superuser, organization=self.org,
         )
-        add_organization_owner(superuser, self.org.pk, self.target.pk)
-        self.assertTrue(
+        self.assertIn(
+            self.org,
+            set(Organization.objects.authorized(superuser, self.manage)),
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: add_organization_owner(
+                superuser, self.org.pk, self.target.pk,
+            ),
+        )
+        self.assertFalse(
             OrganizationOwnership.objects.filter(
                 user=self.target, organization=self.org,
             ).exists()

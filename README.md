@@ -74,11 +74,13 @@ organization by primary key, locks that row, and then requires
 a permission being submitted, or an in-memory organization is not
 that authority.
 
-An active superuser skips only that inquiry. The same calls still
-require every parent row to exist, and a team repository grant still
-has to stay inside one organization. An inactive superuser does not
-skip the inquiry. A superuser with no ownership row still does not
-appear in `.authorized`.
+An active superuser skips only that inquiry. A persisted inactive
+actor is denied before that bypass and before the ownership inquiry,
+including an inactive owner and an inactive superuser who already
+owns the organization. The same calls still require every parent row
+to exist, and a team repository grant still has to stay inside one
+organization. A superuser with no ownership row still does not appear
+in `.authorized`.
 
 The functions are:
 

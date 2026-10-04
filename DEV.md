@@ -50,8 +50,11 @@ replacement. `QuerySet.create` still does not call `clean`, so the
 service performs that comparison itself. Missing, duplicate,
 cross-organization, and undefined shapes raise before any write. An
 active superuser (`is_active and is_superuser`) skips only the
-inquiry. Existence and same-organization checks still apply.
-`.authorized` does not gain a row for that superuser.
+inquiry. A persisted inactive actor is denied before that bypass and
+before the ownership inquiry, including an inactive owner and an
+inactive superuser who already owns the organization. Existence and
+same-organization checks still apply. `.authorized` does not gain a
+row for that superuser.
 
 Ownership update and delete, the `delete_user` cascade, and moves of
 `Repository.organization` or `Team.organization` are not part of this
