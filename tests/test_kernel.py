@@ -53,7 +53,10 @@ class KernelIdentityTest(SimpleTestCase):
     def test_no_trustmodelbackend_and_mixin_only_handle(self):
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
-            ('gh_permissions.backends.GhAuthorizationBackend',),
+            (
+                'gh_permissions.backends.GhAuthorizationBackend',
+                'django.contrib.auth.backends.ModelBackend',
+            ),
         )
         import trusts.backends as core_backends
         from trusts.backends import TrustModelBackendMixin

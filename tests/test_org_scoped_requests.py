@@ -16,7 +16,7 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
 from django.db import connection
 from django.test import Client, RequestFactory, TestCase
-from django.test.utils import CaptureQueriesContext, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from gh_permissions.admin import OrgScopedAdmin
@@ -35,10 +35,10 @@ from tests.test_migration_0002 import _ALIAS
 from trusts.apps import implementation_for_path
 
 
-ADMIN_BACKENDS = (
-    'gh_permissions.backends.GhAuthorizationBackend',
-    'django.contrib.auth.backends.ModelBackend',
-)
+# Users built in these tests have no password. force_login names
+# ModelBackend, which the runnable example settings already list.
+# This is not an AUTHENTICATION_BACKENDS override.
+MODEL_BACKEND = 'django.contrib.auth.backends.ModelBackend'
 
 
 def _registry():
@@ -88,7 +88,7 @@ def _grant_scoped(user):
 
 def _client_for(user):
     client = Client()
-    client.force_login(user, backend=ADMIN_BACKENDS[1])
+    client.force_login(user, backend=MODEL_BACKEND)
     return client
 
 
@@ -98,7 +98,6 @@ def _collaborator(user, repository, *permissions):
     return row
 
 
-@override_settings(AUTHENTICATION_BACKENDS=ADMIN_BACKENDS)
 class OrgScopedAdminRequestTests(TestCase):
     def setUp(self):
         super().setUp()

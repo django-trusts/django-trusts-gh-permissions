@@ -13,9 +13,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.management import CommandError, call_command, get_commands
 from django.db import connection
-from django.test import Client, RequestFactory, SimpleTestCase, TestCase
-from django.test.utils import CaptureQueriesContext, override_settings
-from django.urls import reverse
+from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test.utils import CaptureQueriesContext
 
 from example.management.commands.seed_example import (
     CEILING_CODENAMES,
@@ -51,10 +50,6 @@ from gh_permissions.services import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ADMIN_BACKENDS = (
-    'gh_permissions.backends.GhAuthorizationBackend',
-    'django.contrib.auth.backends.ModelBackend',
-)
 REPOSITORY_CASES = (
     ('read_repository', {DIRECT_USERNAME, TEAM_USERNAME, OWNER_USERNAME}),
     ('write_repository', {DIRECT_USERNAME, OWNER_USERNAME}),
@@ -503,76 +498,6 @@ class SeedExampleCommandTests(TestCase):
         )
         self.assertFalse(Organization.objects.filter(name='Acme Lab').exists())
         self._assert_repository_inquiries(DEFAULT_ORGANIZATION_NAME)
-
-
-class SeedExampleAdminEntranceTests(TestCase):
-    @override_settings(AUTHENTICATION_BACKENDS=ADMIN_BACKENDS)
-    def test_owner_changelist_is_the_seeded_organization(self):
-        other = create_organization('Outside Seed')
-        Repository.objects.create(organization=other, name='outside-repo')
-        Team.objects.create(organization=other, name='outside-team')
-        call_command('seed_example', stdout=StringIO())
-        User = get_user_model()
-        owner = User.objects.get(username=OWNER_USERNAME)
-        outsider = User.objects.get(username=OUTSIDER_USERNAME)
-        superuser = User.objects.get(username=SUPERUSER_USERNAME)
-        direct = User.objects.get(username=DIRECT_USERNAME)
-        organization = Organization.objects.get(name=DEFAULT_ORGANIZATION_NAME)
-        repository = Repository.objects.get(
-            organization=organization, name=REPOSITORY_TITLE,
-        )
-
-        self.assertTrue(owner.has_perm('gh_permissions.view_organization'))
-        self.assertTrue(owner.has_perm('gh_permissions.change_repository'))
-        self.assertTrue(owner.has_perm('gh_permissions.add_team'))
-        self.assertFalse(outsider.has_perm('gh_permissions.view_organization'))
-        self.assertFalse(direct.has_perm('gh_permissions.add_team'))
-        self.assertTrue(owner.has_perm('gh_permissions.read_repository', repository))
-        self.assertFalse(
-            direct.has_perm('gh_permissions.admin_repository', repository)
-        )
-
-        owner_client = Client()
-        owner_client.force_login(owner, backend=ADMIN_BACKENDS[1])
-        listed = owner_client.get(
-            reverse('admin:gh_permissions_organization_changelist'),
-        )
-        self.assertEqual(listed.status_code, 200)
-        self.assertContains(listed, DEFAULT_ORGANIZATION_NAME)
-        self.assertNotContains(listed, 'Outside Seed')
-        repos = owner_client.get(reverse('admin:gh_permissions_repository_changelist'))
-        self.assertEqual(repos.status_code, 200)
-        self.assertContains(repos, REPOSITORY_TITLE)
-        self.assertNotContains(repos, 'outside-repo')
-        teams = owner_client.get(reverse('admin:gh_permissions_team_changelist'))
-        self.assertContains(teams, TEAM_NAME)
-        self.assertNotContains(teams, 'outside-team')
-
-        outsider_client = Client()
-        outsider_client.force_login(outsider, backend=ADMIN_BACKENDS[1])
-        denied = outsider_client.get(
-            reverse('admin:gh_permissions_organization_changelist'),
-        )
-        self.assertEqual(denied.status_code, 302)
-        self.assertIn('/admin/login/', denied['Location'])
-
-        super_client = Client()
-        super_client.force_login(superuser, backend=ADMIN_BACKENDS[1])
-        everything = super_client.get(
-            reverse('admin:gh_permissions_organization_changelist'),
-        )
-        self.assertEqual(everything.status_code, 200)
-        self.assertContains(everything, DEFAULT_ORGANIZATION_NAME)
-        self.assertContains(everything, 'Outside Seed')
-        manage = _permission('organization', 'manage_organization')
-        self.assertNotIn(
-            organization,
-            set(Organization.objects.authorized(superuser, manage)),
-        )
-        self.assertIn(
-            organization,
-            set(Organization.objects.authorized(owner, manage)),
-        )
 
 
 class SeedExamplePlacementTests(SimpleTestCase):

@@ -45,8 +45,15 @@ STATIC_URL = '/static/'
 
 AUTH_USER_MODEL = 'example.User'
 
+# Two layers. GhAuthorizationBackend answers object and organization
+# checks and is empty when no object is passed. ModelBackend
+# authenticates passwords and supplies the no-object Django model
+# permissions stock admin needs before it will open a changelist.
+# ModelBackend returns nothing when an object is passed, so a model
+# permission is not organization authority.
 AUTHENTICATION_BACKENDS = (
     'gh_permissions.backends.GhAuthorizationBackend',
+    'django.contrib.auth.backends.ModelBackend',
 )
 
 DATABASES = {

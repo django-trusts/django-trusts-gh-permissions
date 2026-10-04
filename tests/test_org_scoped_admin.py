@@ -19,7 +19,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import connection, connections
 from django.db.migrations.executor import MigrationExecutor
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, TransactionTestCase
-from django.test.utils import CaptureQueriesContext, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -52,10 +52,10 @@ from trusts.apps import implementation_for_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ADMIN_BACKENDS = (
-    'gh_permissions.backends.GhAuthorizationBackend',
-    'django.contrib.auth.backends.ModelBackend',
-)
+# Users built in these tests have no password. force_login names
+# ModelBackend, which the runnable example settings already list.
+# This is not an AUTHENTICATION_BACKENDS override.
+MODEL_BACKEND = 'django.contrib.auth.backends.ModelBackend'
 CONCRETE_ADMINS = (
     OrganizationAdmin,
     TeamAdmin,
@@ -100,7 +100,7 @@ def _select_values(html, name):
 
 def _client_for(user):
     client = Client()
-    client.force_login(user, backend=ADMIN_BACKENDS[1])
+    client.force_login(user, backend=MODEL_BACKEND)
     return client
 
 
@@ -285,7 +285,6 @@ class OrganizationOwnerMigrationTests(TransactionTestCase):
         self.assertEqual(HistoricalGrant.objects.using(_ALIAS).count(), 0)
 
 
-@override_settings(AUTHENTICATION_BACKENDS=ADMIN_BACKENDS)
 class OrganizationAdminServiceTests(TestCase):
     def setUp(self):
         super().setUp()
@@ -294,7 +293,7 @@ class OrganizationAdminServiceTests(TestCase):
             username='root', email='root@example.com', password='secret',
         )
         self.client = Client()
-        self.client.force_login(self.superuser, backend=ADMIN_BACKENDS[1])
+        self.client.force_login(self.superuser, backend=MODEL_BACKEND)
 
     def test_superuser_add_reserves_the_alias(self):
         response = self.client.post(
@@ -408,7 +407,7 @@ class OrganizationAdminServiceTests(TestCase):
         team = Team.objects.create(organization=other, name='writers')
         team.members.add(owner)
         client = Client()
-        client.force_login(owner, backend=ADMIN_BACKENDS[1])
+        client.force_login(owner, backend=MODEL_BACKEND)
         response = client.get(reverse('admin:gh_permissions_organization_changelist'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'acme')
