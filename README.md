@@ -8,6 +8,11 @@ organization, team, and repository relationships on
 It is **not affiliated with GitHub** and is **not** a complete GitHub
 authorization clone. Treat it as a worked example, not a migration target.
 
+This bounded example does not reproduce GitHub directly. Its `Team` is
+role-like: it groups members, carries an allowed-operation ceiling, and
+receives repository grants. It does not model the broader collaboration
+behavior of a real GitHub team.
+
 Do **not** list `'trusts'` in `INSTALLED_APPS`. Core is a Python
 library, not a Django app.
 
@@ -122,12 +127,35 @@ python -m pip install .
 
 Requires **Python 3.12–3.14** and **Django 6.1**.
 
+## Organization-owner admin
+
+Organization administration is a registered relationship,
+`OrganizationOwnerPermission`. Its permission is the Organization-scoped
+`auth.Permission` `manage_organization`. No row means the organization
+is unowned. The relationship is separate from the direct and team
+repository roots, so it does not authorize repository operations.
+
+A staff user who holds that grant, and who holds the Django model
+permissions for that organization's rows, can manage those rows through
+Django's built-in admin. `Organization.objects.authorized(user,
+manage_organization)` is the allowed-organization queryset. Django model
+permissions are the coarse admin entrance. With no object, the GH
+backend returns no permission strings, so staff model permissions still
+come from `ModelBackend`. With an object, the GH backend enumerates the
+granted `auth.Permission` codenames. The owner cannot create, retarget,
+or delete the grant. A superuser assigns it.
+
+Projects that enable this admin install `django.contrib.admin` and list
+`ModelBackend` beside `GhAuthorizationBackend`. The result is written up
+in [docs/org-scoped-admin.md](docs/org-scoped-admin.md).
+
 ## Limitations
 
-There is no implicit permission-level hierarchy, org-owner admin,
-public anonymous read, nested teams, invitations, token/app scopes,
-branch protection, deploy keys, Actions secrets, forks, CODEOWNERS,
-visibility matrix, or org default repository permission.
+There is no implicit permission-level hierarchy and no org-owner admin
+grant on repositories. There is no public anonymous read, nested teams,
+invitations, token/app scopes, branch protection, deploy keys, Actions
+secrets, forks, CODEOWNERS, visibility matrix, or org default
+repository permission.
 
 ## Documentation
 

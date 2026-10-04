@@ -15,15 +15,27 @@ Content and never expose ``.trusts``, ``.trustees``, ``.contexts``,
 
 from django.conf import settings
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from trusts.query import AuthorizedManager, PermittedUsersMixin
 
 
 class Organization(models.Model):
-    """Owner / containment. Not a grant and not a membership roster."""
+    """Containment. Not a membership roster and not a repository grant.
+
+    Administration is ``OrganizationOwnerPermission`` for the
+    ``manage_organization`` permission. No such row means unowned.
+    """
 
     name = models.CharField(max_length=40, unique=True)
+
+    objects = AuthorizedManager()
+
+    class Meta:
+        permissions = (
+            ('manage_organization', 'Can manage organization'),
+        )
 
     def __str__(self):
         return self.name
@@ -112,3 +124,45 @@ class TeamRepositoryPermission(models.Model):
 
     class Meta:
         unique_together = ('team', 'repository', 'operation')
+
+    def clean(self):
+        """Keep a team grant inside one organization.
+
+        Admin ``ModelForm`` calls this. ``QuerySet.create`` does not, so
+        a misaligned row can still be stored for fail-closed tests.
+        """
+        super().clean()
+        if self.team_id and self.repository_id:
+            if self.team.organization_id != self.repository.organization_id:
+                raise ValidationError(
+                    'Repository grants must stay inside one organization.'
+                )
+
+
+class OrganizationOwnerPermission(models.Model):
+    """Organization administration grant. Not a repository permission.
+
+    ``operation`` is an ``auth.Permission`` scoped to ``Organization``,
+    normally ``manage_organization``. No row means unowned. Deleting
+    the user or the organization deletes the grant and leaves the other
+    side in place.
+    """
+
+    organization = models.OneToOneField(
+        Organization,
+        related_name='owner_grant',
+        on_delete=models.CASCADE,
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+    operation = models.ForeignKey(
+        Permission,
+        related_name='organization_owner_grants',
+        on_delete=models.CASCADE,
+    )
+
+    def __str__(self):
+        return '%s:%s' % (self.organization, self.operation_id)

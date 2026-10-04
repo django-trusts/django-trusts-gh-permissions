@@ -12,6 +12,7 @@ from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import (
     Organization,
+    OrganizationOwnerPermission,
     Repository,
     Team,
     TeamRepositoryPermission,
@@ -59,12 +60,15 @@ APPLICATION_POLICY_NEEDLES = (
 class GhNamingTest(SimpleTestCase):
     def test_package_source_uses_gh_not_full_external_name(self):
         import gh_permissions
+        import gh_permissions._admin_scope
+        import gh_permissions.admin
         import gh_permissions.apps
         import gh_permissions.backends
         import gh_permissions.models
         import gh_permissions.policy
         for module in (
-            gh_permissions, gh_permissions.apps, gh_permissions.backends,
+            gh_permissions, gh_permissions._admin_scope, gh_permissions.admin,
+            gh_permissions.apps, gh_permissions.backends,
             gh_permissions.models, gh_permissions.policy,
         ):
             source = Path(inspect.getfile(module)).read_text()
@@ -81,6 +85,7 @@ class GhNamingTest(SimpleTestCase):
         self.assertNotIn('TrustModelBackend', source)
         self.assertIn('register_direct', source)
         self.assertIn('register_team', source)
+        self.assertIn('register_organization_owner', source)
         self.assertNotIn('register_gh_policy', source)
         self.assertIn('handle.register(', source)
         self.assertIn('trust=TeamRepositoryPermission', source)
@@ -155,6 +160,14 @@ class GhRelationTest(TestCase):
             ),
         )
         self.assertEqual(
+            Organization._meta.permissions,
+            (('manage_organization', 'Can manage organization'),),
+        )
+        self.assertEqual(
+            OrganizationOwnerPermission._meta.get_field('operation').related_model,
+            Permission,
+        )
+        self.assertEqual(
             Team._meta.get_field('members').related_model,
             User,
         )
@@ -192,6 +205,7 @@ class GhRelationTest(TestCase):
         for model in (
             Organization, Team, Repository,
             TeamRepositoryPermission, UserRepositoryPermission,
+            OrganizationOwnerPermission,
         ):
             leaked = _related_accessor_names(model).intersection(
                 FORBIDDEN_PUBLIC_RELATIONS,

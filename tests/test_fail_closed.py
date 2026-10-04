@@ -8,10 +8,15 @@ from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
 from gh_permissions import policy as gh_policy
 from gh_permissions.models import (
     Organization,
+    OrganizationOwnerPermission,
     TeamRepositoryPermission,
     UserRepositoryPermission,
 )
-from gh_permissions.policy import register_direct, register_team
+from gh_permissions.policy import (
+    register_direct,
+    register_organization_owner,
+    register_team,
+)
 from tests.fixtures import GhFixtureMixin, isolated_handle
 
 
@@ -119,6 +124,9 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 register_team(handle)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
+                register_organization_owner(handle)
+        with self.assertNumQueries(0):
+            with self.assertRaises(TrustsConfigurationError):
                 registry.register(
                     content=d.repository,
                     user=d.user,
@@ -164,6 +172,11 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertIs(handle.registry.records[0].root, UserRepositoryPermission)
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(handle.registry.records[1].root, TeamRepositoryPermission)
+        with self.assertNumQueries(0):
+            owner = register_organization_owner(handle)
+        self.assertEqual(len(handle.registry.records), 3)
+        self.assertIs(owner.root, OrganizationOwnerPermission)
+        self.assertIs(owner.content_model, Organization)
 
     def test_startup_registers_direct_and_team_roots(self):
         from trusts.apps import implementation_for_path
@@ -174,4 +187,8 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
             CANONICAL_BACKEND,
         ).registry
         roots = [record.root for record in registry.records]
-        self.assertEqual(roots, [UserRepositoryPermission, TeamRepositoryPermission])
+        self.assertEqual(roots, [
+            UserRepositoryPermission,
+            TeamRepositoryPermission,
+            OrganizationOwnerPermission,
+        ])

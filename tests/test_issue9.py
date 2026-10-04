@@ -219,12 +219,18 @@ class FloorMessageTest(SimpleTestCase):
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
     def test_documented_settings_are_the_live_test_settings(self):
+        # README shows the authorization install. The live settings add
+        # the admin harness used by organization-owner request tests.
         self.assertEqual(
             settings.INSTALLED_APPS,
             (
                 'django.contrib.contenttypes',
                 'django.contrib.auth',
                 'example.apps.ExampleConfig',
+                'django.contrib.sessions',
+                'django.contrib.messages',
+                'django.contrib.staticfiles',
+                'django.contrib.admin',
                 'gh_permissions.apps.GhPermissionsConfig',
             ),
         )
