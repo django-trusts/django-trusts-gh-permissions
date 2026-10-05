@@ -756,9 +756,9 @@ and `TeamRepositoryPermission` are unchanged.
 # Content-type mismatch is a denial (django-trusts#267)
 
 This stair does not change the GH schema or `register_organization_owner`.
-It pairs the draft tip of
+It pairs the approved, unmerged head of
 [django-trusts#269](https://github.com/django-trusts/django-trusts/pull/269),
-`71699ba35f960780fd9eb1a7fe027623584e8034`. Replace that pin with the
+`1f35b31c2698c797ff97f6558c8cf9481a49338a`. Replace that pin with the
 merge commit when #269 lands. Do not float past it before then.
 
 ## Old behavior
@@ -776,9 +776,10 @@ permission on the repository.
 
 ## New behavior
 
-The shared grant predicate requires `Permission.content_type` to be the
-protected object's own content identity. Those crossed pairs are
-`False` or empty on `has_perm`, `get_all_permissions`, `.authorized()`,
+The shared grant predicate requires `auth.Permission.content_type` to
+be the protected object's own content identity. `has_perm` is the
+permission string. Those crossed pairs are `False` or empty on
+`has_perm`, `get_all_permissions`, `.authorized()`,
 `User.objects.permitted`, `repository.get_permitted_users`, and
 `authorization_required`. Same-model grants stay:
 `manage_organization` on an owned organization, and the repository
@@ -796,7 +797,7 @@ migration.
 
 ## Migration-bot checklist
 
-- [ ] Pin Core `71699ba35f960780fd9eb1a7fe027623584e8034` in
+- [ ] Pin Core `1f35b31c2698c797ff97f6558c8cf9481a49338a` in
       `requirements.txt`, `scripts/django-trusts.pin`, and CI
       `COMPANION_KERNEL_SHA`.
 - [ ] Leave the owner-group rows and the two ownership registrations
