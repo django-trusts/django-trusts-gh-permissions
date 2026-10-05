@@ -14,7 +14,9 @@ The consent page still has inert controls for:
 - a requested-permissions summary taken from the OAuth scopes on the request
 - Approve and Cancel
 
-Nothing on that page is saved. Approve redirects to the client's
+Nothing on that page is saved. The consent page and the callback
+page each include a read-only "Raw handshake request" box with the
+query Django received for that step. Approve redirects to the client's
 callback with an authorization code. Cancel redirects with
 `error=access_denied` and issues nothing. The callback page does not
 exchange the code. The client posts the code to the token endpoint.

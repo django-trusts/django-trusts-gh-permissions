@@ -63,10 +63,84 @@ REQUESTED_SCOPES = ('read_repository', 'write_repository')
 # Not a credential and not a grant.
 DEV_CODE_VERIFIER = 'mcp-spike-dev-verifier-not-a-secret-0123456789'
 DEV_STATE = 'mcp-spike'
+# Never written into the debug dump. The authorization code on the
+# callback is the value under inspection, so it is not in this set.
+_HANDSHAKE_SECRET_KEYS = frozenset({
+    'access_token',
+    'client_secret',
+    'code_verifier',
+    'password',
+    'refresh_token',
+})
 
 
 def installed_oauth_toolkit_version():
     return importlib.metadata.version(OAUTH_TOOLKIT_DISTRIBUTION)
+
+
+def handshake_dump(query, credentials=None):
+    """Pretty-print the inbound handshake Django received.
+
+    ``query`` is the request's GET data. ``credentials`` is the
+    toolkit's parsed authorization request when this view already has
+    it. The oauthlib request object and any secret values are left out.
+    """
+    payload = {
+        'query_string': query.urlencode(),
+        'query': _public_items(query.lists()),
+    }
+    if credentials is not None:
+        payload['credentials'] = _public_credentials(credentials)
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _public_items(pairs):
+    dumped = {}
+    for key, values in pairs:
+        if key in _HANDSHAKE_SECRET_KEYS:
+            dumped[key] = '[omitted]'
+        else:
+            dumped[key] = list(values)
+    return dumped
+
+
+def _public_credentials(credentials):
+    dumped = {}
+    for key in sorted(credentials):
+        if key == 'request' or key in _HANDSHAKE_SECRET_KEYS:
+            if key in _HANDSHAKE_SECRET_KEYS:
+                dumped[key] = '[omitted]'
+            continue
+        value = _json_ready(credentials[key])
+        if value is not _SKIP:
+            dumped[key] = value
+    return dumped
+
+
+class _SkipType:
+    pass
+
+
+_SKIP = _SkipType()
+
+
+def _json_ready(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        ready = [_json_ready(item) for item in value]
+        if any(item is _SKIP for item in ready):
+            return _SKIP
+        return ready
+    if isinstance(value, dict):
+        ready = {}
+        for key, item in value.items():
+            dumped = _json_ready(item)
+            if dumped is _SKIP:
+                return _SKIP
+            ready[str(key)] = dumped
+        return ready
+    return _SKIP
 
 
 def pkce_challenge(verifier):
@@ -173,13 +247,41 @@ class McpAuthorizationView(AuthorizationView):
             credentials['resource'] = ' '.join(resources)
         context = self._picker_context(scopes, credentials, application)
         self.oauth2_data = context
+        context['handshake_dump'] = handshake_dump(request.GET, credentials)
         context['form'] = self.get_form(self.get_form_class())
         return self.render_to_response(self.get_context_data(**context))
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.setdefault('handshake_dump', handshake_dump(self.request.GET))
+        return context
+
+    def error_response(self, error, application, **kwargs):
+        from oauth2_provider.views.mixins import OAuthLibMixin
+
+        redirect, error_response = OAuthLibMixin.error_response(self, error, **kwargs)
+        if redirect:
+            return self.redirect(error_response['url'], application)
+        error_response['handshake_dump'] = handshake_dump(self.request.GET)
+        status = error_response['error'].status_code
+        return self.render_to_response(error_response, status=status)
+
     def form_invalid(self, form):
-        return self.render_to_response(self.get_context_data(
-            **self._context_from_form(form),
-        ))
+        context = self._context_from_form(form)
+        seen = {
+            'client_id': context.get('client_id'),
+            'redirect_uri': context.get('redirect_uri'),
+            'response_type': context.get('response_type'),
+            'state': context.get('state'),
+            'scope': ' '.join(context.get('scopes') or []),
+            'code_challenge': context.get('code_challenge'),
+            'code_challenge_method': context.get('code_challenge_method'),
+            'resource': form.data.get('resource'),
+        }
+        context['handshake_dump'] = handshake_dump(self.request.GET, {
+            key: value for key, value in seen.items() if value
+        })
+        return self.render_to_response(self.get_context_data(**context))
 
     def _context_from_form(self, form):
         client_id = form.cleaned_data.get('client_id') or form.data.get('client_id')
@@ -232,6 +334,7 @@ def mcp_callback(request):
     return render(request, 'example/mcp_callback.html', {
         'code': request.GET.get('code', ''),
         'error': request.GET.get('error', ''),
+        'handshake_dump': handshake_dump(request.GET),
     })
 
 

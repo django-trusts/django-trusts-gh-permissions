@@ -177,9 +177,14 @@ class McpAuthorizationTests(TestCase):
         self.assertEqual(landing.status_code, 200)
         self.assertContains(landing, 'Authorization cancelled')
         self.assertContains(landing, 'No access was granted.')
-        ignored = self.client.get(reverse('mcp-callback'), {'code': 'not-a-grant'})
+        self._assert_handshake_dump(landing, 'error=access_denied')
+        ignored = self.client.get(reverse('mcp-callback'), {
+            'code': 'not-a-grant',
+            'state': DEV_STATE,
+        })
         self.assertContains(ignored, 'Authorization code issued')
         self.assertContains(ignored, 'does not exchange the code')
+        self._assert_handshake_dump(ignored, 'code=not-a-grant')
         self.assertEqual(_authority_counts(), {
             'grants': 0,
             'access_tokens': 0,
@@ -352,3 +357,13 @@ class McpAuthorizationTests(TestCase):
         self.assertContains(response, 'disabled')
         self.assertContains(response, 'Account selection is not saved.')
         self.assertContains(response, 'Repository selection is not saved.')
+        self._assert_handshake_dump(response, 'code_challenge_method=S256')
+        self.assertContains(response, MCP_CLIENT_ID)
+        self.assertContains(response, TEST_REDIRECT_URI)
+
+    def _assert_handshake_dump(self, response, raw_fragment):
+        self.assertContains(response, 'id="raw-handshake-request"')
+        self.assertContains(response, 'Raw handshake request')
+        self.assertContains(response, 'readonly')
+        self.assertContains(response, 'query_string')
+        self.assertContains(response, raw_fragment)
