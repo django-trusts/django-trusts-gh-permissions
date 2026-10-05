@@ -168,7 +168,8 @@ inquiry. `read_repository`, `write_repository`, and
 `admin_repository` are the repository grants being edited. A
 misaligned team grant is still rejected by the model form, and the
 delete service refuses it as well, including for a superuser.
-Deleting the team calls `delete_team`. Deleting a repository has no
-relationship service: the scoped admin deletes that row, and child
-grants follow only when the related-object permission check allows
-the cascade. A raw queryset write still does not call the services.
+Deleting the team calls `delete_team`. Creating a repository calls
+`create_repository`. Deleting a repository calls `delete_repository`,
+which locks the stored organization and requires `manage_organization`
+before the row and its collaborator and team-grant cascade are
+removed. A raw queryset write still does not call the services.

@@ -10,10 +10,12 @@ username alias.
 Authorization-bearing edits call the relationship services. A stock
 hook does not ``save()`` or write a many-to-many before that service
 has authorized the persisted parent and validated the mutation in one
-transaction. ``Team.organization`` and ``Repository.organization``
-stay on the stored row. ``LastOrganizationOwner`` is a form or
-message refusal, not an uncaught error. Private hook plumbing lives
-in ``_admin_scope``.
+transaction. Repository create and delete call ``create_repository``
+and ``delete_repository``, which lock the persisted organization
+inside that transaction. ``Team.organization`` and
+``Repository.organization`` stay on the stored row.
+``LastOrganizationOwner`` is a form or message refusal, not an
+uncaught error. Private hook plumbing lives in ``_admin_scope``.
 """
 
 from django import forms
@@ -41,11 +43,13 @@ from gh_permissions.services import (
     RelationshipWriteError,
     add_organization_owner,
     create_organization,
+    create_repository,
     create_repository_collaborator,
     create_team_repository_permission,
     create_user,
     delete_organization,
     delete_organization_ownership,
+    delete_repository,
     delete_repository_collaborator,
     delete_team,
     delete_team_repository_permission,
@@ -339,10 +343,31 @@ class RepositoryAdminForm(ImmutableOrganizationForm):
 
 
 class RepositoryAdmin(ImmutableBoundaryAdmin):
+    """Create and delete go through the repository services.
+
+    A name change on an existing row still uses the stored
+    organization. ``move_repository_organization`` refuses a new one.
+    """
+
     authorization_scope_paths = 'organization'
     ordering = ('pk',)
     form = RepositoryAdminForm
     move_boundary = staticmethod(move_repository_organization)
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            super().save_model(request, obj, form, change)
+            return
+        _guard_scope(self, request, obj, change)
+        created = create_repository(
+            request.user, obj.organization_id, obj.name,
+        )
+        obj.pk = created.pk
+        obj.name = created.name
+        obj.organization_id = created.organization_id
+
+    def delete_model(self, request, obj):
+        delete_repository(request.user, obj.pk)
 
 
 class RepositoryCollaboratorAdmin(ServiceRoutedAdmin, OrgScopedAdmin):

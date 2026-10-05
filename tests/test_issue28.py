@@ -40,10 +40,12 @@ from gh_permissions.services import (
     UndefinedRelationshipWrite,
     add_organization_owner,
     create_organization,
+    create_repository,
     create_repository_collaborator,
     create_team_repository_permission,
     create_user,
     delete_organization_ownership,
+    delete_repository,
     delete_repository_collaborator,
     delete_team,
     delete_team_repository_permission,
@@ -232,6 +234,8 @@ class RelationshipWriteTests(TestCase):
             ),
             lambda: delete_team_repository_permission(actor, self.grant.pk),
             lambda: delete_team(actor, self.team.pk),
+            lambda: create_repository(actor, self.org.pk, 'smuggled'),
+            lambda: delete_repository(actor, self.repo.pk),
             lambda: update_organization_ownership(
                 actor, self._owner_row().pk, user_id=self.target.pk,
             ),
@@ -311,6 +315,33 @@ class RelationshipWriteTests(TestCase):
         self.assertTrue(Repository.objects.filter(pk=self.repo.pk).exists())
         self.assertEqual(self.team.organization_id, self.org.pk)
 
+        made = create_repository(self.owner, self.org.pk, 'created')
+        self.assertEqual(made.name, 'created')
+        self.assertEqual(made.organization_id, self.org.pk)
+        child = RepositoryCollaborator.objects.create(
+            user=self.target, repository=made,
+        )
+        child_grant = TeamRepositoryPermission.objects.create(
+            team=self.team, repository=made, operation=self.read,
+        )
+        delete_repository(self.owner, made.pk)
+        self.assertFalse(Repository.objects.filter(pk=made.pk).exists())
+        self.assertFalse(
+            RepositoryCollaborator.objects.filter(pk=child.pk).exists()
+        )
+        self.assertFalse(
+            TeamRepositoryPermission.objects.filter(pk=child_grant.pk).exists()
+        )
+        self.assertTrue(Repository.objects.filter(pk=self.repo.pk).exists())
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(
+                pk=self.collaboration.pk,
+            ).exists()
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=self.grant.pk).exists()
+        )
+
     def test_member_collaborator_stranger_and_other_owner_are_denied(self):
         for actor in self._denied_actors():
             for call in self._writes(actor):
@@ -343,6 +374,8 @@ class RelationshipWriteTests(TestCase):
                 self.owner, self.grant.pk, repository_id=_MISSING,
             ),
             lambda: delete_team(self.owner, _MISSING),
+            lambda: create_repository(self.owner, _MISSING, 'missing-org'),
+            lambda: delete_repository(self.owner, _MISSING),
             lambda: delete_repository_collaborator(self.owner, _MISSING),
             lambda: delete_team_repository_permission(self.owner, _MISSING),
         )
@@ -425,6 +458,11 @@ class RelationshipWriteTests(TestCase):
             self,
             ManagementDenied,
             lambda: delete_team(self.member, self.team.pk),
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: delete_repository(self.collaborator, self.repo.pk),
         )
 
     def test_adding_an_owner_does_not_authorize_the_actor(self):
@@ -727,6 +765,26 @@ class RelationshipWriteTests(TestCase):
         )
         _assert_no_mutation(
             self,
+            DuplicateRelationshipTarget,
+            lambda: create_repository(self.owner, self.org.pk, self.repo.name),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: create_repository(self.owner, self.org.pk, ''),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: create_repository(self.owner, self.org.pk, ' padded'),
+        )
+        _assert_no_mutation(
+            self,
+            UndefinedRelationshipWrite,
+            lambda: create_repository(self.owner, True, 'nope'),
+        )
+        _assert_no_mutation(
+            self,
             UndefinedRelationshipWrite,
             lambda: update_repository_collaborator(
                 self.owner, self.collaboration.pk,
@@ -836,6 +894,10 @@ class RelationshipWriteTests(TestCase):
         replace_collaborator_permissions(
             superuser, self.collaboration.pk, [self.read.pk],
         )
+        made = create_repository(superuser, self.org.pk, 'root-repo')
+        self.assertEqual(made.organization_id, self.org.pk)
+        delete_repository(superuser, made.pk)
+        self.assertFalse(Repository.objects.filter(pk=made.pk).exists())
         self.assertFalse(
             OrganizationOwnership.objects.filter(
                 user=superuser, organization=self.org,
@@ -877,6 +939,16 @@ class RelationshipWriteTests(TestCase):
             ManagementDenied,
             lambda: delete_team(self.owner, self.team.pk),
         )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: create_repository(self.owner, self.org.pk, 'idle-repo'),
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: delete_repository(self.owner, self.repo.pk),
+        )
 
     def test_inactive_superuser_is_denied_even_with_ownership(self):
         User = get_user_model()
@@ -898,6 +970,11 @@ class RelationshipWriteTests(TestCase):
             self,
             ManagementDenied,
             lambda: delete_team(superuser, self.team.pk),
+        )
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: delete_repository(superuser, self.repo.pk),
         )
         OrganizationOwnership.objects.create(
             user=superuser, organization=self.org,
@@ -928,6 +1005,16 @@ class RelationshipWriteTests(TestCase):
             self,
             MissingRelationshipTarget,
             lambda: delete_team(superuser, _MISSING),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: create_repository(superuser, _MISSING, 'missing'),
+        )
+        _assert_no_mutation(
+            self,
+            MissingRelationshipTarget,
+            lambda: delete_repository(superuser, _MISSING),
         )
         _assert_no_mutation(
             self,
@@ -972,9 +1059,13 @@ class RelationshipWriteTests(TestCase):
             'delete_organization_ownership',
             'move_team_organization',
             'move_repository_organization',
+            'create_repository',
+            'delete_repository',
         ):
             self.assertIn(name, source)
         self.assertIn('delete_team(', source)
+        self.assertIn('create_repository(', source)
+        self.assertIn('delete_repository(', source)
         self.assertNotIn('form.save_m2m', source)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_add)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_change)

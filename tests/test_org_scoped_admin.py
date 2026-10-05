@@ -158,6 +158,8 @@ class OrgScopedAdminContractTests(SimpleTestCase):
         self.assertNotIn('delete_queryset', OrganizationAdmin.__dict__)
         self.assertIn('save_related', TeamAdmin.__dict__)
         self.assertIn('delete_model', TeamAdmin.__dict__)
+        self.assertIn('save_model', RepositoryAdmin.__dict__)
+        self.assertIn('delete_model', RepositoryAdmin.__dict__)
         self.assertIn('save_related', RepositoryCollaboratorAdmin.__dict__)
         self.assertIn('delete_model', RepositoryCollaboratorAdmin.__dict__)
         self.assertIn('delete_model', TeamRepositoryPermissionAdmin.__dict__)

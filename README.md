@@ -99,6 +99,11 @@ The functions are:
   must be the same row, including when a team or repository is
   replaced.
 - `delete_team` deletes one team.
+- `create_repository` creates one repository in a persisted
+  organization. The locked organization is the authorization
+  boundary.
+- `delete_repository` deletes one repository. Collaborator rows and
+  team grants cascade after the stored organization is authorized.
 - `update_organization_ownership` changes the stored ownership row's
   user, organization, or both. The stored organization is authorized
   before a replacement organization is loaded, and that replacement

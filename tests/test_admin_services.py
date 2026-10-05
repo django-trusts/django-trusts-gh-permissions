@@ -9,11 +9,16 @@ repository edits, collaborator and team-grant edits, and user deletion
 call the services. ``LastOrganizationOwner`` is a message.
 """
 
+from unittest.mock import patch
+
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.contrib.admin.options import ModelAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import Client, TestCase
 from django.urls import reverse
+
+from gh_permissions import admin as admin_module
 
 from gh_permissions.models import (
     Alias,
@@ -621,6 +626,281 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertFalse(self.target.has_perm(
             'gh_permissions.read_repository', self.repo,
         ))
+
+    def test_owner_creates_and_bulk_deletes_repositories(self):
+        created = self.owner_client.post(
+            reverse('admin:gh_permissions_repository_add'),
+            {
+                'name': 'gamma',
+                'organization': str(self.org.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(created.status_code, 302, created.content[:500])
+        gamma = Repository.objects.get(name='gamma')
+        self.assertEqual(gamma.organization_id, self.org.pk)
+        kept = Repository.objects.create(organization=self.org, name='kept')
+        kept_direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=kept,
+        )
+        kept_grant = TeamRepositoryPermission.objects.create(
+            team=self.team, repository=kept, operation=self.read,
+        )
+        foreign_direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=self.repo_foreign,
+        )
+        foreign_grant = TeamRepositoryPermission.objects.create(
+            team=self.foreign_team,
+            repository=self.repo_foreign,
+            operation=self.write,
+        )
+        gamma_direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=gamma,
+        )
+        gamma_grant = TeamRepositoryPermission.objects.create(
+            team=self.team, repository=gamma, operation=self.read,
+        )
+        bulk = self.owner_client.post(
+            reverse('admin:gh_permissions_repository_changelist'),
+            {
+                'action': 'delete_selected',
+                'post': 'yes',
+                'select_across': '0',
+                ACTION_CHECKBOX_NAME: [
+                    str(gamma.pk),
+                    str(self.repo.pk),
+                    str(self.repo_foreign.pk),
+                ],
+            },
+        )
+        self.assertEqual(bulk.status_code, 302, bulk.content[:500])
+        self.assertFalse(Repository.objects.filter(pk=gamma.pk).exists())
+        self.assertFalse(Repository.objects.filter(pk=self.repo.pk).exists())
+        self.assertFalse(
+            RepositoryCollaborator.objects.filter(pk=gamma_direct.pk).exists(),
+        )
+        self.assertFalse(
+            TeamRepositoryPermission.objects.filter(pk=gamma_grant.pk).exists(),
+        )
+        self.assertTrue(Repository.objects.filter(pk=kept.pk).exists())
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(pk=kept_direct.pk).exists(),
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=kept_grant.pk).exists(),
+        )
+        self.assertTrue(
+            Repository.objects.filter(pk=self.repo_foreign.pk).exists(),
+        )
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(pk=foreign_direct.pk).exists(),
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=foreign_grant.pk).exists(),
+        )
+
+    def test_denied_and_forged_repository_writes_do_not_mutate(self):
+        direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=self.repo,
+        )
+        direct.permissions.add(self.read)
+        grant = TeamRepositoryPermission.objects.create(
+            team=self.team, repository=self.repo, operation=self.read,
+        )
+        foreign_direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=self.repo_foreign,
+        )
+        foreign_grant = TeamRepositoryPermission.objects.create(
+            team=self.foreign_team,
+            repository=self.repo_foreign,
+            operation=self.write,
+        )
+        before = set(Repository.objects.values_list('pk', 'name', 'organization_id'))
+        denied_create = self.other_client.post(
+            reverse('admin:gh_permissions_repository_add'),
+            {
+                'name': 'stolen',
+                'organization': str(self.org.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(denied_create.status_code, 200)
+        self.assertContains(denied_create, 'valid choice')
+        forged_create = self.owner_client.post(
+            reverse('admin:gh_permissions_repository_add'),
+            {
+                'name': 'ghost',
+                'organization': '999999',
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(forged_create.status_code, 200)
+        self.assertContains(forged_create, 'valid choice')
+        forged_foreign = self.owner_client.post(
+            reverse('admin:gh_permissions_repository_add'),
+            {
+                'name': 'smuggled-repo',
+                'organization': str(self.foreign.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(forged_foreign.status_code, 200)
+        self.assertContains(forged_foreign, 'valid choice')
+        for client in (self.inactive_client, self.inactive_super_client):
+            inactive = client.post(
+                reverse('admin:gh_permissions_repository_add'),
+                {
+                    'name': 'idle-repo',
+                    'organization': str(self.org.pk),
+                    '_save': 'Save',
+                },
+            )
+            self.assertEqual(inactive.status_code, 302)
+            self.assertIn('/admin/login/', inactive['Location'])
+        self.assertEqual(
+            set(Repository.objects.values_list('pk', 'name', 'organization_id')),
+            before,
+        )
+        self.assertFalse(Repository.objects.filter(name='stolen').exists())
+        self.assertFalse(Repository.objects.filter(name='ghost').exists())
+        self.assertFalse(Repository.objects.filter(name='smuggled-repo').exists())
+        self.assertFalse(Repository.objects.filter(name='idle-repo').exists())
+
+        denied_delete = self.other_client.post(
+            reverse('admin:gh_permissions_repository_delete', args=[self.repo.pk]),
+            {'post': 'yes'},
+        )
+        self.assertEqual(denied_delete.status_code, 302)
+        self.assertEqual(denied_delete['Location'], reverse('admin:index'))
+        forged_delete = self.owner_client.post(
+            reverse('admin:gh_permissions_repository_delete', args=[999999]),
+            {'post': 'yes'},
+        )
+        self.assertEqual(forged_delete.status_code, 302)
+        self.assertEqual(forged_delete['Location'], reverse('admin:index'))
+        forged_foreign_delete = self.owner_client.post(
+            reverse(
+                'admin:gh_permissions_repository_delete',
+                args=[self.repo_foreign.pk],
+            ),
+            {'post': 'yes'},
+        )
+        self.assertEqual(forged_foreign_delete.status_code, 302)
+        self.assertEqual(
+            forged_foreign_delete['Location'], reverse('admin:index'),
+        )
+        for client in (self.inactive_client, self.inactive_super_client):
+            inactive_delete = client.post(
+                reverse(
+                    'admin:gh_permissions_repository_delete',
+                    args=[self.repo.pk],
+                ),
+                {'post': 'yes'},
+            )
+            self.assertEqual(inactive_delete.status_code, 302)
+            self.assertIn('/admin/login/', inactive_delete['Location'])
+        self.repo.refresh_from_db()
+        self.repo_foreign.refresh_from_db()
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(pk=direct.pk).exists(),
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=grant.pk).exists(),
+        )
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(pk=foreign_direct.pk).exists(),
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=foreign_grant.pk).exists(),
+        )
+        self.assertEqual(
+            set(direct.permissions.values_list('pk', flat=True)),
+            {self.read.pk},
+        )
+
+    def test_repository_write_refuses_when_ownership_disappears_after_preflight(self):
+        """Ownership can disappear after the admin preflight.
+
+        The scope check and the form choice do not lock. This removes
+        the ownership row after that check and before the service
+        returns. ``create_repository`` and ``delete_repository`` reload
+        the organization inside the mutation transaction and refuse, so
+        the create does not insert and the delete does not cascade.
+        """
+        direct = RepositoryCollaborator.objects.create(
+            user=self.target, repository=self.repo,
+        )
+        direct.permissions.add(self.read)
+        grant = TeamRepositoryPermission.objects.create(
+            team=self.team, repository=self.repo, operation=self.read,
+        )
+        original_guard = admin_module._guard_scope
+
+        def guard_then_drop(model_admin, request, obj, change):
+            original_guard(model_admin, request, obj, change)
+            if not change and getattr(obj, 'name', None) == 'racy':
+                OrganizationOwnership.objects.filter(
+                    user=self.owner, organization=self.org,
+                ).delete()
+
+        with patch.object(admin_module, '_guard_scope', guard_then_drop):
+            refused = self.owner_client.post(
+                reverse('admin:gh_permissions_repository_add'),
+                {
+                    'name': 'racy',
+                    'organization': str(self.org.pk),
+                    '_save': 'Save',
+                },
+            )
+        self.assertEqual(refused.status_code, 302, refused.content[:500])
+        self.assertContains(
+            self.owner_client.get(refused['Location']),
+            'was denied for organization',
+        )
+        self.assertFalse(Repository.objects.filter(name='racy').exists())
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
+        )
+
+        original_log = ModelAdmin.log_deletions
+
+        def log_then_drop(self_admin, request, queryset):
+            result = original_log(self_admin, request, queryset)
+            if any(getattr(row, 'pk', None) == self.repo.pk for row in queryset):
+                OrganizationOwnership.objects.filter(
+                    user=self.owner, organization=self.org,
+                ).delete()
+            return result
+
+        with patch.object(ModelAdmin, 'log_deletions', log_then_drop):
+            refused_delete = self.owner_client.post(
+                reverse(
+                    'admin:gh_permissions_repository_delete',
+                    args=[self.repo.pk],
+                ),
+                {'post': 'yes'},
+            )
+        self.assertEqual(
+            refused_delete.status_code, 302, refused_delete.content[:500],
+        )
+        self.assertContains(
+            self.owner_client.get(refused_delete['Location']),
+            'was denied for organization',
+        )
+        self.repo.refresh_from_db()
+        self.assertTrue(
+            RepositoryCollaborator.objects.filter(pk=direct.pk).exists(),
+        )
+        self.assertTrue(
+            TeamRepositoryPermission.objects.filter(pk=grant.pk).exists(),
+        )
+        self.assertEqual(
+            set(direct.permissions.values_list('pk', flat=True)),
+            {self.read.pk},
+        )
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
+        )
 
     def test_non_superuser_still_cannot_edit_ownership_rows(self):
         added = self.owner_client.post(

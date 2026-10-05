@@ -99,10 +99,12 @@ calls `add_organization_owner`, `update_organization_ownership`, or
 form and again from `save_model` before a name write.
 `ServiceBackedUserAdmin` and personal-organization deletion call
 `delete_user`. `LastOrganizationOwner` is a message on that page,
-and the transaction rolls the deletion back. Repository deletion
-has no relationship service; it remains the scoped model delete,
-after Django's related-object permission check. A raw queryset
-write still skips the services.
+and the transaction rolls the deletion back. Repository create and
+delete call `create_repository` and `delete_repository`. Each locks
+the persisted organization and requires `manage_organization`
+before it inserts or deletes. Collaborator rows and team grants
+cascade only inside that delete. A raw queryset write still skips
+the services.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.
