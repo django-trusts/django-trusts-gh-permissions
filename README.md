@@ -365,6 +365,25 @@ Repeat the default seed with an explicit name:
 python manage.py seed_example --organization-name "Example Organization"
 ```
 
+## MCP authorization spike
+
+The runnable example can hand an MCP authorization request to Django's
+login and then to a blank connected-app page. Approve does not issue a
+credential. Package choice, mismatch, and the start command are in
+[docs/mcp-authorization-spike.md](docs/mcp-authorization-spike.md).
+
+```console
+python -m pip install "django-oauth-toolkit==3.4.1"
+python manage.py migrate
+python manage.py seed_example
+python manage.py seed_mcp_authorization
+python manage.py runserver
+```
+
+`seed_mcp_authorization` prints the authorization URL. Open it on
+localhost port 8000. Sign in as `example-owner` with the
+development-only password from the table above.
+
 ## Limitations
 
 There is no implicit permission-level hierarchy. Owners receive the

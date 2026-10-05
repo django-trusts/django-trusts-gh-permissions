@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Authorize {% if application %}{{ application.name }}{% else %}application{% endif %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; color: #1f2328; }
+    main { max-width: 40rem; margin: 2rem auto; background: #fff; padding: 1.5rem 1.75rem 2rem; border: 1px solid #d0d7de; }
+    h1 { font-size: 1.4rem; margin-top: 0; }
+    section { border-top: 1px solid #d0d7de; padding: 1rem 0; }
+    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    label { display: block; margin: 0.4rem 0; }
+    select { min-width: 16rem; }
+    .hint { color: #57606a; margin: 0.25rem 0 0.5rem; }
+    .actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.5rem; }
+    button { font: inherit; padding: 0.4rem 0.9rem; }
+    .status { background: #fff8c5; border: 1px solid #d4a72c; padding: 0.75rem 1rem; }
+    .error { background: #ffebe9; border: 1px solid #ff8182; padding: 0.75rem 1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    {% if error %}
+      <h1>Authorization request error</h1>
+      <p class="error">{{ error.error }}: {{ error.description }}</p>
+    {% else %}
+      <h1>Authorize {% if application %}{{ application.name }}{% else %}application{% endif %}</h1>
+      <p class="hint">Signed in as {{ user.get_username }}.</p>
+      {% if approval_not_issued %}
+        <p id="approval-result" class="status">Approve did not grant access. No delegated authority was issued.</p>
+      {% endif %}
+      <form method="post">
+        {% csrf_token %}
+        {% if form %}
+          {% for field in form.hidden_fields %}{{ field }}{% endfor %}
+          {{ form.non_field_errors }}
+        {% endif %}
+
+        <section id="account-selection">
+          <h2>Account</h2>
+          <label for="account">Account or organization</label>
+          <select id="account" name="account" disabled>
+            <option value="">Select an account or organization</option>
+          </select>
+          <p class="hint">Account selection is not saved.</p>
+        </section>
+
+        <section id="repository-access">
+          <h2>Repository access</h2>
+          <label>
+            <input type="radio" name="repository_access" value="all" disabled>
+            All repositories
+          </label>
+          <p class="hint">Would apply to all current and future repositories. Not saved.</p>
+          <label>
+            <input type="radio" name="repository_access" value="selected" disabled>
+            Only select repositories
+          </label>
+          <label for="selected-repositories">Selected repositories</label>
+          <select id="selected-repositories" name="repositories" multiple disabled>
+            <option value="">No repositories loaded</option>
+          </select>
+          <p class="hint">Repository selection is not saved.</p>
+        </section>
+
+        <section id="requested-permissions">
+          <h2>Requested permissions</h2>
+          <ul>
+            {% for description in scopes_descriptions %}
+              <li>{{ description }}</li>
+            {% empty %}
+              <li>No permissions were requested.</li>
+            {% endfor %}
+          </ul>
+        </section>
+
+        <p class="hint">Approve does not grant access in this slice.</p>
+        <div class="actions">
+          <button type="submit" name="cancel" value="cancel">Cancel</button>
+          <button type="submit" name="allow" value="true">Approve</button>
+        </div>
+      </form>
+    {% endif %}
+  </main>
+</body>
+</html>

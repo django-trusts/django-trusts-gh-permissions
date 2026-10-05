@@ -1,7 +1,13 @@
+from pathlib import Path
+
 SECRET_KEY = 'gh-permissions-tests-not-for-production'
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
-ALLOWED_HOSTS = ['testserver', 'localhost']
+ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
+
+# File database so `manage.py migrate`, `seed_example`, and `runserver`
+# share rows. The test runner still substitutes its own database.
+BASE_DIR = Path(__file__).resolve().parents[1]
 
 # IIb: core is a library, not an installed app. Zero stays absent.
 # example.User is the test project only. The library does not require it.
@@ -15,6 +21,8 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.admin',
+    # Example MCP authorization spike only. Not a gh_permissions dependency.
+    'oauth2_provider',
     'gh_permissions.apps.GhPermissionsConfig',
 )
 
@@ -59,7 +67,7 @@ AUTHENTICATION_BACKENDS = (
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
+        'NAME': BASE_DIR / 'db.sqlite3',
     },
     # Empty on purpose. The 0002 upgrade test migrates it itself.
     # The runner must not apply 0002 here, because that migration
@@ -72,3 +80,20 @@ DATABASES = {
 }
 
 ROOT_URLCONF = 'tests.urls'
+
+# Stock Django login. The MCP authorize view sends an anonymous human here
+# and comes back through the ``next`` parameter. This is not admin login.
+LOGIN_URL = '/accounts/login/'
+
+# django-oauth-toolkit 3.4.1 supplies the MCP authorization-server request
+# check (PKCE, client, redirect). Scopes below are display text for the
+# blank picker. This spike does not mount the token endpoint.
+OAUTH2_PROVIDER = {
+    'PKCE_REQUIRED': True,
+    'REQUEST_APPROVAL_PROMPT': 'force',
+    'ALLOWED_REDIRECT_URI_SCHEMES': ['http', 'https'],
+    'SCOPES': {
+        'read_repository': 'Read access to repository contents',
+        'write_repository': 'Read and write access to repository contents',
+    },
+}

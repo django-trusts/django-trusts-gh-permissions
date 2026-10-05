@@ -42,6 +42,7 @@ jobs:
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        python -m pip install "django-oauth-toolkit==3.4.1"
     - name: Pin guard
       run: |
         python - <<'PY'
@@ -84,6 +85,7 @@ jobs:
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        python -m pip install "django-oauth-toolkit==3.4.1"
         coverage run -m tests.runtests
         python -m django migrate --noinput --settings=tests.settings
         python -m django check --settings=tests.settings

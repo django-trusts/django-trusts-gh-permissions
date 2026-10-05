@@ -38,6 +38,10 @@ Issues = "https://github.com/django-trusts/django-trusts-gh-permissions/issues"
 test = [
     "coverage>=7.0",
 ]
+# Runnable-example MCP spike. Not a gh_permissions install requirement.
+example = [
+    "django-oauth-toolkit==3.4.1",
+]
 
 # django-trusts>=1.0.0.dev3,<2 is required (final core library floor).
 # Unpinned "django-trusts" resolves to PyPI 0.10.x. Pair CI installs the
