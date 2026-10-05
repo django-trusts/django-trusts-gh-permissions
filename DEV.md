@@ -13,14 +13,14 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
 django-trusts commit
-`71699ba35f960780fd9eb1a7fe027623584e8034`, the tip of draft
-[#269](https://github.com/django-trusts/django-trusts/pull/269)
-(`cursor/content-type-mismatch-denial-6f05`). That commit denies a
-permission whose `content_type` is not the protected object's content
-identity. It is based on `dev`
+`1f35b31c2698c797ff97f6558c8cf9481a49338a`, the approved unmerged
+head of [#269](https://github.com/django-trusts/django-trusts/pull/269)
+(`cursor/content-type-mismatch-denial-6f05`). That commit denies an
+`auth.Permission` whose `content_type` is not the protected object's
+content identity. `user.has_perm` stays a permission string. It is based on `dev`
 `7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
 [#264](https://github.com/django-trusts/django-trusts/pull/264).
-Do not float past `71699ba35f960780fd9eb1a7fe027623584e8034`. Replace
+Do not float past `1f35b31c2698c797ff97f6558c8cf9481a49338a`. Replace
 this pin with the #269 merge commit when that pull request lands.
 The #264 merge is what lets `permission=`
 end on one forward to-many step to `auth.Permission`.
@@ -223,9 +223,9 @@ and `&`. Literal Python `in` is unsupported. There is no aggregate
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
 `TrustModelBackend`. `Repository.objects.authorized` takes an
-`auth.Permission` instance, while `has_perm` and the permitted-user
-adapters accept either that instance or its Django permission string
-as documented.
+`auth.Permission` instance. `has_perm` takes the permission string.
+The permitted-user adapters accept that instance or its Django
+permission string.
 
 Application authors own ordinary relational models plus compact
 registrations. Core owns validation, correlated query construction,
@@ -273,7 +273,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `71699ba35f960780fd9eb1a7fe027623584e8034`.
+with Django 6.1 against exact paired-core head `1f35b31c2698c797ff97f6558c8cf9481a49338a`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
