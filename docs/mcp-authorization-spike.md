@@ -24,8 +24,9 @@ exchange the code. The client posts the code to the token endpoint.
 The callback page is a **test-only spike**. When a code is present it
 labels itself that way and shows the code, including inside the raw
 handshake box, so a development client can be inspected. That display
-must not be kept in a non-development deployment. The textarea stays
-for this spike, including on a test host.
+must not be kept in a non-development deployment. The dump stays
+for this spike, including on a test host. It is a selectable
+preformatted block, so the text can be copied.
 
 The token endpoint returns an access token that expires in one hour.
 There is no refresh token. `POST /mcp` accepts that bearer token for

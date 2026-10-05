@@ -6,7 +6,7 @@
   <style>
     body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; }
     main { max-width: 36rem; margin: 4rem auto; background: #fff; padding: 1.5rem; border: 1px solid #d0d7de; }
-    textarea.handshake { box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 10rem; width: 100%; }
+    pre.handshake { box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 10rem; width: 100%; margin: 0; padding: 0.5rem 0.75rem; white-space: pre-wrap; overflow: auto; user-select: text; -webkit-user-select: text; cursor: text; pointer-events: auto; border: 1px solid #d0d7de; background: #f6f8fa; }
     h2 { font-size: 1rem; }
   </style>
 </head>
@@ -25,8 +25,8 @@
     {% endif %}
     {% if handshake_dump %}
       <section id="raw-handshake">
-        <h2><label for="raw-handshake-request">Raw handshake request</label></h2>
-        <textarea id="raw-handshake-request" class="handshake" readonly rows="12">{{ handshake_dump }}</textarea>
+        <h2 id="raw-handshake-label">Raw handshake request</h2>
+        <pre id="raw-handshake-request" class="handshake" aria-labelledby="raw-handshake-label">{{ handshake_dump }}</pre>
       </section>
     {% endif %}
   </main>

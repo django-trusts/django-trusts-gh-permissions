@@ -446,7 +446,11 @@ class McpAuthorizationTests(TestCase):
 
     def _assert_handshake_dump(self, response, raw_fragment):
         self.assertContains(response, 'id="raw-handshake-request"')
+        self.assertContains(response, 'class="handshake"')
         self.assertContains(response, 'Raw handshake request')
-        self.assertContains(response, 'readonly')
+        self.assertContains(response, 'user-select: text')
+        self.assertContains(response, '-webkit-user-select: text')
+        self.assertContains(response, 'pointer-events: auto')
+        self.assertNotContains(response, '<textarea')
         self.assertContains(response, 'query_string')
         self.assertContains(response, raw_fragment)
