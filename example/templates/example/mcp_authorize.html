@@ -14,7 +14,6 @@
     .hint { color: #57606a; margin: 0.25rem 0 0.5rem; }
     .actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.5rem; }
     button { font: inherit; padding: 0.4rem 0.9rem; }
-    .status { background: #fff8c5; border: 1px solid #d4a72c; padding: 0.75rem 1rem; }
     .error { background: #ffebe9; border: 1px solid #ff8182; padding: 0.75rem 1rem; }
   </style>
 </head>
@@ -26,9 +25,6 @@
     {% else %}
       <h1>Authorize {% if application %}{{ application.name }}{% else %}application{% endif %}</h1>
       <p class="hint">Signed in as {{ user.get_username }}.</p>
-      {% if approval_not_issued %}
-        <p id="approval-result" class="status">Approve did not grant access. No delegated authority was issued.</p>
-      {% endif %}
       <form method="post">
         {% csrf_token %}
         {% if form %}
@@ -74,7 +70,7 @@
           </ul>
         </section>
 
-        <p class="hint">Approve does not grant access in this slice.</p>
+        <p class="hint">Approve sends an authorization code to the client. Account and repository selections are not saved. The access token is only a test credential for this example.</p>
         <div class="actions">
           <button type="submit" name="cancel" value="cancel">Cancel</button>
           <button type="submit" name="allow" value="true">Approve</button>

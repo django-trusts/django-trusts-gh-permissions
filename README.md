@@ -367,10 +367,11 @@ python manage.py seed_example --organization-name "Example Organization"
 
 ## MCP authorization spike
 
-The runnable example can hand an MCP authorization request to Django's
-login and then to a blank connected-app page. Approve does not issue a
-credential. Package choice, mismatch, and the start command are in
-[docs/mcp-authorization-spike.md](docs/mcp-authorization-spike.md).
+The runnable example can finish an OAuth authorization-code and PKCE
+handshake and answer `initialize` at `http://localhost:8000/mcp`. The
+access token is only a test credential for that example endpoint.
+Package choice, mismatch, the Cursor snippet, and the start command are
+in [docs/mcp-authorization-spike.md](docs/mcp-authorization-spike.md).
 
 ```console
 python -m pip install "django-oauth-toolkit==3.4.1"
@@ -380,9 +381,11 @@ python manage.py seed_mcp_authorization
 python manage.py runserver
 ```
 
-`seed_mcp_authorization` prints the authorization URL. Open it on
-localhost port 8000. Sign in as `example-owner` with the
-development-only password from the table above.
+`seed_mcp_authorization` prints the MCP URL
+`http://localhost:8000/mcp` and the authorization URL. Point Cursor at
+that MCP URL, then sign in as `example-owner` with the development-only
+password from the table above. The issued token is only a test
+credential for this example endpoint.
 
 ## Limitations
 

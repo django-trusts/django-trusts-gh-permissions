@@ -85,13 +85,23 @@ ROOT_URLCONF = 'tests.urls'
 # and comes back through the ``next`` parameter. This is not admin login.
 LOGIN_URL = '/accounts/login/'
 
-# django-oauth-toolkit 3.4.1 supplies the MCP authorization-server request
-# check (PKCE, client, redirect). Scopes below are display text for the
-# blank picker. This spike does not mount the token endpoint.
+# django-oauth-toolkit 3.4.1 is the authorization server for this example:
+# PKCE, the authorization-code grant, RFC 8414 and RFC 9728 metadata, and
+# the token endpoint. The access token lasts one hour and the validator
+# drops the refresh token. It is a test credential for /mcp only.
 OAUTH2_PROVIDER = {
     'PKCE_REQUIRED': True,
     'REQUEST_APPROVAL_PROMPT': 'force',
     'ALLOWED_REDIRECT_URI_SCHEMES': ['http', 'https'],
+    'ALLOW_LOCALHOST_LOOPBACK': True,
+    'OAUTH2_VALIDATOR_CLASS': (
+        'example.mcp_authorization.ExampleAccessTokenValidator'
+    ),
+    'OAUTH2_GRANT_TYPES_SUPPORTED': ['authorization_code'],
+    'OAUTH2_RESPONSE_TYPES_SUPPORTED': ['code'],
+    'OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED': ['none'],
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    'OAUTH2_PROTECTED_RESOURCE_NAME': 'Example MCP',
     'SCOPES': {
         'read_repository': 'Read access to repository contents',
         'write_repository': 'Read and write access to repository contents',

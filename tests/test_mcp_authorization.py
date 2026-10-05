@@ -1,9 +1,12 @@
-"""MCP authorize entry stops at a blank connected-app picker.
+"""MCP authorization-code handshake for the example endpoint.
 
-Proves the login redirect, the return to that page, that the page
-requires a session, and that approve and cancel issue no grant.
+Proves the login redirect, the blank picker, that approve returns a
+code, that the code exchanges for an access token, that the example
+MCP endpoint accepts that token and rejects a missing one, and that
+cancel still issues nothing.
 """
 
+import json
 from html.parser import HTMLParser
 from io import StringIO
 from pathlib import Path
@@ -17,11 +20,15 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from example.mcp_authorization import (
+    DEV_CODE_VERIFIER,
     DEV_STATE,
+    LOCAL_MCP_URL,
     LOCAL_REDIRECT_URI,
     MCP_CLIENT_ID,
+    MCP_PROTOCOL_VERSION,
     OAUTH_TOOLKIT_VERSION,
     REQUESTED_SCOPES,
+    TEST_MCP_RESOURCE,
     TEST_REDIRECT_URI,
     authorization_url,
     ensure_mcp_application,
@@ -77,7 +84,9 @@ class McpAuthorizationTests(TestCase):
         )
 
     def setUp(self):
-        self.authorize = authorization_url(TEST_REDIRECT_URI)
+        self.authorize = authorization_url(
+            TEST_REDIRECT_URI, resource=TEST_MCP_RESOURCE,
+        )
         ensure_mcp_application()
         self.client = Client()
 
@@ -94,7 +103,7 @@ class McpAuthorizationTests(TestCase):
             if 'oauth2_provider' in text or 'django_oauth_toolkit' in text:
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
-        reverse('mcp-authorize')
+        reverse('oauth2_provider:authorize')
         labels = {model._meta.app_label for model in admin.site._registry}
         self.assertNotIn('oauth2_provider', labels)
 
@@ -169,11 +178,8 @@ class McpAuthorizationTests(TestCase):
         self.assertContains(landing, 'Authorization cancelled')
         self.assertContains(landing, 'No access was granted.')
         ignored = self.client.get(reverse('mcp-callback'), {'code': 'not-a-grant'})
-        self.assertContains(ignored, 'Authorization code ignored')
-        self.assertContains(
-            ignored,
-            'does not exchange an authorization code',
-        )
+        self.assertContains(ignored, 'Authorization code issued')
+        self.assertContains(ignored, 'does not exchange the code')
         self.assertEqual(_authority_counts(), {
             'grants': 0,
             'access_tokens': 0,
@@ -181,22 +187,99 @@ class McpAuthorizationTests(TestCase):
             'id_tokens': 0,
         })
 
-    def test_approve_does_not_issue_delegated_authority(self):
+    def test_approve_exchanges_for_a_test_credential(self):
         self.client.force_login(self.user, backend=MODEL_BACKEND)
         page = self.client.get(self.authorize)
         fields = _posted_fields(page.content.decode())
         fields['allow'] = 'true'
         approved = self.client.post(self.authorize, fields)
-        self.assertEqual(approved.status_code, 200)
-        self.assertContains(approved, 'No delegated authority was issued.')
-        self._assert_blank_picker(approved)
-        self.assertNotIn('code=', approved.content.decode())
+        self.assertEqual(approved.status_code, 302)
+        parsed = urlparse(approved.url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(query['state'], [DEV_STATE])
+        self.assertNotIn('error', query)
+        code = query['code'][0]
+        self.assertTrue(code)
         self.assertEqual(_authority_counts(), {
-            'grants': 0,
+            'grants': 1,
             'access_tokens': 0,
             'refresh_tokens': 0,
             'id_tokens': 0,
         })
+        token_response = self.client.post(reverse('oauth2_provider:token'), {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': TEST_REDIRECT_URI,
+            'client_id': MCP_CLIENT_ID,
+            'code_verifier': DEV_CODE_VERIFIER,
+            'resource': TEST_MCP_RESOURCE,
+        })
+        self.assertEqual(token_response.status_code, 200)
+        body = token_response.json()
+        access_token = body['access_token']
+        self.assertTrue(access_token)
+        self.assertNotIn('refresh_token', body)
+        self.assertEqual(body['expires_in'], 3600)
+        self.assertEqual(body['token_type'], 'Bearer')
+        self.assertEqual(_authority_counts(), {
+            'grants': 0,
+            'access_tokens': 1,
+            'refresh_tokens': 0,
+            'id_tokens': 0,
+        })
+        missing = self.client.post(
+            reverse('mcp'),
+            data=json.dumps({
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+                'params': {'protocolVersion': MCP_PROTOCOL_VERSION},
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(missing.status_code, 401)
+        challenge = missing['WWW-Authenticate']
+        self.assertIn('resource_metadata', challenge)
+        self.assertIn('/.well-known/oauth-protected-resource/mcp', challenge)
+        unknown = self.client.post(
+            reverse('mcp'),
+            data=json.dumps({
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+            }),
+            content_type='application/json',
+            HTTP_AUTHORIZATION='Bearer not-a-real-token',
+        )
+        self.assertEqual(unknown.status_code, 401)
+        accepted = self.client.post(
+            reverse('mcp'),
+            data=json.dumps({
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+                'params': {'protocolVersion': MCP_PROTOCOL_VERSION},
+            }),
+            content_type='application/json',
+            HTTP_AUTHORIZATION='Bearer %s' % access_token,
+        )
+        self.assertEqual(accepted.status_code, 200)
+        result = accepted.json()['result']
+        self.assertEqual(result['protocolVersion'], MCP_PROTOCOL_VERSION)
+        self.assertEqual(result['serverInfo']['name'], 'example-mcp')
+        self.assertIn('Test credential', result['instructions'])
+        listed = self.client.post(
+            reverse('mcp'),
+            data=json.dumps({
+                'jsonrpc': '2.0',
+                'id': 2,
+                'method': 'tools/list',
+            }),
+            content_type='application/json',
+            HTTP_AUTHORIZATION='Bearer %s' % access_token,
+        )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()['result'], {'tools': []})
 
     def test_skip_authorization_still_shows_the_picker(self):
         application = ensure_mcp_application()
@@ -220,6 +303,8 @@ class McpAuthorizationTests(TestCase):
         self.assertIn('django-oauth-toolkit %s' % OAUTH_TOOLKIT_VERSION, text)
         self.assertIn(MCP_CLIENT_ID, text)
         self.assertIn('/o/authorize/', text)
+        self.assertIn(LOCAL_MCP_URL, text)
+        self.assertIn('only a test credential', text)
         self.assertIn('redirect_uri=%s' % LOCAL_REDIRECT_URI.replace(':', '%3A').replace('/', '%2F'), text)
         call_command('seed_mcp_authorization', stdout=StringIO())
         from oauth2_provider.models import get_application_model
@@ -227,6 +312,25 @@ class McpAuthorizationTests(TestCase):
             get_application_model().objects.filter(client_id=MCP_CLIENT_ID).count(),
             1,
         )
+
+    def test_toolkit_metadata_advertises_the_mounted_endpoints(self):
+        server = self.client.get('/.well-known/oauth-authorization-server')
+        self.assertEqual(server.status_code, 200)
+        document = server.json()
+        self.assertTrue(document['authorization_endpoint'].endswith('/o/authorize/'))
+        self.assertTrue(document['token_endpoint'].endswith('/o/token/'))
+        self.assertIn('S256', document['code_challenge_methods_supported'])
+        self.assertEqual(document['grant_types_supported'], ['authorization_code'])
+        self.assertNotIn('refresh_token', document['grant_types_supported'])
+        self.assertEqual(
+            document['token_endpoint_auth_methods_supported'],
+            ['none'],
+        )
+        resource = self.client.get('/.well-known/oauth-protected-resource/mcp')
+        self.assertEqual(resource.status_code, 200)
+        body = resource.json()
+        self.assertTrue(body['resource'].endswith('/mcp'))
+        self.assertTrue(body['authorization_servers'])
 
     def _assert_blank_picker(self, response):
         self.assertContains(response, 'id="account-selection"')

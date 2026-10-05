@@ -1,12 +1,15 @@
 """MCP authorization entry for the runnable example.
 
-``django-oauth-toolkit`` validates the authorization request and the
-login mixin sends an anonymous human to Django's login. This module
-owns the consent step so the package can be replaced: the screen is a
-blank connected-app picker, cancel returns ``access_denied``, and
-approve does not create a grant or a token.
+``django-oauth-toolkit`` validates the authorization request, sends an
+anonymous human to Django's login, and issues an authorization code
+when that human approves. This module owns the consent screen and the
+example MCP HTTP endpoint so the package can be replaced.
 
-The toolkit's own ``AuthorizationView.get`` can skip that screen and
+The picker does not save an account or a repository. The access token
+is only a test credential for that endpoint. Cancel still returns
+``access_denied`` and stores nothing.
+
+The toolkit's own ``AuthorizationView.get`` can skip the screen and
 mint a code when ``skip_authorization`` or ``approval_prompt=auto``
 says so. This view does not call that path.
 """
@@ -14,14 +17,21 @@ says so. This view does not call that path.
 import base64
 import hashlib
 import importlib.metadata
+import json
 from urllib.parse import urlencode
 
-from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
 from oauth2_provider.exceptions import OAuthToolkitError
 from oauth2_provider.models import get_application_model
+from oauth2_provider.oauth2_backends import OAuthLibCore
+from oauth2_provider.oauth2_validators import OAuth2Validator, is_valid_resource_uri
 from oauth2_provider.scopes import get_scopes_backend
 from oauth2_provider.views import AuthorizationView
+from oauth2_provider.www_authenticate import build_bearer_challenge, challenge_status
+from oauthlib.oauth2 import Server
+from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 
 
 OAUTH_TOOLKIT_DISTRIBUTION = 'django-oauth-toolkit'
@@ -31,8 +41,23 @@ MCP_CLIENT_ID = 'example-mcp-client'
 MCP_CLIENT_NAME = 'Example MCP client'
 LOCAL_REDIRECT_URI = 'http://localhost:8000/mcp/callback/'
 TEST_REDIRECT_URI = 'http://testserver/mcp/callback/'
-REDIRECT_URIS = (LOCAL_REDIRECT_URI, TEST_REDIRECT_URI)
-MCP_RESOURCE = 'http://localhost:8000/mcp/'
+TEST_MCP_RESOURCE = 'http://testserver/mcp'
+# Cursor's documented static-client callbacks. The desktop app uses
+# port 8787. The web and agents surface uses the https callback.
+CURSOR_DESKTOP_REDIRECT_URI = 'http://localhost:8787/callback'
+CURSOR_LOOPBACK_IP_REDIRECT_URI = 'http://127.0.0.1:8787/callback'
+CURSOR_WEB_REDIRECT_URI = 'https://www.cursor.com/agents/mcp/oauth/callback'
+REDIRECT_URIS = (
+    LOCAL_REDIRECT_URI,
+    TEST_REDIRECT_URI,
+    CURSOR_DESKTOP_REDIRECT_URI,
+    CURSOR_LOOPBACK_IP_REDIRECT_URI,
+    CURSOR_WEB_REDIRECT_URI,
+)
+LOCAL_MCP_URL = 'http://localhost:8000/mcp'
+MCP_RESOURCE = LOCAL_MCP_URL
+MCP_PROTOCOL_VERSION = '2025-03-26'
+MCP_SERVER_NAME = 'example-mcp'
 REQUESTED_SCOPES = ('read_repository', 'write_repository')
 # Development-only PKCE verifier so the printed authorize URL is stable.
 # Not a credential and not a grant.
@@ -49,9 +74,11 @@ def pkce_challenge(verifier):
     return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
 
 
-def authorization_url(redirect_uri, state=DEV_STATE):
+def authorization_url(redirect_uri, state=DEV_STATE, resource=None):
     from django.urls import reverse
 
+    if resource is None:
+        resource = MCP_RESOURCE
     query = urlencode({
         'response_type': 'code',
         'client_id': MCP_CLIENT_ID,
@@ -60,9 +87,9 @@ def authorization_url(redirect_uri, state=DEV_STATE):
         'state': state,
         'code_challenge': pkce_challenge(DEV_CODE_VERIFIER),
         'code_challenge_method': 'S256',
-        'resource': MCP_RESOURCE,
+        'resource': resource,
     })
-    return '%s?%s' % (reverse('mcp-authorize'), query)
+    return '%s?%s' % (reverse('oauth2_provider:authorize'), query)
 
 
 def ensure_mcp_application():
@@ -95,12 +122,24 @@ def ensure_mcp_application():
     return application
 
 
+class ExampleAccessTokenValidator(OAuth2Validator):
+    """Keep the toolkit's access token and drop its refresh token.
+
+    Authorization-code grants otherwise also store a refresh token.
+    This example does not add a refresh-token or long-lived grant.
+    """
+
+    def _save_bearer_token(self, token, request, *args, **kwargs):
+        token.pop('refresh_token', None)
+        return super()._save_bearer_token(token, request, *args, **kwargs)
+
+
 class McpAuthorizationView(AuthorizationView):
     """Validated OAuth request, then the blank picker.
 
     Anonymous requests still redirect to ``LOGIN_URL`` through the
-    toolkit's ``LoginRequiredMixin``. Approving re-renders this page
-    and does not call ``create_authorization_response``.
+    toolkit's ``LoginRequiredMixin``. Approve uses the toolkit to
+    redirect with an authorization code. Cancel uses its deny path.
     """
 
     template_name = 'example/mcp_authorize.html'
@@ -114,38 +153,33 @@ class McpAuthorizationView(AuthorizationView):
         application = get_application_model().objects.get(
             client_id=credentials['client_id'],
         )
+        resources = request.GET.getlist('resource')
+        for uri in resources:
+            if not is_valid_resource_uri(uri):
+                error = OAuthToolkitError(
+                    error=CustomOAuth2Error(
+                        error='invalid_target',
+                        description=(
+                            "The resource '%s' is not a valid resource indicator."
+                            % uri
+                        ),
+                        state=credentials.get('state'),
+                    ),
+                    redirect_uri=credentials.get('redirect_uri'),
+                )
+                return self.error_response(error, application)
+        if resources:
+            credentials = dict(credentials)
+            credentials['resource'] = ' '.join(resources)
         context = self._picker_context(scopes, credentials, application)
         self.oauth2_data = context
         context['form'] = self.get_form(self.get_form_class())
         return self.render_to_response(self.get_context_data(**context))
 
-    def form_valid(self, form):
-        if form.cleaned_data.get('allow'):
-            return self._approval_refused(form)
-        return super().form_valid(form)
-
     def form_invalid(self, form):
         return self.render_to_response(self.get_context_data(
             **self._context_from_form(form),
         ))
-
-    def create_authorization_response(self, request, scopes, credentials, allow):
-        # Cancel (allow=False) is the toolkit's access_denied redirect.
-        # allow=True would store a grant and return a code. Refuse that
-        # even if a later edit calls this method.
-        if allow:
-            raise PermissionDenied(
-                'This spike does not issue an authorization grant.',
-            )
-        return super().create_authorization_response(
-            request, scopes, credentials, allow,
-        )
-
-    def _approval_refused(self, form):
-        context = self._context_from_form(form)
-        context['approval_not_issued'] = True
-        context['form'] = form
-        return self.render_to_response(self.get_context_data(**context))
 
     def _context_from_form(self, form):
         client_id = form.cleaned_data.get('client_id') or form.data.get('client_id')
@@ -188,12 +222,101 @@ class McpAuthorizationView(AuthorizationView):
             context['nonce'] = credentials['nonce']
         if credentials.get('claims'):
             context['claims'] = credentials['claims']
+        if credentials.get('resource'):
+            context['resource'] = credentials['resource']
         return context
 
 
 def mcp_callback(request):
-    """Landing page for cancel. Does not exchange a code or store a grant."""
+    """Show the redirect result. Does not exchange a code."""
     return render(request, 'example/mcp_callback.html', {
         'code': request.GET.get('code', ''),
         'error': request.GET.get('error', ''),
     })
+
+
+def _metadata_url(request):
+    return request.build_absolute_uri(
+        '/.well-known/oauth-protected-resource/mcp'
+    )
+
+
+def _token_required(request):
+    """Return a 401 challenge, or None when the bearer token is known."""
+    core = OAuthLibCore(Server(OAuth2Validator()))
+    valid, oauthlib_request = core.verify_request(request, scopes=[])
+    if valid:
+        request.resource_owner = oauthlib_request.user
+        return None
+    challenge = build_bearer_challenge(
+        request,
+        oauth2_error=getattr(oauthlib_request, 'oauth2_error', None),
+        resource_metadata_url=_metadata_url(request),
+    )
+    response = HttpResponse(
+        status=challenge_status(getattr(oauthlib_request, 'oauth2_error', None)),
+    )
+    response['WWW-Authenticate'] = challenge
+    return response
+
+
+def _rpc_result(message, result):
+    return JsonResponse({
+        'jsonrpc': '2.0',
+        'id': message.get('id'),
+        'result': result,
+    })
+
+
+def _rpc_error(message, code, text, status=200):
+    return JsonResponse(
+        {
+            'jsonrpc': '2.0',
+            'id': None if message is None else message.get('id'),
+            'error': {'code': code, 'message': text},
+        },
+        status=status,
+    )
+
+
+@csrf_exempt
+def mcp_http(request):
+    """Example MCP endpoint. The bearer token is a test credential only.
+
+    ``initialize`` and ``tools/list`` are the whole protocol surface.
+    A missing or unknown token is rejected. Repository selection is
+    not read and is not enforced here.
+    """
+    denied = _token_required(request)
+    if denied is not None:
+        return denied
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+    try:
+        message = json.loads(request.body.decode('utf-8') or 'null')
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _rpc_error(None, -32700, 'Parse error')
+    if not isinstance(message, dict):
+        return _rpc_error(None, -32600, 'Invalid request')
+    method = message.get('method')
+    if message.get('id') is None and str(method).startswith('notifications/'):
+        return HttpResponse(status=202)
+    if method == 'initialize':
+        params = message.get('params') or {}
+        version = params.get('protocolVersion') or MCP_PROTOCOL_VERSION
+        return _rpc_result(message, {
+            'protocolVersion': version,
+            'capabilities': {'tools': {}},
+            'serverInfo': {
+                'name': MCP_SERVER_NAME,
+                'version': '0.0.0',
+            },
+            'instructions': (
+                'Test credential for this example endpoint only.'
+            ),
+        })
+    if method == 'tools/list':
+        return _rpc_result(message, {'tools': []})
+    if method == 'ping':
+        return _rpc_result(message, {})
+    return _rpc_error(message, -32601, 'Method not found')
