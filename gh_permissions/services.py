@@ -11,6 +11,10 @@ and does not create a personal organization.
 The relationship functions take an actor. Each one runs in one
 ``transaction.atomic``, locks the persisted organization with
 ``select_for_update``, and only then evaluates ``manage_organization``.
+``create_repository`` locks the submitted organization, then inserts.
+``delete_repository`` locks the stored repository and that
+repository's organization, then deletes. Collaborator rows and team
+grants cascade only after that authorization.
 The inquiry is ``Organization.objects.authorized`` on that locked row.
 It reads stored ``OrganizationOwnership`` rows. A submitted instance,
 a new ownership row, or a permission bundle is not that evidence.
@@ -839,6 +843,57 @@ def delete_team(actor, team_id):
         organization = _lock_parent_organization(team)
         _require_manage(actor, [organization])
         team.delete()
+
+
+def _require_repository_name(name):
+    field = Repository._meta.get_field('name')
+    if (
+        not isinstance(name, str)
+        or name == ''
+        or name != name.strip()
+        or len(name) > field.max_length
+    ):
+        raise UndefinedRelationshipWrite('repository name')
+    return name
+
+
+def create_repository(actor, organization_id, name):
+    """Create one repository inside a persisted organization.
+
+    The locked organization is the authorization boundary. The insert
+    follows ``manage_organization`` on that row. A later change to
+    ``Repository.organization`` is still ``move_repository_organization``,
+    which refuses.
+    """
+    organization_pk = _require_pk(organization_id, 'organization')
+    repository_name = _require_repository_name(name)
+    with transaction.atomic():
+        actor = _locked_actor(actor)
+        organization = _lock_organization(organization_pk)
+        _require_manage(actor, [organization])
+        if Repository.objects.filter(
+            organization=organization, name=repository_name,
+        ).exists():
+            raise DuplicateRelationshipTarget('repository')
+        return Repository.objects.create(
+            organization=organization, name=repository_name,
+        )
+
+
+def delete_repository(actor, repository_id):
+    """Delete the stored repository after authorizing its organization.
+
+    Collaborator rows and team grants cascade inside this transaction,
+    after ``manage_organization`` on the locked stored organization.
+    Does not move ``Repository.organization``.
+    """
+    repository_pk = _require_pk(repository_id, 'repository')
+    with transaction.atomic():
+        actor = _locked_actor(actor)
+        repository = _lock_repository(repository_pk)
+        organization = _lock_parent_organization(repository)
+        _require_manage(actor, [organization])
+        repository.delete()
 
 
 def _lock_ownership(ownership_id):

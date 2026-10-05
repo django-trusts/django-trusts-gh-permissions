@@ -47,24 +47,26 @@ should decide those.
 Organization-scoped `auth.Permission` `manage_organization`, returns
 `Organization.objects.authorized(request.user, permission)`, declares
 each model's path and add/change flags, and registers the concrete
-admins. `OrganizationAdmin` is the one class that defines `save_model`,
-`delete_model`, and `delete_queryset`, and those methods call the
-domain services. Team/repository alignment stays on
+admins. Scope checks stay on the mixin. Each concrete admin calls
+the domain service for an authorization-bearing write instead of
+`ModelAdmin.save_model`. Team members, the team ceiling, and a
+collaborator's permissions are replaced from `save_related`, not
+from the form's many-to-many save. `delete_queryset` walks the
+selected rows through `delete_model`, including the built-in bulk
+action. Team/repository alignment stays on
 `TeamRepositoryPermission.clean`, which `ModelForm` calls and
-`QuerySet.create` does not. `RepositoryCollaborator` and
-`OrganizationOwnership` use the same scope mixin. `Alias` is not
-registered in admin.
+`QuerySet.create` does not. The service checks that equality again
+before it inserts or updates a grant. `Alias` is not registered
+in admin.
 
-`OrganizationAdmin` overrides `save_model`, `delete_model`, and
-`delete_queryset` so those writes call the domain services. The other
-concrete admins do not override the security methods.
 `OrganizationOwnershipAdmin` sets `scope_allows_add`,
 `scope_allows_change`, and `scope_allows_delete` to false, so a
 non-superuser cannot edit the row that grants their authority.
-Superusers still bypass that scope. The example user admin is
-`ServiceBackedUserAdmin`, which calls the domain services. No custom
-grant-management view was added. The mixin is private. It is not a
-Core API.
+Superusers still bypass that scope, and those writes call
+`add_organization_owner`, `update_organization_ownership`, and
+`delete_organization_ownership`. The example user admin is
+`ServiceBackedUserAdmin`. No custom grant-management view was
+added. The mixin is private. It is not a Core API.
 
 ## Authority
 
@@ -115,7 +117,7 @@ The hooks stay for the same reasons as before:
 | `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin` and on `OrganizationOwnershipAdmin`. |
 | `has_change_permission` / `has_delete_permission` | The flags are consulted even when no object is passed. Object deletes still require `_in_scope`. |
 | `formfield_for_foreignkey` / `formfield_for_manytomany` | Related choices come from the related admin's scoped queryset when that admin is scoped. `RepositoryCollaborator.permissions` points at `auth.Permission`, which is not scoped. |
-| `save_model` | `OrganizationAdmin` checks the same add/change flags and `_in_scope`, then calls the domain services. Other admins keep the mixin backstop. |
+| `save_model` | Concrete admins check the same add/change flags and `_in_scope`, then call the domain service. The mixin method remains the backstop for a class that does not override it. |
 | `get_actions` / `check` | Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` fail closed (`admin_scope.E001`, `admin_scope.E002`). |
 
 `User.objects.permitted` and `get_permitted_users` are not used here.
@@ -132,31 +134,42 @@ does not call `clean`.
 Host projects that turn the admin on, including this runnable example,
 must include `ModelBackend` beside `GhAuthorizationBackend`. Forged
 foreign parents are rejected by the scoped form queryset before a row
-is written. Relationship edits in this admin are still stock admin
-saves inside that queryset. This admin does not call the domain
-services.
+is written. An organization that is a legal choice for the actor, but
+is not the stored `Team.organization` or `Repository.organization`,
+is refused by `move_team_organization` or
+`move_repository_organization` before the name or the many-to-many
+sets change.
 
 ## Relationship writes
 
-Settled authorization-bearing writes are domain services in
-`gh_permissions.services`, tested without this admin. The admin
-classes on this page do not call those functions.
+Authorization-bearing admin edits call `gh_permissions.services`.
+The service locks the persisted organization and authorizes
+`manage_organization` before it writes. The admin does not insert
+the row, or replace a many-to-many, before that call. A refusal
+rolls back the change-form or delete transaction and is shown as a
+validation error or a message.
+
 `OrganizationOwnershipAdmin` still sets `scope_allows_add`,
 `scope_allows_change`, and `scope_allows_delete` to false, so a
 non-superuser cannot edit an ownership row here. Superusers still
-bypass the scope mixin.
+bypass the scope mixin. Their add, change, delete, and bulk delete
+call the ownership services. Removing the last owner of a surviving
+conventional organization raises `LastOrganizationOwner`. The admin
+shows that message and leaves the row in place.
+
+`delete_user` does the same when the user is the sole owner of any
+surviving conventional organization. User admin and deleting that
+user's personal organization both call `delete_user`. The personal
+organization is not itself a reason to refuse, because it would be
+deleted with the user.
 
 `manage_organization` on a stored organization is the management
-inquiry those services use. `read_repository`, `write_repository`,
-and `admin_repository` are the repository grants being edited.
-`update_organization_ownership` and `delete_organization_ownership`
-keep an owner on every surviving conventional organization.
-`delete_user` locks those organizations in primary-key order and
-rolls the user deletion back when any would be left with none. User
-admin already calls `delete_user`, so that preflight runs for this
-hook. The ownership update and delete functions are not called from
-these admin classes. `move_team_organization` and
-`move_repository_organization` refuse the move; a later admin pass
-must call that refusal or reject the field. A raw queryset write, and
-a stock admin save of `Team.organization` or `Repository.organization`,
-still sits outside the service.
+inquiry. `read_repository`, `write_repository`, and
+`admin_repository` are the repository grants being edited. A
+misaligned team grant is still rejected by the model form, and the
+delete service refuses it as well, including for a superuser.
+Deleting the team calls `delete_team`. Creating a repository calls
+`create_repository`. Deleting a repository calls `delete_repository`,
+which locks the stored organization and requires `manage_organization`
+before the row and its collaborator and team-grant cascade are
+removed. A raw queryset write still does not call the services.

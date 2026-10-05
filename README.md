@@ -99,6 +99,11 @@ The functions are:
   must be the same row, including when a team or repository is
   replaced.
 - `delete_team` deletes one team.
+- `create_repository` creates one repository in a persisted
+  organization. The locked organization is the authorization
+  boundary.
+- `delete_repository` deletes one repository. Collaborator rows and
+  team grants cascade after the stored organization is authorized.
 - `update_organization_ownership` changes the stored ownership row's
   user, organization, or both. The stored organization is authorized
   before a replacement organization is loaded, and that replacement
@@ -147,10 +152,13 @@ collaborator bundle do not grant `manage_organization`.
 
 A raw queryset write does not apply these checks. `register(condition=)`
 reads existing trust rows and does not keep an owner on save or delete.
-Organization-owner admin does not call the ownership or move functions.
-`OrganizationOwnership` stays read-only there for anyone who is not
-a superuser. User admin still calls `delete_user`, so that preflight
-runs there.
+Organization-owner admin calls these functions for every
+authorization-bearing edit it still exposes. `OrganizationOwnership`
+stays read-only for anyone who is not a superuser; a superuser add,
+change, or delete calls the ownership service. `Team.organization`
+and `Repository.organization` cannot be changed from an admin form.
+`LastOrganizationOwner` from user deletion or an ownership delete is
+an admin message, and that write is rolled back.
 
 Requester, team-member, and collaborator relations use
 `settings.AUTH_USER_MODEL`.
@@ -280,9 +288,11 @@ queryset. Conventional organization create, rename, and delete in
 admin call the domain services. User create, rename, and delete call
 them through `ServiceBackedUserAdmin`. `delete_user` refuses the
 deletion when a surviving conventional organization would have no
-owner. `OrganizationOwnership` rows are read-only for non-superusers.
-Stock admin does not yet call the ownership update, ownership delete,
-or organization-move services.
+owner, and the admin shows that refusal instead of deleting the user.
+Team, repository, collaborator, team-grant, and superuser ownership
+edits call the relationship services. `OrganizationOwnership` rows
+stay read-only for non-superusers. `Team.organization` and
+`Repository.organization` are immutable in the admin forms.
 
 The runnable example (`tests.settings`, which `manage.py` loads) lists
 both backends:

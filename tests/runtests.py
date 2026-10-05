@@ -22,6 +22,7 @@ SUITE = [
     'tests.test_migration_0002',
     'tests.test_issue27',
     'tests.test_issue28',
+    'tests.test_admin_services',
     'tests.test_org_scoped_admin',
     'tests.test_seed_example',
     'tests.test_runnable_admin',

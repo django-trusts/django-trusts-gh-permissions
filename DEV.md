@@ -85,11 +85,26 @@ queryset writes still do not run the service checks.
 into the trust-row `EXISTS`, reads rows that already exist, has no
 aggregate that can require another owner, and core installs no save
 or delete signal. The owner count stays in the service. No new
-codename, no new `handle.register`, and no schema migration. Admin
-does not call the new ownership or move functions.
-`OrganizationOwnershipAdmin` stays read-only for non-superusers.
-`ServiceBackedUserAdmin` already calls `delete_user`, so the
-preflight applies to that existing hook.
+codename, no new `handle.register`, and no schema migration.
+
+The admin slice calls those services from the stock hooks.
+`save_model` reads the stored row, and `save_related` replaces team
+members, the team ceiling, and a collaborator's permission bundle.
+`delete_model` and `delete_queryset` (the built-in bulk action)
+delete through the same functions. `OrganizationOwnershipAdmin`
+stays read-only for non-superusers. A superuser ownership change
+calls `add_organization_owner`, `update_organization_ownership`, or
+`delete_organization_ownership`. `move_team_organization` and
+`move_repository_organization` refuse a new organization from the
+form and again from `save_model` before a name write.
+`ServiceBackedUserAdmin` and personal-organization deletion call
+`delete_user`. `LastOrganizationOwner` is a message on that page,
+and the transaction rolls the deletion back. Repository create and
+delete call `create_repository` and `delete_repository`. Each locks
+the persisted organization and requires `manage_organization`
+before it inserts or deletes. Collaborator rows and team grants
+cascade only inside that delete. A raw queryset write still skips
+the services.
 
 The permission terminal is `auth.Permission`, with codenames
 `read_repository`, `write_repository`, and `admin_repository`.

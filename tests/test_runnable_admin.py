@@ -9,9 +9,10 @@ permissions. Object and organization scope stay on
 ``GhAuthorizationBackend`` and the admin adapter. Forged foreign
 parents are rejected by that scoped form before a write.
 
-Relationship writes live in ``gh_permissions.services`` and are tested
-without this admin. This proof stops at admin entry and the queryset
-boundary. Admin saves are not those services.
+Relationship writes in admin call ``gh_permissions.services``. This
+proof stops at admin entry and the queryset boundary: the seeded
+owner sees only owned rows, and a forged foreign parent does not
+write.
 """
 
 from io import StringIO
