@@ -1,4 +1,6 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired with promoted django-trusts dev commit 7503ae83.
-# Never pin django-trusts-zero. Do not float past this commit.
-ref=7503ae83267771abdce920f26ad762a4ee491f36
+# Paired with django-trusts#269 tip 71699ba3 (content-type mismatch denial).
+# That pull request is still draft. Replace this ref with its merge
+# commit when it lands. Never pin django-trusts-zero. Do not float
+# past this commit.
+ref=71699ba35f960780fd9eb1a7fe027623584e8034

@@ -752,3 +752,55 @@ and `TeamRepositoryPermission` are unchanged.
       `UserRepositoryPermission` rows became `RepositoryCollaborator`
       permissions. Both old models are gone.
 - [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
+
+# Content-type mismatch is a denial (django-trusts#267)
+
+This stair does not change the GH schema or `register_organization_owner`.
+It pairs the draft tip of
+[django-trusts#269](https://github.com/django-trusts/django-trusts/pull/269),
+`71699ba35f960780fd9eb1a7fe027623584e8034`. Replace that pin with the
+merge commit when #269 lands. Do not float past it before then.
+
+## Old behavior
+
+The shared owner group contains `manage_organization` (content type
+`organization`) and `read_repository`, `write_repository`, and
+`admin_repository` (content type `repository`). Both
+`OrganizationOwnership` registrations read that whole group. For an
+owner, `has_perm("gh_permissions.read_repository", organization)` and
+`has_perm("gh_permissions.manage_organization", repository)` were
+`True`. Enumeration, `.authorized()`, and the reverse user inquiry
+included the crossed permission. A collaborator or team grant that
+stored `manage_organization` against a repository granted that
+permission on the repository.
+
+## New behavior
+
+The shared grant predicate requires `Permission.content_type` to be the
+protected object's own content identity. Those crossed pairs are
+`False` or empty on `has_perm`, `get_all_permissions`, `.authorized()`,
+`User.objects.permitted`, `repository.get_permitted_users`, and
+`authorization_required`. Same-model grants stay:
+`manage_organization` on an owned organization, and the repository
+codenames on that organization's repositories. `Team` and `Alias` have
+no content-terminal registration and stay the ordinary no-plan denial.
+An active superuser can still receive `True` from Django's `has_perm`
+before the backend runs, and `User.objects.permitted` ORs that same
+rule. Enumeration and `.authorized()` do not. An ordinary owner is
+absent from the crossed reverse result.
+
+This repository does not commit `trusts-policy.lock.yaml`. Rendered
+policy SQL for each `auth.Permission` content gains constant parameters
+for `gh_permissions` and the protected model's name. There is no GH
+migration.
+
+## Migration-bot checklist
+
+- [ ] Pin Core `71699ba35f960780fd9eb1a7fe027623584e8034` in
+      `requirements.txt`, `scripts/django-trusts.pin`, and CI
+      `COMPANION_KERNEL_SHA`.
+- [ ] Leave the owner-group rows and the two ownership registrations
+      unchanged.
+- [ ] Confirm the matching owner pairs stay grants and the crossed
+      pairs deny.
+- [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.

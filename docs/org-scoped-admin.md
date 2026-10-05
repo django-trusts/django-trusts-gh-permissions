@@ -78,7 +78,10 @@ added. The mixin is private. It is not a Core API.
 `OrganizationOwnership` row. `register_organization_owner` is
 installed with no condition, reading `Organization.owner_group`
 permissions for the organization and for that organization's
-repositories. A missing `manage_organization` row authorizes nothing.
+repositories. Each permission still has to match the object's content
+type, so `manage_organization` does not grant on a repository and a
+repository codename does not grant on the organization. A missing
+`manage_organization` row authorizes nothing.
 The seeded owner group holds the broad permissions, and the owner
 registration reads them. Team does not.
 
