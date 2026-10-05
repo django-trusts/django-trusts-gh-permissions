@@ -14,6 +14,7 @@
   <main>
     {% if code %}
       <h1>Authorization code issued</h1>
+      <p id="test-only-spike"><strong>Test-only spike.</strong> This page shows the authorization code, including in the raw handshake box, for development inspection. Do not keep this display in a non-development deployment.</p>
       <p>This page does not exchange the code. The client posts it to the token endpoint.</p>
       <p>The access token is only a test credential for this example endpoint.</p>
     {% elif error %}

@@ -91,6 +91,11 @@ LOGIN_URL = '/accounts/login/'
 # drops the refresh token. It is a test credential for /mcp only.
 OAUTH2_PROVIDER = {
     'PKCE_REQUIRED': True,
+    # RFC 9700 §2.1.1. Server-wide: 3.4.1 has no per-application PKCE
+    # method. PKCE_REQUIRED may be a client_id callable, but that only
+    # requires some challenge. This gate rejects "plain" when the code
+    # is saved and drops it from authorization-server metadata.
+    'COMPLIANT_BCP_RFC9700_PKCE_METHOD': True,
     'REQUEST_APPROVAL_PROMPT': 'force',
     'ALLOWED_REDIRECT_URI_SCHEMES': ['http', 'https'],
     'ALLOW_LOCALHOST_LOOPBACK': True,

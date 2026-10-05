@@ -184,6 +184,11 @@ class McpAuthorizationTests(TestCase):
         })
         self.assertContains(ignored, 'Authorization code issued')
         self.assertContains(ignored, 'does not exchange the code')
+        self.assertContains(ignored, 'id="test-only-spike"')
+        self.assertContains(ignored, 'Test-only spike.')
+        self.assertContains(
+            ignored, 'non-development deployment',
+        )
         self._assert_handshake_dump(ignored, 'code=not-a-grant')
         self.assertEqual(_authority_counts(), {
             'grants': 0,
@@ -286,6 +291,81 @@ class McpAuthorizationTests(TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json()['result'], {'tools': []})
 
+    def test_plain_code_challenge_method_is_rejected(self):
+        self.client.force_login(self.user, backend=MODEL_BACKEND)
+        plain = self.authorize.replace(
+            'code_challenge_method=S256', 'code_challenge_method=plain',
+        )
+        rejected = self.client.get(plain)
+        self.assertEqual(rejected.status_code, 302)
+        query = parse_qs(urlparse(rejected.url).query)
+        self.assertEqual(query['error'], ['invalid_request'])
+        self.assertIn('S256', query['error_description'][0])
+        self.assertNotIn('code', query)
+        self.assertNotContains(rejected, 'All repositories', status_code=302)
+        self.assertEqual(Grant.objects.count(), 0)
+        # A posted form can still name "plain" after the page was skipped.
+        # The toolkit gate refuses it when the code would be saved.
+        page = self.client.get(self.authorize)
+        fields = _posted_fields(page.content.decode())
+        fields['code_challenge_method'] = 'plain'
+        fields['allow'] = 'true'
+        posted = self.client.post(self.authorize, fields)
+        self.assertEqual(posted.status_code, 302)
+        posted_query = parse_qs(urlparse(posted.url).query)
+        self.assertEqual(posted_query['error'], ['invalid_request'])
+        self.assertIn('S256', posted_query['error_description'][0])
+        self.assertNotIn('code', posted_query)
+        self.assertEqual(_authority_counts(), {
+            'grants': 0,
+            'access_tokens': 0,
+            'refresh_tokens': 0,
+            'id_tokens': 0,
+        })
+
+    def test_wrong_resource_token_is_rejected_at_mcp(self):
+        wrong = 'https://example.com/not-this-mcp'
+        self.client.force_login(self.user, backend=MODEL_BACKEND)
+        authorize = authorization_url(TEST_REDIRECT_URI, resource=wrong)
+        page = self.client.get(authorize)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, wrong)
+        fields = _posted_fields(page.content.decode())
+        fields['allow'] = 'true'
+        approved = self.client.post(authorize, fields)
+        self.assertEqual(approved.status_code, 302)
+        code = parse_qs(urlparse(approved.url).query)['code'][0]
+        grant = Grant.objects.get()
+        self.assertEqual(grant.resource, [wrong])
+        token_response = self.client.post(reverse('oauth2_provider:token'), {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': TEST_REDIRECT_URI,
+            'client_id': MCP_CLIENT_ID,
+            'code_verifier': DEV_CODE_VERIFIER,
+            'resource': wrong,
+        })
+        self.assertEqual(token_response.status_code, 200)
+        access_token = token_response.json()['access_token']
+        stored = AccessToken.objects.get()
+        self.assertEqual(stored.resource, [wrong])
+        self.assertEqual(stored.user_id, self.user.pk)
+        denied = self.client.post(
+            reverse('mcp'),
+            data=json.dumps({
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+                'params': {'protocolVersion': MCP_PROTOCOL_VERSION},
+            }),
+            content_type='application/json',
+            HTTP_AUTHORIZATION='Bearer %s' % access_token,
+        )
+        self.assertEqual(denied.status_code, 401)
+        challenge = denied['WWW-Authenticate']
+        self.assertIn('invalid_token', challenge)
+        self.assertIn('not valid for this resource', challenge)
+
     def test_skip_authorization_still_shows_the_picker(self):
         application = ensure_mcp_application()
         application.skip_authorization = True
@@ -324,7 +404,10 @@ class McpAuthorizationTests(TestCase):
         document = server.json()
         self.assertTrue(document['authorization_endpoint'].endswith('/o/authorize/'))
         self.assertTrue(document['token_endpoint'].endswith('/o/token/'))
-        self.assertIn('S256', document['code_challenge_methods_supported'])
+        self.assertEqual(
+            document['code_challenge_methods_supported'],
+            ['S256'],
+        )
         self.assertEqual(document['grant_types_supported'], ['authorization_code'])
         self.assertNotIn('refresh_token', document['grant_types_supported'])
         self.assertEqual(

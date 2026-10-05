@@ -28,6 +28,7 @@ from oauth2_provider.models import get_application_model
 from oauth2_provider.oauth2_backends import OAuthLibCore
 from oauth2_provider.oauth2_validators import OAuth2Validator, is_valid_resource_uri
 from oauth2_provider.scopes import get_scopes_backend
+from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views import AuthorizationView
 from oauth2_provider.www_authenticate import build_bearer_challenge, challenge_status
 from oauthlib.oauth2 import Server
@@ -54,6 +55,11 @@ REDIRECT_URIS = (
     CURSOR_LOOPBACK_IP_REDIRECT_URI,
     CURSOR_WEB_REDIRECT_URI,
 )
+# Printed by seed_mcp_authorization and used as the default resource on
+# that printed authorize URL. Authorize and /mcp do not read it.
+# Discovery and the token audience check use the request host, so a
+# deployment on another host works when the client sends that host's
+# /mcp resource. A token for this localhost URL is a different audience.
 LOCAL_MCP_URL = 'http://localhost:8000/mcp'
 MCP_RESOURCE = LOCAL_MCP_URL
 MCP_PROTOCOL_VERSION = '2025-03-26'
@@ -227,6 +233,25 @@ class McpAuthorizationView(AuthorizationView):
         application = get_application_model().objects.get(
             client_id=credentials['client_id'],
         )
+        # validate_authorization_request still accepts "plain". The
+        # toolkit gate rejects it later, when the code would be saved.
+        # Refuse it here so the consent page is not shown for a method
+        # this server will not store.
+        if (
+            credentials.get('code_challenge_method') == 'plain'
+            and oauth2_settings.COMPLIANT_BCP_RFC9700_PKCE_METHOD
+        ):
+            error = OAuthToolkitError(
+                error=CustomOAuth2Error(
+                    error='invalid_request',
+                    description=(
+                        'Unsupported "plain" code_challenge_method; use "S256".'
+                    ),
+                    state=credentials.get('state'),
+                ),
+                redirect_uri=credentials.get('redirect_uri'),
+            )
+            return self.error_response(error, application)
         resources = request.GET.getlist('resource')
         for uri in resources:
             if not is_valid_resource_uri(uri):
@@ -345,7 +370,13 @@ def _metadata_url(request):
 
 
 def _token_required(request):
-    """Return a 401 challenge, or None when the bearer token is known."""
+    """Return a 401 challenge, or None when the bearer token is known.
+
+    ``scopes=[]`` does not skip the RFC 8707 audience check. When the
+    access token stores a resource list, ``verify_request`` rejects it
+    unless this request's absolute URI is under that list. An empty
+    list stays unrestricted.
+    """
     core = OAuthLibCore(Server(OAuth2Validator()))
     valid, oauthlib_request = core.verify_request(request, scopes=[])
     if valid:

@@ -21,6 +21,12 @@ callback with an authorization code. Cancel redirects with
 `error=access_denied` and issues nothing. The callback page does not
 exchange the code. The client posts the code to the token endpoint.
 
+The callback page is a **test-only spike**. When a code is present it
+labels itself that way and shows the code, including inside the raw
+handshake box, so a development client can be inspected. That display
+must not be kept in a non-development deployment. The textarea stays
+for this spike, including on a test host.
+
 The token endpoint returns an access token that expires in one hour.
 There is no refresh token. `POST /mcp` accepts that bearer token for
 `initialize` and an empty `tools/list`. A missing or unknown token is
@@ -50,6 +56,15 @@ is unused.
 
 - `AuthorizationView` validates `client_id`, redirect URI, response
   type, scope, and PKCE before a page is shown.
+- `OAUTH2_PROVIDER['COMPLIANT_BCP_RFC9700_PKCE_METHOD']` is `True`.
+  In 3.4.1 that gate is server-wide. There is no per-application PKCE
+  method. `PKCE_REQUIRED` may be a callable of `client_id`, and that
+  callable only decides whether some challenge is required. With the
+  gate on, authorization-server metadata advertises only `S256`, and
+  `OAuth2Validator._create_authorization_code` rejects
+  `code_challenge_method=plain` before it stores a grant.
+  `validate_authorization_request` still accepts `plain`, so
+  `McpAuthorizationView.get` refuses it before the consent page.
 - `LoginRequiredMixin` sends an anonymous human to `LOGIN_URL` and
   preserves the authorize URL in `next`.
 - `AllowForm` round-trips the validated request, including the RFC 8707
@@ -105,6 +120,30 @@ python manage.py seed_example
 python manage.py seed_mcp_authorization
 python manage.py runserver
 ```
+
+`LOCAL_MCP_URL` / `MCP_RESOURCE` (`http://localhost:8000/mcp`) is the
+URL this command prints, and the default `resource` on that printed
+authorize URL. Authorization and `/mcp` do not read that constant.
+Protected-resource metadata and the bearer-token audience check use
+`request.build_absolute_uri`. A client that discovers
+`https://<this-host>/mcp` and sends that `resource` is checked against
+the host that received the MCP request. A token minted for
+`http://localhost:8000/mcp` does not authorize a different host. Behind
+a TLS-terminating proxy, `SECURE_PROXY_SSL_HEADER` and
+`USE_X_FORWARDED_HOST` are what make that absolute URI `https`.
+
+A `resource` value is checked at authorize time only as an absolute URI
+(`is_valid_resource_uri`). A well-formed indicator for another host
+still reaches the consent page. Approve stores it on `Grant.resource`.
+The token endpoint copies it onto `AccessToken.resource` (a token
+request may only narrow that list). `/mcp` calls
+`OAuthLibCore.verify_request` with `scopes=[]`. That still runs
+`AccessToken.allows_audience` against the absolute request URI when the
+token's resource list is non-empty, using
+`validate_resource_as_url_prefix`. A token for another resource is
+rejected. An empty resource list is unrestricted: the toolkit treats it
+as any audience, and this spike does not add a second check. There is
+no setting for an allowed-resource list.
 
 `runserver` must stay on port 8000. The MCP URL Cursor should use is:
 
