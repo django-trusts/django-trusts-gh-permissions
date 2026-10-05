@@ -190,3 +190,12 @@ Discovery is the toolkit's own documents:
 `tests.settings` stores that development database in `db.sqlite3` at
 the repository root (gitignored). The test runner does not use that
 file.
+
+## Known gaps
+
+A token with an empty `resource` list is unrestricted at `/mcp`.
+django-oauth-toolkit 3.4.1 `AccessToken.allows_audience` returns true
+for an empty list (`models.py`, around lines 686–689), and 3.4.1 has
+no setting that requires this server's `/mcp` audience. This spike
+deliberately leaves that. It does not add a delegation or installation
+schema.
