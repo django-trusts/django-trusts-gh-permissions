@@ -36,7 +36,7 @@ Earlier GH snapshots paired with Step I `django-trusts==1.0.0.dev2`
 ## Public changes
 
 | Surface | Old (merged `eab54b8`) | New (#12) |
-| --- | --- | --- |
+| --- | --- |
 | Requester / member / direct-grant subject | `Account` (`name`) | `settings.AUTH_USER_MODEL` (tests/fixtures: `get_user_model()`) |
 | Direct permission row | `AccountRepoGrant(account, repository, operation)` | `UserRepositoryPermission(user, repository, operation)` |
 | Team permission row | `TeamRepoGrant(team, repository, operation)` | `TeamRepositoryPermission(team, repository, operation)` |
