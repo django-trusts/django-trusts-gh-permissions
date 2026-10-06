@@ -27,6 +27,7 @@ SUITE = [
     'tests.test_org_scoped_admin',
     'tests.test_seed_example',
     'tests.test_runnable_admin',
+    'tests.test_drf_repositories',
 ]
 
 

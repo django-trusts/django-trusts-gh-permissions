@@ -15,6 +15,7 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.admin',
+    'rest_framework',
     'gh_permissions.apps.GhPermissionsConfig',
 )
 
@@ -72,3 +73,11 @@ DATABASES = {
 }
 
 ROOT_URLCONF = 'tests.urls'
+
+# Session authentication for the runnable repository API. DRF is an
+# example/test dependency; gh_permissions does not import it.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+}

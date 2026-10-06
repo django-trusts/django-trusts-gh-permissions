@@ -237,6 +237,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         # README's configure block is the object-authorization install.
         # The live settings add the admin harness and ModelBackend so
         # stock admin can authenticate and read no-object model permissions.
+        # rest_framework is the runnable repository API, not gh_permissions.
         self.assertEqual(
             settings.INSTALLED_APPS,
             (
@@ -247,6 +248,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
                 'django.contrib.messages',
                 'django.contrib.staticfiles',
                 'django.contrib.admin',
+                'rest_framework',
                 'gh_permissions.apps.GhPermissionsConfig',
             ),
         )

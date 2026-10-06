@@ -39,7 +39,7 @@ jobs:
     - name: Install final core then GH
       run: |
         python -m pip install --upgrade pip
-        python -m pip install "Django>=6.1,<6.2" coverage
+        python -m pip install "Django>=6.1,<6.2" coverage "djangorestframework==3.18.1"
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
     - name: Pin guard
@@ -81,7 +81,7 @@ jobs:
         test "${COMPANION_KERNEL_SHA}" = "47ae25cffcfa542b3e4a2940f528a63fcb32062d"
         test "$(git -C .deps/django-trusts rev-parse HEAD)" = "47ae25cffcfa542b3e4a2940f528a63fcb32062d"
         python -m pip install --upgrade pip
-        python -m pip install "Django>=6.1,<6.2" coverage
+        python -m pip install "Django>=6.1,<6.2" coverage "djangorestframework==3.18.1"
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
         coverage run -m tests.runtests

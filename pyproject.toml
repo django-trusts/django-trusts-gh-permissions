@@ -37,6 +37,8 @@ Issues = "https://github.com/django-trusts/django-trusts-gh-permissions/issues"
 [project.optional-dependencies]
 test = [
     "coverage>=7.0",
+    # Runnable example and tests only. Not a gh_permissions dependency.
+    "djangorestframework==3.18.1",
 ]
 
 # django-trusts>=1.0.0.dev3,<2 is required (final core library floor).
