@@ -24,6 +24,7 @@ from example.api import (
     MANAGE_ORGANIZATION,
     READ_REPOSITORY,
     RepositoryActionPermission,
+    _permission_row,
 )
 from example.management.commands.seed_example import (
     DEFAULT_ORGANIZATION_NAME,
@@ -211,6 +212,20 @@ class RepositoryApiTests(TestCase):
         self.assertEqual(mapping['retrieve'], READ_REPOSITORY)
         self.assertEqual(mapping['create'], MANAGE_ORGANIZATION)
         self.assertEqual(set(mapping), {'list', 'retrieve', 'create'})
+
+    def test_permission_row_is_bound_to_the_repository_content_type(self):
+        organization_type = ContentType.objects.get_for_model(Organization)
+        other = Permission.objects.create(
+            name='Same codename on another model',
+            content_type=organization_type,
+            codename='read_repository',
+        )
+        row = _permission_row(READ_REPOSITORY, Repository)
+        self.assertEqual(row.content_type.model, 'repository')
+        self.assertEqual(row.codename, 'read_repository')
+        self.assertNotEqual(row.pk, other.pk)
+        self._assert_reads(self.owner, self.owned)
+        self._assert_reads(self.reader, (self.repo_a,))
 
     def test_owner_sees_owned_repositories_and_can_create(self):
         self._assert_reads(self.owner, self.owned)

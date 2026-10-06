@@ -382,9 +382,11 @@ The runnable example (`tests.settings`, which `manage.py` loads) adds
 
 `example.api.RepositoryViewSet.action_permissions` is the only
 action-to-permission map. List and retrieve both use
-`read_repository`. The view resolves that string to an
-`auth.Permission` row and calls `.authorized(user, permission)` before
-pagination. Serialization reads `id`, `name`, and `organization_id`
+`read_repository`. The view resolves that string to the
+`auth.Permission` row whose content type is the repository model,
+then calls `.authorized(user, permission)` before pagination. Another
+model in the same app may reuse the codename; that row is not this
+permission. Serialization reads `id`, `name`, and `organization_id`
 off those rows, so the page does not run a permission query per
 repository.
 

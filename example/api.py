@@ -5,15 +5,13 @@ example. List and retrieve share one permission string and one
 queryset. Create calls ``gh_permissions.services.create_repository``
 rather than inserting a row here.
 
-``user.has_perm`` is only called with a ``app_label.codename`` string.
-``.authorized()`` takes the ``auth.Permission`` row that string names.
-The lookup is Django's public permission string (application label and
-codename). There is no extra content-type filter.
+``user.has_perm`` is only called with an ``app_label.codename`` string.
+``.authorized()`` takes the ``auth.Permission`` row for that codename
+on the protected model's content type. A codename is unique per
+content type, not per app, so the read queryset binds ``Repository``.
 """
 
 from django.contrib.auth.models import Permission
-from django.core.exceptions import ValidationError
-from django.db import DataError
 from django.http import Http404
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.authentication import SessionAuthentication
@@ -83,11 +81,17 @@ class RepositorySerializer(serializers.Serializer):
         return super(RepositorySerializer, self).to_internal_value(data)
 
 
-def _permission_row(code):
-    """``auth.Permission`` for a Django ``app_label.codename`` string."""
+def _permission_row(code, model):
+    """``auth.Permission`` for ``code`` on ``model``'s content type.
+
+    The action map stays a permission string. The model is the queryset
+    being authorized, not a second map. For list and retrieve that
+    model is ``Repository``.
+    """
     app_label, codename = code.split('.', 1)
     return Permission.objects.get(
         content_type__app_label=app_label,
+        content_type__model=model._meta.model_name,
         codename=codename,
     )
 
@@ -119,12 +123,12 @@ class RepositoryViewSet(
 ):
     """List and retrieve with ``read_repository``. Create via the service.
 
-    Retrieve is 404 when the row is missing, the primary key is
-    malformed, the caller cannot read it, or the object check disagrees
-    with the queryset. The body is DRF's not-found detail and does not
-    include the repository. List is an empty page for an authenticated
-    caller with no rows. Anonymous requests are rejected by
-    authentication before either path.
+    Retrieve uses DRF's ``get_object`` on the authorized queryset, so a
+    missing or malformed primary key is 404. An object-permission
+    failure is also 404, not 403. The body is DRF's not-found detail
+    and does not include the repository. List is an empty page for an
+    authenticated caller with no rows. Anonymous requests are rejected
+    by authentication before either path.
 
     Create has no repository object. ``create_repository`` locks the
     submitted organization and requires ``manage_organization``,
@@ -152,30 +156,33 @@ class RepositoryViewSet(
         if not is_active_principal(user):
             return Repository.objects.none()
         return Repository.objects.authorized(
-            user, _permission_row(code),
+            user, _permission_row(code, Repository),
         ).order_by('pk')
 
     def get_object(self):
-        queryset = self.filter_queryset(self.get_queryset())
-        lookup = self.lookup_url_kwarg or self.lookup_field
+        """DRF's lookup, then one not-found detail.
+
+        ``GenericAPIView.get_object`` already 404s when the primary key
+        is missing or the wrong type. Django's shortcut puts the model
+        name in that message. Re-raising a bare ``Http404`` keeps
+        malformed, missing, and unauthorized keys on the same body.
+        """
         try:
-            obj = queryset.get(**{self.lookup_field: self.kwargs[lookup]})
-        except (
-            Repository.DoesNotExist,
-            ValueError,
-            TypeError,
-            ValidationError,
-            OverflowError,
-            DataError,
-        ):
+            return super().get_object()
+        except Http404:
             raise Http404
-        self.check_object_permissions(self.request, obj)
-        return obj
 
     def check_object_permissions(self, request, obj):
-        for permission in self.get_permissions():
-            if not permission.has_object_permission(request, self, obj):
-                raise Http404
+        """404 when the object check disagrees with the queryset.
+
+        DRF's ``get_object`` already turns a missing row and a malformed
+        primary key into 404. Its object-permission failure is 403,
+        which would confirm that the primary key exists.
+        """
+        try:
+            super().check_object_permissions(request, obj)
+        except PermissionDenied:
+            raise Http404
 
     def perform_create(self, serializer):
         if self.action_permissions.get(self.action) != MANAGE_ORGANIZATION:
