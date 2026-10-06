@@ -756,10 +756,9 @@ and `TeamRepositoryPermission` are unchanged.
 # Content-type mismatch is a denial (django-trusts#267)
 
 This stair does not change the GH schema or `register_organization_owner`.
-It pairs the approved, unmerged head of
+It pairs the merge commit of
 [django-trusts#269](https://github.com/django-trusts/django-trusts/pull/269),
-`1553d7a54c755e121136578b40280d20ffc709b1`. Replace that pin with the
-merge commit when #269 lands. Do not float past it before then.
+`47ae25cffcfa542b3e4a2940f528a63fcb32062d`. Do not float past it.
 
 ## Old behavior
 
@@ -797,7 +796,7 @@ migration.
 
 ## Migration-bot checklist
 
-- [ ] Pin Core `1553d7a54c755e121136578b40280d20ffc709b1` in
+- [ ] Pin Core `47ae25cffcfa542b3e4a2940f528a63fcb32062d` in
       `requirements.txt`, `scripts/django-trusts.pin`, and CI
       `COMPANION_KERNEL_SHA`.
 - [ ] Leave the owner-group rows and the two ownership registrations
