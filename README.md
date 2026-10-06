@@ -416,18 +416,27 @@ caller with no rows gets **200** and an empty page, not an error.
 `ModelBackend` is not either: that backend does not answer object
 checks, and the list stays empty.
 
-Authentication is a bearer token or a session. Bearer authentication
-is listed first. It reads `Authorization: Bearer <token>` and looks
-that token up in `EXAMPLE_API_TOKENS`, a mapping of token to username.
-`tests.settings` fills the mapping from `EXAMPLE_API_TOKEN_OWNER`
+Authentication is a bearer token or a session. This bearer map is a
+development deployment harness, not production token infrastructure.
+Bearer authentication is listed first. It reads `Authorization: Bearer <token>`
+and looks that token up in `EXAMPLE_API_TOKENS`, a mapping of token to
+username. `tests.settings` fills the mapping from `EXAMPLE_API_TOKEN_OWNER`
 (`example-owner`), `EXAMPLE_API_TOKEN_DIRECT` (`example-direct`), and
 `EXAMPLE_API_TOKEN_OUTSIDER` (`example-outsider`) when the process
-starts. An unset or empty variable adds no entry. The tokens are not
+starts. An unset or empty variable adds no entry. Generate each value
+with `secrets.token_urlsafe(32)` (43 characters). A shorter value is a
+configuration error and the process does not start. The tokens are not
 in the source and are not in the seed. Comparison walks every
 configured token and uses `hmac.compare_digest` on SHA-256 digests.
 An unknown token fails authentication. An inactive user is rejected
-with `is_active_principal`, the same rule as `has_perm`. A request
-with no `Authorization` header still uses session login.
+with `is_active_principal`, the same rule as `has_perm`. The
+authenticator returns no credential marker, so `request.auth` does not
+keep the token. A request with no `Authorization` header still uses
+session login.
+
+The harness has no expiry, no rotation protocol, no per-token scope,
+no durable revocation or audit record, and no protection against
+username reuse.
 
 Anonymous requests, and requests with a missing or unknown bearer
 token, are rejected before the queryset. Because bearer

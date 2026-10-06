@@ -65,7 +65,9 @@ class BearerTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed('Invalid token.')
         if not is_active_principal(user):
             raise AuthenticationFailed('User inactive or deleted.')
-        return (user, presented)
+        # None, not the presented secret. request.auth keeps this value
+        # for the rest of the request.
+        return (user, None)
 
     def authenticate_header(self, request):
         return self.keyword

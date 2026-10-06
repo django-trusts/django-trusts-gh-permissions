@@ -24,7 +24,8 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils.module_loading import import_string
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.test import APIClient
+from rest_framework.request import Request
+from rest_framework.test import APIClient, APIRequestFactory
 
 from example.api import (
     MANAGE_ORGANIZATION,
@@ -615,6 +616,22 @@ class BearerTokenApiTests(TestCase):
         )
         self.assertEqual(configured, RepositoryViewSet.authentication_classes)
 
+    def test_request_auth_does_not_carry_the_bearer_secret(self):
+        token = secrets.token_urlsafe(32)
+        raw = APIRequestFactory().get(
+            '/api/repositories/',
+            HTTP_AUTHORIZATION='Bearer %s' % token,
+        )
+        with override_settings(EXAMPLE_API_TOKENS={token: self.owner.username}):
+            user, marker = BearerTokenAuthentication().authenticate(raw)
+            request = Request(raw, authenticators=(BearerTokenAuthentication(),))
+            self.assertEqual(request.user.pk, self.owner.pk)
+            self.assertIsNone(request.auth)
+            self.assertIsNone(marker)
+            self.assertEqual(user.pk, self.owner.pk)
+        self.assertNotIn(token, '' if request.auth is None else str(request.auth))
+        self.assertNotEqual(request.auth, token)
+
     def test_digest_compare_checks_every_configured_token(self):
         shorter = secrets.token_hex(16)
         longer = shorter + secrets.token_hex(4)
@@ -808,9 +825,9 @@ class BearerTokenSettingsTests(SimpleTestCase):
     def test_environment_populates_the_three_seeded_users(self):
         from tests.settings import _example_api_tokens
 
-        owner = secrets.token_hex(16)
-        direct = secrets.token_hex(16)
-        outsider = secrets.token_hex(16)
+        owner = secrets.token_urlsafe(32)
+        direct = secrets.token_urlsafe(32)
+        outsider = secrets.token_urlsafe(32)
         with patch.dict(os.environ, {
             'EXAMPLE_API_TOKEN_OWNER': owner,
             'EXAMPLE_API_TOKEN_DIRECT': direct,
@@ -825,7 +842,7 @@ class BearerTokenSettingsTests(SimpleTestCase):
     def test_one_token_in_two_variables_is_a_configuration_error(self):
         from tests.settings import _example_api_tokens
 
-        shared = secrets.token_hex(16)
+        shared = secrets.token_urlsafe(32)
         with patch.dict(os.environ, {
             'EXAMPLE_API_TOKEN_OWNER': shared,
             'EXAMPLE_API_TOKEN_DIRECT': shared,
@@ -834,6 +851,31 @@ class BearerTokenSettingsTests(SimpleTestCase):
             with self.assertRaises(ImproperlyConfigured) as ctx:
                 _example_api_tokens()
         self.assertNotIn(shared, str(ctx.exception))
+
+    def test_minimum_length_matches_token_urlsafe_32(self):
+        from tests.settings import EXAMPLE_API_TOKEN_MIN_LENGTH
+
+        self.assertEqual(
+            EXAMPLE_API_TOKEN_MIN_LENGTH,
+            len(secrets.token_urlsafe(32)),
+        )
+
+    def test_short_token_is_a_configuration_error(self):
+        from tests.settings import EXAMPLE_API_TOKEN_MIN_LENGTH, _example_api_tokens
+
+        short = 'x' * (EXAMPLE_API_TOKEN_MIN_LENGTH - 1)
+        one = 'y'
+        for value in (one, short):
+            with patch.dict(os.environ, {
+                'EXAMPLE_API_TOKEN_OWNER': value,
+                'EXAMPLE_API_TOKEN_DIRECT': '',
+                'EXAMPLE_API_TOKEN_OUTSIDER': '',
+            }):
+                with self.assertRaises(ImproperlyConfigured) as ctx:
+                    _example_api_tokens()
+            self.assertNotIn(value, str(ctx.exception))
+            self.assertIn('EXAMPLE_API_TOKEN_OWNER', str(ctx.exception))
+            self.assertIn('secrets.token_urlsafe(32)', str(ctx.exception))
 
 
 class SeededRepositoryApiTests(TestCase):

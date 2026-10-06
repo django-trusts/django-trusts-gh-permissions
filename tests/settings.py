@@ -79,10 +79,16 @@ DATABASES = {
 
 ROOT_URLCONF = 'tests.urls'
 
-# Bearer tokens for the runnable example. The mapping is token to
-# username. Values come from the environment when this module loads.
-# An unset or empty variable adds no entry. The same token in two
-# variables is a configuration error. Nothing here is a token value.
+# Development deployment harness. Not production token infrastructure.
+# The mapping is token to username. Values come from the environment
+# when this module loads. An unset or empty variable adds no entry.
+# Generate a value with secrets.token_urlsafe(32). A shorter value is
+# a configuration error. The same token in two variables is also a
+# configuration error. Nothing here is a token value. This harness has
+# no expiry, no rotation protocol, no per-token scope, no durable
+# revocation or audit record, and no protection against username reuse.
+# 43 is len(secrets.token_urlsafe(32)).
+EXAMPLE_API_TOKEN_MIN_LENGTH = 43
 _EXAMPLE_API_TOKEN_USERS = (
     ('EXAMPLE_API_TOKEN_OWNER', 'example-owner'),
     ('EXAMPLE_API_TOKEN_DIRECT', 'example-direct'),
@@ -96,6 +102,12 @@ def _example_api_tokens():
         value = os.environ.get(env_name) or ''
         if not value:
             continue
+        if len(value) < EXAMPLE_API_TOKEN_MIN_LENGTH:
+            raise ImproperlyConfigured(
+                '%s must be at least %s characters. '
+                'Generate one with secrets.token_urlsafe(32).'
+                % (env_name, EXAMPLE_API_TOKEN_MIN_LENGTH),
+            )
         if value in tokens:
             raise ImproperlyConfigured(
                 '%s and another EXAMPLE_API_TOKEN_* variable share one token.'
