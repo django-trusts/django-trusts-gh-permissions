@@ -6,12 +6,10 @@ queryset. Create calls ``gh_permissions.services.create_repository``
 rather than inserting a row here.
 
 ``user.has_perm`` is only called with an ``app_label.codename`` string.
-``.authorized()`` takes the ``auth.Permission`` row for that codename
-on the protected model's content type. A codename is unique per
-content type, not per app, so the read queryset binds ``Repository``.
+List and retrieve call ``Repository.objects.permitted`` with that
+string. The queryset binds it to the repository content type.
 """
 
-from django.contrib.auth.models import Permission
 from django.http import Http404
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.authentication import SessionAuthentication
@@ -28,7 +26,6 @@ from gh_permissions.services import (
     UndefinedRelationshipWrite,
     create_repository,
 )
-from trusts.query import is_active_principal
 
 
 READ_REPOSITORY = 'gh_permissions.read_repository'
@@ -82,21 +79,6 @@ class RepositorySerializer(serializers.Serializer):
         return super(RepositorySerializer, self).to_internal_value(data)
 
 
-def _permission_row(code, model):
-    """``auth.Permission`` for ``code`` on ``model``'s content type.
-
-    The action map stays a permission string. The model is the queryset
-    being authorized, not a second map. For list and retrieve that
-    model is ``Repository``.
-    """
-    app_label, codename = code.split('.', 1)
-    return Permission.objects.get(
-        content_type__app_label=app_label,
-        content_type__model=model._meta.model_name,
-        codename=codename,
-    )
-
-
 class RepositoryActionPermission(BasePermission):
     """Read the view's action map. Do not invent a second one.
 
@@ -124,7 +106,7 @@ class RepositoryViewSet(
 ):
     """List and retrieve with ``read_repository``. Create via the service.
 
-    Retrieve uses DRF's ``get_object`` on the authorized queryset, so a
+    Retrieve uses DRF's ``get_object`` on the permitted queryset, so a
     missing or malformed primary key is 404. An object-permission
     failure is also 404, not 403. The body is DRF's not-found detail
     and does not include the repository. List is an empty page for an
@@ -134,7 +116,7 @@ class RepositoryViewSet(
 
     Create has no repository object. ``create_repository`` locks the
     submitted organization and requires ``manage_organization``,
-    including the active-superuser rule that ``.authorized()`` does not
+    including the active-superuser rule that ``permitted`` does not
     copy. A denied or missing parent is 403 and writes nothing.
     """
 
@@ -152,16 +134,8 @@ class RepositoryViewSet(
         read_code = self.action_permissions['list']
         if code != read_code or code != self.action_permissions['retrieve']:
             return Repository.objects.none()
-        user = self.request.user
-        # ``.authorized()`` does not apply Django's inactive-principal
-        # rule. ``is_active_principal`` is the public wrapper that keeps
-        # this queryset aligned with ``user.has_perm`` for that case.
-        # Active superusers stay on ``.authorized()``: ``has_perm`` is
-        # true for them even when this queryset is empty.
-        if not is_active_principal(user):
-            return Repository.objects.none()
-        return Repository.objects.authorized(
-            user, _permission_row(code, Repository),
+        return Repository.objects.permitted(
+            code, self.request.user,
         ).order_by('pk')
 
     def get_object(self):

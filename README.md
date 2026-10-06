@@ -376,35 +376,32 @@ The runnable example (`tests.settings`, which `manage.py` loads) adds
 
 | Request | Permission | Result |
 | --- | --- | --- |
-| `GET /api/repositories/` | `gh_permissions.read_repository` | Page of rows from `Repository.objects.authorized` |
-| `GET /api/repositories/{pk}/` | `gh_permissions.read_repository` | That same queryset, one row |
+| `GET /api/repositories/` | `gh_permissions.read_repository` | Page of rows from `Repository.objects.permitted` |
+| `GET /api/repositories/{pk}/` | `gh_permissions.read_repository` | DRF `get_object()` on that same queryset |
 | `POST /api/repositories/` | `gh_permissions.manage_organization` | `gh_permissions.services.create_repository` |
 
 `example.api.RepositoryViewSet.action_permissions` is the only
 action-to-permission map. List and retrieve both use
-`read_repository`. The view resolves that string to the
-`auth.Permission` row whose content type is the repository model,
-then calls `.authorized(user, permission)` before pagination. Another
-model in the same app may reuse the codename; that row is not this
-permission. Serialization reads `id`, `name`, and `organization_id`
+`gh_permissions.read_repository`. The view calls
+`Repository.objects.permitted` with that string and the request user
+before pagination. `permitted` binds the codename to the repository
+content type, so another model in the same app may reuse the codename
+without becoming this permission. An inactive principal gets an empty
+queryset from `permitted`, which is what
+`user.has_perm(permission_string, repository)` does for an inactive
+owner, collaborator, or team member. `has_perm` is only called with
+that string. Serialization reads `id`, `name`, and `organization_id`
 off those rows, so the page does not run a permission query per
 repository.
 
-`.authorized()` does not apply Django's inactive-principal rule.
-The view calls public `trusts.query.is_active_principal` first and
-uses an empty queryset when that is false, which is what
-`user.has_perm(permission_string, repository)` does for an inactive
-owner, collaborator, or team member. `has_perm` is only called with
-that string, never with a permission row.
-
 An active superuser is the Django exception. `has_perm` is true for
 every string, including a repository the superuser was not granted.
-`.authorized()` still returns only persisted grants, and this API
-follows that queryset. A superuser with no grant gets an empty list
-and a 404 for that primary key. `create_repository` still allows an
-active superuser to create in an existing organization. The new row
-shows up for an owner of that organization, and it still does not
-show up in the superuser's list.
+`permitted` still returns only persisted grants, and this API follows
+that queryset. A superuser with no grant gets an empty list and a 404
+for that primary key. `create_repository` still allows an active
+superuser to create in an existing organization. The new row shows up
+for an owner of that organization, and it still does not show up in
+the superuser's list.
 
 Retrieve uses one status for every primary key the caller cannot
 read. A malformed key, a missing key, and a real key outside the
@@ -486,9 +483,9 @@ visible or hidden repositories are added.
 
 | Request | Queries | What they are |
 | --- | --- | --- |
-| list | 3 | permission row, count of the distinct authorized queryset, one page of that queryset |
-| retrieve | 3 | permission row, authorized lookup by primary key, `has_perm` object check |
-| denied retrieve | 2 | permission row, authorized lookup misses; no object check |
+| list | 2 | count of the distinct permitted queryset, one page of that queryset |
+| retrieve | 2 | permitted lookup by primary key, `has_perm` object check |
+| denied retrieve | 1 | permitted lookup misses; no object check |
 | create | 8 | transaction savepoint, lock the actor, lock the organization, `manage_organization` row, authorized existence check, duplicate-name check, insert, release savepoint |
 
 From a checkout with the dependencies installed, one allowed list and

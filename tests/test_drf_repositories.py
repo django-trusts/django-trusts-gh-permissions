@@ -32,7 +32,6 @@ from example.api import (
     READ_REPOSITORY,
     RepositoryActionPermission,
     RepositoryViewSet,
-    _permission_row,
 )
 from example.authentication import (
     BearerTokenAuthentication,
@@ -67,9 +66,9 @@ from trusts.query import is_active_principal
 # Steady-state query counts for one already-authenticated JSON request
 # on Django 6.1 / SQLite, measured in ``QueryCountTests``. Content types
 # are warmed first so the number is the request itself.
-LIST_QUERIES = 3
-RETRIEVE_QUERIES = 3
-DENIED_RETRIEVE_QUERIES = 2
+LIST_QUERIES = 2
+RETRIEVE_QUERIES = 2
+DENIED_RETRIEVE_QUERIES = 1
 CREATE_QUERIES = 8
 
 
@@ -225,17 +224,17 @@ class RepositoryApiTests(TestCase):
         self.assertEqual(mapping['create'], MANAGE_ORGANIZATION)
         self.assertEqual(set(mapping), {'list', 'retrieve', 'create'})
 
-    def test_permission_row_is_bound_to_the_repository_content_type(self):
+    def test_permitted_string_binds_the_repository_content_type(self):
         organization_type = ContentType.objects.get_for_model(Organization)
-        other = Permission.objects.create(
+        Permission.objects.create(
             name='Same codename on another model',
             content_type=organization_type,
             codename='read_repository',
         )
-        row = _permission_row(READ_REPOSITORY, Repository)
-        self.assertEqual(row.content_type.model, 'repository')
-        self.assertEqual(row.codename, 'read_repository')
-        self.assertNotEqual(row.pk, other.pk)
+        listed = list(Repository.objects.permitted(
+            READ_REPOSITORY, self.owner,
+        ).order_by('pk'))
+        self.assertEqual(listed, list(self.owned))
         self._assert_reads(self.owner, self.owned)
         self._assert_reads(self.reader, (self.repo_a,))
 
@@ -319,13 +318,16 @@ class RepositoryApiTests(TestCase):
         self._assert_reads(self.owner_b, (self.repo_b,))
 
     def test_inactive_principals_match_has_perm_not_the_raw_queryset(self):
-        # This core pin's ``.authorized()`` does not apply inactivity.
-        # The adapter uses ``is_active_principal`` so the API matches
-        # ``has_perm``.
+        # ``authorized()`` still skips inactivity. ``permitted()`` applies
+        # it, and the API uses ``permitted()``.
         self.assertFalse(is_active_principal(self.inactive_owner))
         self.assertIn(
             self.repo_a,
             list(Repository.objects.authorized(self.inactive_owner, self.read)),
+        )
+        self.assertEqual(
+            list(Repository.objects.permitted(READ_REPOSITORY, self.inactive_owner)),
+            [],
         )
         self.assertIn(
             self.repo_a,
@@ -355,6 +357,10 @@ class RepositoryApiTests(TestCase):
         self.assertNotIn(
             self.repo_b,
             list(Repository.objects.authorized(self.superuser, self.read)),
+        )
+        self.assertNotIn(
+            self.repo_b,
+            list(Repository.objects.permitted(READ_REPOSITORY, self.superuser)),
         )
         self._assert_reads(self.superuser, ())
         response = self._create(self.superuser, {
