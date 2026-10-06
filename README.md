@@ -416,10 +416,42 @@ caller with no rows gets **200** and an empty page, not an error.
 `ModelBackend` is not either: that backend does not answer object
 checks, and the list stays empty.
 
-Anonymous requests are rejected before the queryset. DRF 3.18 session
-authentication does not send a `WWW-Authenticate` challenge, so the
-status is **403** and the detail is `Authentication credentials were
-not provided.` No repository row is queried.
+Authentication is a bearer token or a session. Bearer authentication
+is listed first. It reads `Authorization: Bearer <token>` and looks
+that token up in `EXAMPLE_API_TOKENS`, a mapping of token to username.
+`tests.settings` fills the mapping from `EXAMPLE_API_TOKEN_OWNER`
+(`example-owner`), `EXAMPLE_API_TOKEN_DIRECT` (`example-direct`), and
+`EXAMPLE_API_TOKEN_OUTSIDER` (`example-outsider`) when the process
+starts. An unset or empty variable adds no entry. The tokens are not
+in the source and are not in the seed. Comparison walks every
+configured token and uses `hmac.compare_digest` on SHA-256 digests.
+An unknown token fails authentication. An inactive user is rejected
+with `is_active_principal`, the same rule as `has_perm`. A request
+with no `Authorization` header still uses session login.
+
+Anonymous requests, and requests with a missing or unknown bearer
+token, are rejected before the queryset. Because bearer
+authentication is first, DRF sends `WWW-Authenticate: Bearer` and the
+status is **401**. The missing-credential detail is `Authentication
+credentials were not provided.` An unknown token's detail is `Invalid
+token.` No repository row is queried.
+
+```console
+curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8000/api/repositories/
+```
+
+Replace `<token>` with the value of one of those environment
+variables. `python manage.py runserver` serves the API after
+`seed_example`. This is the header a client, including an MCP agent,
+sends with curl. There is no OAuth, scope, or separate agent user.
+
+`example-owner` is staff, so `/admin/login/` can start that session.
+`example-direct` and `example-outsider` are not staff, so admin login
+cannot. Their live calls use `EXAMPLE_API_TOKEN_DIRECT` and
+`EXAMPLE_API_TOKEN_OUTSIDER`: the direct collaborator can list and is
+refused on create, and the outsider's retrieve is 404. `example-team`
+is not staff either and has no token variable. The test client covers
+that member.
 
 Create does not insert a repository itself. It calls
 `create_repository`, which locks the submitted organization and

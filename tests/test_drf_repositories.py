@@ -5,26 +5,37 @@ of a row the caller cannot read is 404, the same body as a missing or
 malformed primary key. Create calls ``create_repository``.
 """
 
+import os
+import secrets
 import subprocess
 import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.db import connection
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils.module_loading import import_string
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.test import APIClient
 
 from example.api import (
     MANAGE_ORGANIZATION,
     READ_REPOSITORY,
     RepositoryActionPermission,
+    RepositoryViewSet,
     _permission_row,
+)
+from example.authentication import (
+    BearerTokenAuthentication,
+    _username_for_token,
 )
 from example.management.commands.seed_example import (
     DEFAULT_ORGANIZATION_NAME,
@@ -73,7 +84,7 @@ class RepositoryApiTests(TestCase):
     """Explicit graph for the authorization cases."""
 
     def setUp(self):
-        super(RepositoryApiTests, self).setUp()
+        TestCase.setUp(self)
         ContentType.objects.get_for_model(Repository)
         ContentType.objects.get_for_model(Organization)
         User = get_user_model()
@@ -379,9 +390,10 @@ class RepositoryApiTests(TestCase):
                 'organization_id': self.org_a.pk,
             }, format='json')
         for response in (listed, fetched, created):
-            # DRF 3.18 SessionAuthentication has no WWW-Authenticate
-            # challenge, so an anonymous request is 403, not 401.
-            self.assertEqual(response.status_code, 403)
+            # Bearer authentication is first and sends WWW-Authenticate,
+            # so a request with no credentials is DRF's 401.
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response['WWW-Authenticate'], 'Bearer')
             self.assertEqual(
                 response.data,
                 {'detail': 'Authentication credentials were not provided.'},
@@ -580,6 +592,250 @@ class RepositoryApiTests(TestCase):
         )
 
 
+def _bearer_client(token):
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION='Bearer %s' % token)
+    return client
+
+
+class BearerTokenApiTests(TestCase):
+    """Bearer results match the session client. Tokens are generated."""
+
+    def setUp(self):
+        RepositoryApiTests.setUp(self)
+
+    def test_authentication_order_is_bearer_then_session(self):
+        self.assertEqual(
+            RepositoryViewSet.authentication_classes,
+            (BearerTokenAuthentication, SessionAuthentication),
+        )
+        configured = tuple(
+            import_string(path)
+            for path in settings.REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']
+        )
+        self.assertEqual(configured, RepositoryViewSet.authentication_classes)
+
+    def test_digest_compare_checks_every_configured_token(self):
+        shorter = secrets.token_hex(16)
+        longer = shorter + secrets.token_hex(4)
+        with override_settings(EXAMPLE_API_TOKENS={
+            shorter: self.owner.username,
+            longer: self.outsider.username,
+        }):
+            self.assertEqual(_username_for_token(shorter), self.owner.username)
+            self.assertEqual(_username_for_token(longer), self.outsider.username)
+            self.assertIsNone(_username_for_token(shorter[:-2]))
+            self.assertIsNone(_username_for_token(secrets.token_hex(16)))
+        with override_settings(EXAMPLE_API_TOKENS=['not-a-mapping']):
+            self.assertIsNone(_username_for_token(shorter))
+
+    def test_bearer_list_retrieve_and_create_match_session_results(self):
+        owner_token = secrets.token_hex(32)
+        outsider_token = secrets.token_hex(32)
+        reader_token = secrets.token_hex(32)
+        payload = {
+            'name': 'bearer-repo',
+            'organization_id': self.org_a.pk,
+        }
+        session_owner = APIClient()
+        session_owner.force_authenticate(user=self.owner)
+        session_outsider = APIClient()
+        session_outsider.force_authenticate(user=self.outsider)
+        session_reader = APIClient()
+        session_reader.force_authenticate(user=self.reader)
+        session_list = session_owner.get('/api/repositories/')
+        session_retrieve = session_outsider.get(
+            '/api/repositories/%s/' % self.repo_a.pk,
+        )
+        session_create = session_reader.post(
+            '/api/repositories/', payload, format='json',
+        )
+
+        with override_settings(EXAMPLE_API_TOKENS={
+            owner_token: self.owner.username,
+            outsider_token: self.outsider.username,
+            reader_token: self.reader.username,
+        }):
+            with CaptureQueriesContext(connection) as listed:
+                bearer_list = _bearer_client(owner_token).get('/api/repositories/')
+            # The next requests clear the query log. Read this count first.
+            # The user lookup is the only query beyond the force-authenticated list.
+            bearer_list_queries = len(listed)
+            bearer_list_sql = [query['sql'] for query in listed]
+            bearer_retrieve = _bearer_client(outsider_token).get(
+                '/api/repositories/%s/' % self.repo_a.pk,
+            )
+            bearer_create = _bearer_client(reader_token).post(
+                '/api/repositories/', payload, format='json',
+            )
+
+        self.assertEqual(session_list.status_code, 200)
+        self.assertEqual(bearer_list.status_code, 200)
+        self.assertEqual(bearer_list.data, session_list.data)
+        self.assertIn(self.repo_a.pk, [row['id'] for row in bearer_list.data['results']])
+        self.assertNotIn(
+            self.repo_b.pk, [row['id'] for row in bearer_list.data['results']],
+        )
+        self.assertEqual(bearer_list_queries, LIST_QUERIES + 1, bearer_list_sql)
+
+        self.assertEqual(session_retrieve.status_code, 404)
+        self.assertEqual(bearer_retrieve.status_code, 404)
+        self.assertEqual(bearer_retrieve.data, {'detail': 'Not found.'})
+        self.assertEqual(bearer_retrieve.data, session_retrieve.data)
+        self.assertNotIn(self.repo_a.name, bearer_retrieve.content.decode())
+
+        self.assertEqual(session_create.status_code, 403)
+        self.assertEqual(bearer_create.status_code, 403)
+        self.assertEqual(bearer_create.data, {'detail': 'Not allowed.'})
+        self.assertEqual(bearer_create.data, session_create.data)
+        self.assertFalse(Repository.objects.filter(name='bearer-repo').exists())
+
+    def test_missing_and_invalid_bearer_tokens_are_401(self):
+        configured = secrets.token_hex(32)
+        unknown = secrets.token_hex(32)
+        with override_settings(EXAMPLE_API_TOKENS={configured: self.owner.username}):
+            missing = self.client.get('/api/repositories/')
+            unknown_response = _bearer_client(unknown).get('/api/repositories/')
+            keyword_only = APIClient()
+            keyword_only.credentials(HTTP_AUTHORIZATION='Bearer')
+            malformed = keyword_only.get('/api/repositories/')
+            other_scheme = APIClient()
+            other_scheme.credentials(HTTP_AUTHORIZATION='Token %s' % configured)
+            ignored = other_scheme.get('/api/repositories/')
+        for response in (missing, ignored):
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response['WWW-Authenticate'], 'Bearer')
+            self.assertEqual(
+                response.data,
+                {'detail': 'Authentication credentials were not provided.'},
+            )
+        self.assertEqual(unknown_response.status_code, 401)
+        self.assertEqual(unknown_response['WWW-Authenticate'], 'Bearer')
+        self.assertEqual(unknown_response.data, {'detail': 'Invalid token.'})
+        self.assertEqual(malformed.status_code, 401)
+        self.assertEqual(
+            malformed.data,
+            {'detail': 'Invalid token header. No credentials provided.'},
+        )
+
+    def test_inactive_bearer_user_is_denied(self):
+        token = secrets.token_hex(32)
+        with override_settings(EXAMPLE_API_TOKENS={
+            token: self.inactive_owner.username,
+        }):
+            with CaptureQueriesContext(connection) as captured:
+                response = _bearer_client(token).get('/api/repositories/')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response['WWW-Authenticate'], 'Bearer')
+        self.assertEqual(response.data, {'detail': 'User inactive or deleted.'})
+        self.assertNotIn(self.repo_a.name, response.content.decode())
+        blob = ' '.join(query['sql'] for query in captured)
+        self.assertNotIn('gh_permissions_repository', blob)
+
+    def test_is_active_principal_rejects_a_mapped_user(self):
+        token = secrets.token_hex(32)
+        with override_settings(EXAMPLE_API_TOKENS={token: self.owner.username}):
+            with patch(
+                'example.authentication.is_active_principal',
+                return_value=False,
+            ):
+                response = _bearer_client(token).get('/api/repositories/')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.data, {'detail': 'User inactive or deleted.'})
+
+    def test_session_login_still_works_without_a_bearer_header(self):
+        self.owner.set_password('session-password')
+        self.owner.save(update_fields=['password'])
+        self.assertTrue(self.client.login(
+            username=self.owner.username,
+            password='session-password',
+        ))
+        response = self.client.get('/api/repositories/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.repo_a.pk, [row['id'] for row in response.data['results']])
+
+        unknown = secrets.token_hex(32)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer %s' % unknown)
+        rejected = self.client.get('/api/repositories/')
+        self.assertEqual(rejected.status_code, 401)
+        self.assertEqual(rejected.data, {'detail': 'Invalid token.'})
+
+    def test_unknown_username_in_the_mapping_is_an_authentication_failure(self):
+        token = secrets.token_hex(32)
+        with override_settings(EXAMPLE_API_TOKENS={token: 'missing-user'}):
+            response = _bearer_client(token).get('/api/repositories/')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.data, {'detail': 'Invalid token.'})
+
+
+class BearerTokenSettingsTests(SimpleTestCase):
+    """Environment variables populate the mapping. Tokens are generated."""
+
+    def test_seeded_usernames_are_the_mapping_targets(self):
+        from tests.settings import _EXAMPLE_API_TOKEN_USERS
+
+        self.assertEqual(
+            _EXAMPLE_API_TOKEN_USERS,
+            (
+                ('EXAMPLE_API_TOKEN_OWNER', OWNER_USERNAME),
+                ('EXAMPLE_API_TOKEN_DIRECT', DIRECT_USERNAME),
+                ('EXAMPLE_API_TOKEN_OUTSIDER', OUTSIDER_USERNAME),
+            ),
+        )
+
+    def test_unset_and_empty_variables_add_no_entry(self):
+        from tests.settings import _example_api_tokens
+
+        owner = secrets.token_hex(16)
+        direct = secrets.token_hex(16)
+        outsider = secrets.token_hex(16)
+        with patch.dict(os.environ, {
+            'EXAMPLE_API_TOKEN_OWNER': owner,
+            'EXAMPLE_API_TOKEN_DIRECT': direct,
+            'EXAMPLE_API_TOKEN_OUTSIDER': outsider,
+        }):
+            os.environ.pop('EXAMPLE_API_TOKEN_OWNER')
+            os.environ.pop('EXAMPLE_API_TOKEN_DIRECT')
+            os.environ.pop('EXAMPLE_API_TOKEN_OUTSIDER')
+            self.assertEqual(_example_api_tokens(), {})
+        with patch.dict(os.environ, {
+            'EXAMPLE_API_TOKEN_OWNER': '',
+            'EXAMPLE_API_TOKEN_DIRECT': '',
+            'EXAMPLE_API_TOKEN_OUTSIDER': '',
+        }):
+            self.assertEqual(_example_api_tokens(), {})
+
+    def test_environment_populates_the_three_seeded_users(self):
+        from tests.settings import _example_api_tokens
+
+        owner = secrets.token_hex(16)
+        direct = secrets.token_hex(16)
+        outsider = secrets.token_hex(16)
+        with patch.dict(os.environ, {
+            'EXAMPLE_API_TOKEN_OWNER': owner,
+            'EXAMPLE_API_TOKEN_DIRECT': direct,
+            'EXAMPLE_API_TOKEN_OUTSIDER': outsider,
+        }):
+            self.assertEqual(_example_api_tokens(), {
+                owner: OWNER_USERNAME,
+                direct: DIRECT_USERNAME,
+                outsider: OUTSIDER_USERNAME,
+            })
+
+    def test_one_token_in_two_variables_is_a_configuration_error(self):
+        from tests.settings import _example_api_tokens
+
+        shared = secrets.token_hex(16)
+        with patch.dict(os.environ, {
+            'EXAMPLE_API_TOKEN_OWNER': shared,
+            'EXAMPLE_API_TOKEN_DIRECT': shared,
+            'EXAMPLE_API_TOKEN_OUTSIDER': '',
+        }):
+            with self.assertRaises(ImproperlyConfigured) as ctx:
+                _example_api_tokens()
+        self.assertNotIn(shared, str(ctx.exception))
+
+
 class SeededRepositoryApiTests(TestCase):
     """The development seed, through the same API."""
 
@@ -654,6 +910,50 @@ class SeededRepositoryApiTests(TestCase):
         self.assertIn('owner-create', self._ids(OWNER_USERNAME))
         self.assertNotIn('owner-create', self._ids(DIRECT_USERNAME))
         self.assertNotIn('owner-create', self._ids(SUPERUSER_USERNAME))
+
+    def test_non_staff_seed_users_call_the_api_with_bearer_tokens(self):
+        """Admin login cannot start these sessions. Bearer can.
+
+        ``example-direct`` and ``example-outsider`` are not staff.
+        ``EXAMPLE_API_TOKEN_DIRECT`` and ``EXAMPLE_API_TOKEN_OUTSIDER``
+        are the live curl path for those seeded users.
+        """
+        direct = self.users[DIRECT_USERNAME]
+        outsider = self.users[OUTSIDER_USERNAME]
+        self.assertFalse(direct.is_staff)
+        self.assertFalse(outsider.is_staff)
+        self.assertTrue(self.users[OWNER_USERNAME].is_staff)
+        owner_token = secrets.token_hex(32)
+        direct_token = secrets.token_hex(32)
+        outsider_token = secrets.token_hex(32)
+        with override_settings(EXAMPLE_API_TOKENS={
+            owner_token: OWNER_USERNAME,
+            direct_token: DIRECT_USERNAME,
+            outsider_token: OUTSIDER_USERNAME,
+        }):
+            owner_list = _bearer_client(owner_token).get('/api/repositories/')
+            direct_list = _bearer_client(direct_token).get('/api/repositories/')
+            direct_create = _bearer_client(direct_token).post('/api/repositories/', {
+                'name': 'direct-bearer-repo',
+                'organization_id': self.organization.pk,
+            }, format='json')
+            outsider_retrieve = _bearer_client(outsider_token).get(
+                '/api/repositories/%s/' % self.repository.pk,
+            )
+        self.assertEqual(owner_list.status_code, 200)
+        self.assertIn(REPOSITORY_TITLE, [row['name'] for row in owner_list.data['results']])
+        self.assertEqual(direct_list.status_code, 200)
+        self.assertIn(
+            REPOSITORY_TITLE, [row['name'] for row in direct_list.data['results']],
+        )
+        self.assertEqual(direct_create.status_code, 403)
+        self.assertEqual(direct_create.data, {'detail': 'Not allowed.'})
+        self.assertFalse(
+            Repository.objects.filter(name='direct-bearer-repo').exists(),
+        )
+        self.assertEqual(outsider_retrieve.status_code, 404)
+        self.assertEqual(outsider_retrieve.data, {'detail': 'Not found.'})
+        self.assertNotIn(REPOSITORY_TITLE, outsider_retrieve.content.decode())
 
 
 class ManualProofScriptTests(TestCase):

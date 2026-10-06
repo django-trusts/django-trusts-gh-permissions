@@ -1,3 +1,8 @@
+import os
+
+from django.core.exceptions import ImproperlyConfigured
+
+
 SECRET_KEY = 'gh-permissions-tests-not-for-production'
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
@@ -74,10 +79,41 @@ DATABASES = {
 
 ROOT_URLCONF = 'tests.urls'
 
-# Session authentication for the runnable repository API. DRF is an
+# Bearer tokens for the runnable example. The mapping is token to
+# username. Values come from the environment when this module loads.
+# An unset or empty variable adds no entry. The same token in two
+# variables is a configuration error. Nothing here is a token value.
+_EXAMPLE_API_TOKEN_USERS = (
+    ('EXAMPLE_API_TOKEN_OWNER', 'example-owner'),
+    ('EXAMPLE_API_TOKEN_DIRECT', 'example-direct'),
+    ('EXAMPLE_API_TOKEN_OUTSIDER', 'example-outsider'),
+)
+
+
+def _example_api_tokens():
+    tokens = {}
+    for env_name, username in _EXAMPLE_API_TOKEN_USERS:
+        value = os.environ.get(env_name) or ''
+        if not value:
+            continue
+        if value in tokens:
+            raise ImproperlyConfigured(
+                '%s and another EXAMPLE_API_TOKEN_* variable share one token.'
+                % env_name,
+            )
+        tokens[value] = username
+    return tokens
+
+
+EXAMPLE_API_TOKENS = _example_api_tokens()
+
+# Bearer, then session. Bearer is first so a missing or invalid token
+# is DRF's 401 with WWW-Authenticate: Bearer. A request with no
+# Authorization header still falls through to the session. DRF is an
 # example/test dependency; gh_permissions does not import it.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'example.authentication.BearerTokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
 }

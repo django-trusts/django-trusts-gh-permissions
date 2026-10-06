@@ -19,6 +19,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import BasePermission
 
+from example.authentication import BearerTokenAuthentication
 from gh_permissions.models import Repository
 from gh_permissions.services import (
     DuplicateRelationshipTarget,
@@ -127,7 +128,8 @@ class RepositoryViewSet(
     missing or malformed primary key is 404. An object-permission
     failure is also 404, not 403. The body is DRF's not-found detail
     and does not include the repository. List is an empty page for an
-    authenticated caller with no rows. Anonymous requests are rejected
+    authenticated caller with no rows. Bearer token authentication is
+    tried before session authentication. Anonymous requests are rejected
     by authentication before either path.
 
     Create has no repository object. ``create_repository`` locks the
@@ -137,7 +139,10 @@ class RepositoryViewSet(
     """
 
     serializer_class = RepositorySerializer
-    authentication_classes = (SessionAuthentication,)
+    authentication_classes = (
+        BearerTokenAuthentication,
+        SessionAuthentication,
+    )
     permission_classes = (RepositoryActionPermission,)
     pagination_class = RepositoryPagination
     action_permissions = ACTION_PERMISSIONS
