@@ -36,7 +36,7 @@ Earlier GH snapshots paired with Step I `django-trusts==1.0.0.dev2`
 ## Public changes
 
 | Surface | Old (merged `eab54b8`) | New (#12) |
-| --- | --- |
+| --- | --- | --- |
 | Requester / member / direct-grant subject | `Account` (`name`) | `settings.AUTH_USER_MODEL` (tests/fixtures: `get_user_model()`) |
 | Direct permission row | `AccountRepoGrant(account, repository, operation)` | `UserRepositoryPermission(user, repository, operation)` |
 | Team permission row | `TeamRepoGrant(team, repository, operation)` | `TeamRepositoryPermission(team, repository, operation)` |
@@ -758,7 +758,7 @@ and `TeamRepositoryPermission` are unchanged.
 This stair does not change the GH schema or `register_organization_owner`.
 It pairs the approved, unmerged head of
 [django-trusts#269](https://github.com/django-trusts/django-trusts/pull/269),
-`1f35b31c2698c797ff97f6558c8cf9481a49338a`. Replace that pin with the
+`1553d7a54c755e121136578b40280d20ffc709b1`. Replace that pin with the
 merge commit when #269 lands. Do not float past it before then.
 
 ## Old behavior
@@ -797,7 +797,7 @@ migration.
 
 ## Migration-bot checklist
 
-- [ ] Pin Core `1f35b31c2698c797ff97f6558c8cf9481a49338a` in
+- [ ] Pin Core `1553d7a54c755e121136578b40280d20ffc709b1` in
       `requirements.txt`, `scripts/django-trusts.pin`, and CI
       `COMPANION_KERNEL_SHA`.
 - [ ] Leave the owner-group rows and the two ownership registrations

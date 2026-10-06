@@ -13,14 +13,14 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
 django-trusts commit
-`1f35b31c2698c797ff97f6558c8cf9481a49338a`, the approved unmerged
+`1553d7a54c755e121136578b40280d20ffc709b1`, the approved unmerged
 head of [#269](https://github.com/django-trusts/django-trusts/pull/269)
 (`cursor/content-type-mismatch-denial-6f05`). That commit denies an
 `auth.Permission` whose `content_type` is not the protected object's
 content identity. `user.has_perm` stays a permission string. It is based on `dev`
 `7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
 [#264](https://github.com/django-trusts/django-trusts/pull/264).
-Do not float past `1f35b31c2698c797ff97f6558c8cf9481a49338a`. Replace
+Do not float past `1553d7a54c755e121136578b40280d20ffc709b1`. Replace
 this pin with the #269 merge commit when that pull request lands.
 The #264 merge is what lets `permission=`
 end on one forward to-many step to `auth.Permission`.
@@ -273,7 +273,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `1f35b31c2698c797ff97f6558c8cf9481a49338a`.
+with Django 6.1 against exact paired-core head `1553d7a54c755e121136578b40280d20ffc709b1`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or

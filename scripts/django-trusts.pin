@@ -1,6 +1,6 @@
 # Reviewed django-trusts head required by this GH tree.
-# Paired with django-trusts#269 head 1f35b31 (content-type mismatch denial).
+# Paired with django-trusts#269 head 1553d7a (content-type mismatch denial).
 # That pull request is approved and unmerged. Replace this ref with its
 # merge commit when it lands. Never pin django-trusts-zero. Do not float
 # past this commit.
-ref=1f35b31c2698c797ff97f6558c8cf9481a49338a
+ref=1553d7a54c755e121136578b40280d20ffc709b1
