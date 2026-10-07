@@ -12,10 +12,16 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts `dev` commit
+django-trusts commit
+`47ae25cffcfa542b3e4a2940f528a63fcb32062d`, the merge commit of
+[#269](https://github.com/django-trusts/django-trusts/pull/269)
+(`cursor/content-type-mismatch-denial-6f05`). That commit denies an
+`auth.Permission` whose `content_type` is not the protected object's
+content identity. `user.has_perm` stays a permission string. It is based on `dev`
 `7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
 [#264](https://github.com/django-trusts/django-trusts/pull/264).
-Do not float past that commit. That merge is what lets `permission=`
+Do not float past `47ae25cffcfa542b3e4a2940f528a63fcb32062d`.
+The #264 merge is what lets `permission=`
 end on one forward to-many step to `auth.Permission`.
 
 [#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
@@ -24,9 +30,14 @@ adds `Alias`, personal versus conventional organizations,
 `UserRepositoryPermission` and `OrganizationOwnerPermission`. Team,
 `Team.allowed_operations`, and `TeamRepositoryPermission` are unchanged.
 `OrganizationOwnership` is owners only. The row is the grant, so
-startup registers it with no condition: `owner_group` permissions
-apply to the organization and to that organization's repositories.
-A user with no ownership row is not an owner. Ordinary organization
+startup registers it with no condition, once for the organization and
+once for `organization__repositories`. A permission in the shared
+owner `Group` grants only when `Permission.content_type` matches the
+object: `manage_organization` on the organization, and
+`read_repository`, `write_repository`, and `admin_repository` on that
+organization's repositories. `read_repository` on an organization and
+`manage_organization` on a repository are denials. A user with no
+ownership row is not an owner. Ordinary organization
 membership is deferred. Team does not carry
 that bundle. The shared owner `Group` is seeded with
 `manage_organization`, `read_repository`, `write_repository`, and
@@ -211,9 +222,9 @@ and `&`. Literal Python `in` is unsupported. There is no aggregate
 `GhAuthorizationBackend` is a mixin-only registry host
 (`TrustModelBackendMixin` + `BaseBackend`). It is **not**
 `TrustModelBackend`. `Repository.objects.authorized` takes an
-`auth.Permission` instance, while `has_perm` and the permitted-user
-adapters accept either that instance or its Django permission string
-as documented.
+`auth.Permission` instance. `has_perm` takes the permission string.
+The permitted-user adapters accept that instance or its Django
+permission string.
 
 Application authors own ordinary relational models plus compact
 registrations. Core owns validation, correlated query construction,
@@ -261,7 +272,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core head `7503ae83267771abdce920f26ad762a4ee491f36`.
+with Django 6.1 against exact paired-core commit `47ae25cffcfa542b3e4a2940f528a63fcb32062d`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or

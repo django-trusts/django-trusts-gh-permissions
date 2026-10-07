@@ -62,10 +62,11 @@ USER_SPECS = (
         'is_superuser': False,
         'is_staff': True,
         'proves': (
-            'staff organization owner; OrganizationOwnership grants the '
-            'seeded owner group (manage_organization, read_repository, '
-            'write_repository, admin_repository) on the organization and '
-            'its repositories; Django model permissions for those rows'
+            'staff organization owner; OrganizationOwnership grants '
+            'manage_organization on the organization and read_repository, '
+            'write_repository, and admin_repository on its repositories; '
+            'a crossed content type is denied; Django model permissions '
+            'for those rows'
         ),
     },
     {

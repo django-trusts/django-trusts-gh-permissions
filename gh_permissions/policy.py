@@ -5,8 +5,12 @@ terminal many-to-many ``permissions``. Team keeps the accepted mapping:
 terminal membership step, operation ceiling, and organization alignment.
 An owner is one ``OrganizationOwnership`` row. That row reads
 ``organization__owner_group__permissions`` for the organization and
-for ``organization__repositories``, with no condition. A user with no
-ownership row is not an owner. Team does not carry this bundle.
+for ``organization__repositories``, with no condition. A permission in
+that group grants only when its ``content_type`` is the object's own
+content identity: ``manage_organization`` on the organization, and the
+repository codenames on that organization's repositories. The crossed
+pairs are denials. A user with no ownership row is not an owner. Team
+does not carry this bundle.
 ``GhPermissionsConfig.ready`` contributes the three helpers as separate
 calls. Helpers require a ``BackendHandle``; a bare registry is
 ``TypeError``. ``permission=`` does not feed ``get_group_permissions``.

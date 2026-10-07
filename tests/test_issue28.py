@@ -435,8 +435,18 @@ class RelationshipWriteTests(TestCase):
         TeamRepositoryPermission.objects.create(
             team=self.team, repository=self.repo, operation=self.manage,
         )
-        self.assertTrue(self.collaborator.has_perm(_MANAGE, self.repo))
-        self.assertTrue(self.member.has_perm(_MANAGE, self.repo))
+        # manage_organization's content type is the organization, so these
+        # repository rows do not grant it on the repository either.
+        self.assertFalse(self.collaborator.has_perm(_MANAGE, self.repo))
+        self.assertFalse(self.member.has_perm(_MANAGE, self.repo))
+        self.assertNotIn(
+            self.repo,
+            set(Repository.objects.authorized(self.collaborator, self.manage)),
+        )
+        self.assertNotIn(
+            self.repo,
+            set(Repository.objects.authorized(self.member, self.manage)),
+        )
         self.assertFalse(self.collaborator.has_perm(_MANAGE, self.org))
         self.assertFalse(self.member.has_perm(_MANAGE, self.org))
         self.assertNotIn(

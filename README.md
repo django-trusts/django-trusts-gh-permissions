@@ -275,13 +275,17 @@ Requires **Python 3.12–3.14** and **Django 6.1**.
 
 Organization administration was `OrganizationOwnerPermission`. That
 model is gone. Ownership is an `OrganizationOwnership` row. Startup
-registers that row so `Organization.owner_group` permissions apply to
-the organization and to that organization's repositories. No condition
-is required, because a non-owner has no ownership row. `Team` does
-not grant this bundle.
+registers that row twice, with no condition: once for the organization
+and once for that organization's repositories. A non-owner has no
+ownership row. `Team` does not grant this bundle.
 
 The shared owner group is seeded with `manage_organization`,
-`read_repository`, `write_repository`, and `admin_repository`.
+`read_repository`, `write_repository`, and `admin_repository`. Each
+permission grants only on an object whose content type matches
+`Permission.content_type`. `manage_organization` is the organization
+grant. The repository codenames are the grants on that organization's
+repositories. `read_repository` on an organization, and
+`manage_organization` on a repository, are denials.
 `Organization.objects.authorized(user, manage_organization)` is the
 organizations that user owns. The org-owner admin adapter uses that
 queryset. Conventional organization create, rename, and delete in
@@ -340,7 +344,7 @@ in production.
 | Username | Development-only password | What it proves |
 | --- | --- | --- |
 | `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
-| `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants the seeded owner group on that organization and its repositories: `manage_organization`, `read_repository`, `write_repository`, and `admin_repository`. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
+| `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants `manage_organization` on that organization and `read_repository`, `write_repository`, and `admin_repository` on its repositories. A repository permission on the organization, or `manage_organization` on a repository, is denied. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
 | `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
 | `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |
