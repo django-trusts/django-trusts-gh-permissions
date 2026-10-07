@@ -267,9 +267,13 @@ Install a local core checkout or artifact first, then this package:
 python -m pip install "Django>=6.1,<6.2"
 python -m pip install ../django-trusts
 python -m pip install .
+python -m pip install "djangorestframework==3.18.1"
 ```
 
 Requires **Python 3.12–3.14** and **Django 6.1**.
+`djangorestframework` 3.18.1 is only for the repository API below. It is
+not a dependency of the `gh_permissions` package. That release lists
+Django 6.1 and Python 3.12–3.14 in its own classifiers and tox matrix.
 
 ## Organization-owner admin
 
@@ -364,6 +368,137 @@ Repeat the default seed with an explicit name:
 ```console
 python manage.py seed_example --organization-name "Example Organization"
 ```
+
+## Repository API
+
+The runnable example (`tests.settings`, which `manage.py` loads) adds
+`rest_framework` and mounts one viewset:
+
+| Request | Permission | Result |
+| --- | --- | --- |
+| `GET /api/repositories/` | `gh_permissions.read_repository` | Page of rows from `Repository.objects.permitted` |
+| `GET /api/repositories/{pk}/` | `gh_permissions.read_repository` | DRF `get_object()` on that same queryset |
+| `POST /api/repositories/` | `gh_permissions.manage_organization` | `gh_permissions.services.create_repository` |
+
+`example.api.RepositoryViewSet.action_permissions` is the only
+action-to-permission map. List and retrieve both use
+`gh_permissions.read_repository`. The view calls
+`Repository.objects.permitted` with that string and the request user
+before pagination. `permitted` binds the codename to the repository
+content type, so another model in the same app may reuse the codename
+without becoming this permission. An inactive principal gets an empty
+queryset from `permitted`, which is what
+`user.has_perm(permission_string, repository)` does for an inactive
+owner, collaborator, or team member. `has_perm` is only called with
+that string. Serialization reads `id`, `name`, and `organization_id`
+off those rows, so the page does not run a permission query per
+repository.
+
+An active superuser is the Django exception. `has_perm` is true for
+every string, including a repository the superuser was not granted.
+`permitted` still returns only persisted grants, and this API follows
+that queryset. A superuser with no grant gets an empty list and a 404
+for that primary key. `create_repository` still allows an active
+superuser to create in an existing organization. The new row shows up
+for an owner of that organization, and it still does not show up in
+the superuser's list.
+
+Retrieve uses one status for every primary key the caller cannot
+read. A malformed key, a missing key, and a real key outside the
+permitted queryset are all **404** with `{"detail": "Not found."}`.
+The body does not include the repository. If the object check
+disagrees with the queryset, that is a 404 as well. An authenticated
+caller with no rows gets **200** and an empty page, not an error.
+`is_staff` is not repository authority. A model permission stored for
+`ModelBackend` is not either: that backend does not answer object
+checks, and the list stays empty.
+
+Authentication is a bearer token or a session. This bearer map is a
+development deployment harness, not production token infrastructure.
+Bearer authentication is listed first. It reads `Authorization: Bearer <token>`
+and looks that token up in `EXAMPLE_API_TOKENS`, a mapping of token to
+username. `tests.settings` fills the mapping from `EXAMPLE_API_TOKEN_OWNER`
+(`example-owner`), `EXAMPLE_API_TOKEN_DIRECT` (`example-direct`), and
+`EXAMPLE_API_TOKEN_OUTSIDER` (`example-outsider`) when the process
+starts. An unset or empty variable adds no entry. Generate each value
+with `secrets.token_urlsafe(32)` (43 characters). A shorter value is a
+configuration error and the process does not start. The tokens are not
+in the source and are not in the seed. Comparison walks every
+configured token and uses `hmac.compare_digest` on SHA-256 digests.
+An unknown token fails authentication. An inactive user is rejected
+with `is_active_principal`, the same rule as `has_perm`. The
+authenticator returns no credential marker, so `request.auth` does not
+keep the token. A request with no `Authorization` header still uses
+session login.
+
+The harness has no expiry, no rotation protocol, no per-token scope,
+no durable revocation or audit record, and no protection against
+username reuse.
+
+Anonymous requests, and requests with a missing or unknown bearer
+token, are rejected before the queryset. Because bearer
+authentication is first, DRF sends `WWW-Authenticate: Bearer` and the
+status is **401**. The missing-credential detail is `Authentication
+credentials were not provided.` An unknown token's detail is `Invalid
+token.` No repository row is queried.
+
+```console
+curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8000/api/repositories/
+```
+
+Replace `<token>` with the value of one of those environment
+variables. `python manage.py runserver` serves the API after
+`seed_example`. This is the header a client, including an MCP agent,
+sends with curl. There is no OAuth, scope, or separate agent user.
+
+`example-owner` is staff, so `/admin/login/` can start that session.
+`example-direct` and `example-outsider` are not staff, so admin login
+cannot. Their live calls use `EXAMPLE_API_TOKEN_DIRECT` and
+`EXAMPLE_API_TOKEN_OUTSIDER`: the direct collaborator can list and is
+refused on create, and the outsider's retrieve is 404. `example-team`
+is not staff either and has no token variable. The test client covers
+that member.
+
+Create does not insert a repository itself. It calls
+`create_repository`, which locks the submitted organization and
+requires `manage_organization`. The serializer accepts `name` and
+`organization_id` only. Any other key, including a user, team,
+collaborator, permission, or repository, is rejected and writes
+nothing. A denied, missing, or cross-organization parent is **403**
+with `{"detail": "Not allowed."}` and writes nothing. A direct
+collaborator or a team member does not gain this from a repository
+grant. Team `readers` stores `write_repository` and the read-only
+ceiling excludes it, so that grant is not write authority and it is
+not organization management. An active superuser is allowed by the
+service even without an ownership row. That bypass is the service's
+rule, not a second copy in the view.
+
+Pagination slices the permitted queryset. `page_size` defaults to 25
+and can be set up to 100. An unauthorized repository with a lower
+primary key is not the first row of the first page.
+
+These query counts are one already-authenticated JSON request on
+Django 6.1.1, DRF 3.18.1, and SQLite. They do not grow when more
+visible or hidden repositories are added.
+
+| Request | Queries | What they are |
+| --- | --- | --- |
+| list | 2 | count of the distinct permitted queryset, one page of that queryset |
+| retrieve | 2 | permitted lookup by primary key, `has_perm` object check |
+| denied retrieve | 1 | permitted lookup misses; no object check |
+| create | 8 | transaction savepoint, lock the actor, lock the organization, `manage_organization` row, authorized existence check, duplicate-name check, insert, release savepoint |
+
+From a checkout with the dependencies installed, one allowed list and
+one denied retrieve (plus a denied create) are:
+
+```console
+python scripts/drf_authorization_proof.py
+```
+
+The script migrates a temporary database, runs `seed_example`, and
+uses the DRF test client with session login. It prints the owner
+list, the outsider retrieve, and the direct collaborator's refused
+create. It does not print the development passwords.
 
 ## Limitations
 

@@ -15,6 +15,7 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    RepositoryQuerySet,
     TeamRepositoryPermission,
 )
 from tests.fixtures import GhFixtureMixin
@@ -263,8 +264,8 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
     reset_sequences = True
 
     def test_stock_manager_reads_configured_implementation_handles(self):
-        self.assertIs(type(Repository.objects), AuthorizedManager)
-        self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
+        self.assertIs(Repository.objects._queryset_class, RepositoryQuerySet)
+        self.assertTrue(issubclass(RepositoryQuerySet, AuthorizedQuerySet))
         self.assertIs(type(Organization.objects), AuthorizedManager)
 
         handles = configured_implementation_handles()

@@ -11,7 +11,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
 from trusts.apps import implementation_configs, implementation_for_path
-from trusts.query import AuthorizedManager
+from trusts.query import AuthorizedQuerySet, PermittedQuerySetMixin
 
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
@@ -65,15 +65,17 @@ class KernelIdentityTest(SimpleTestCase):
         with self.assertRaises(ImportError):
             from trusts.backends import TrustModelBackend  # noqa: F401
 
-    def test_repository_uses_stock_authorized_manager(self):
+    def test_repository_queryset_adds_permitted_on_authorized(self):
         import gh_permissions.models as gh_models
-        from trusts.query import AuthorizedQuerySet
 
-        self.assertIs(type(Repository.objects), AuthorizedManager)
-        self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
+        queryset_class = gh_models.RepositoryQuerySet
+        self.assertIs(Repository.objects._queryset_class, queryset_class)
+        self.assertTrue(issubclass(queryset_class, PermittedQuerySetMixin))
+        self.assertTrue(issubclass(queryset_class, AuthorizedQuerySet))
+        self.assertTrue(hasattr(Repository.objects, 'permitted'))
+        self.assertTrue(hasattr(Repository.objects, 'authorized'))
         self.assertFalse(hasattr(gh_models, 'GhAuthorizedQuerySet'))
         self.assertFalse(hasattr(gh_models, 'GhAuthorizedManager'))
-        self.assertFalse(hasattr(Repository.objects, 'permitted'))
         self.assertFalse(hasattr(Repository.objects, 'get_permission'))
 
 

@@ -22,7 +22,12 @@ from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from trusts.query import AuthorizedManager, PermittedUsersMixin
+from trusts.query import (
+    AuthorizedManager,
+    AuthorizedQuerySet,
+    PermittedQuerySetMixin,
+    PermittedUsersMixin,
+)
 
 
 class Alias(models.Model):
@@ -157,15 +162,23 @@ class Team(models.Model):
         return self.name
 
 
+class RepositoryQuerySet(PermittedQuerySetMixin, AuthorizedQuerySet):
+    """Repository rows.
+
+    ``permitted(permission, user)`` is the public list inquiry.
+    ``authorized(user, permission)`` stays the lower-level projection.
+    """
+
+
 class Repository(PermittedUsersMixin, models.Model):
-    """Protected resource. ``.authorized(user, operation)`` takes a Permission."""
+    """Protected resource. ``permitted`` lists rows for a permission string."""
 
     organization = models.ForeignKey(
         Organization, related_name='repositories', on_delete=models.CASCADE,
     )
     name = models.CharField(max_length=40)
 
-    objects = AuthorizedManager()
+    objects = RepositoryQuerySet.as_manager()
 
     class Meta:
         verbose_name = 'repository'

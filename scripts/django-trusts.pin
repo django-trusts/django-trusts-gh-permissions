@@ -1,4 +1,5 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts#269 merge 47ae25cf (content-type mismatch denial).
+# Paired with django-trusts#271 merge 891a9e81 (queryset.permitted).
+# Includes #269 merge 47ae25cf (content-type mismatch denial).
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=47ae25cffcfa542b3e4a2940f528a63fcb32062d
+ref=891a9e817a4a95a55b50a7b4130e0ae69cbce17f
