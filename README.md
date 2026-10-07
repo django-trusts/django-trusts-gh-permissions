@@ -405,7 +405,7 @@ the superuser's list.
 
 Retrieve uses one status for every primary key the caller cannot
 read. A malformed key, a missing key, and a real key outside the
-authorized queryset are all **404** with `{"detail": "Not found."}`.
+permitted queryset are all **404** with `{"detail": "Not found."}`.
 The body does not include the repository. If the object check
 disagrees with the queryset, that is a 404 as well. An authenticated
 caller with no rows gets **200** and an empty page, not an error.
@@ -473,7 +473,7 @@ not organization management. An active superuser is allowed by the
 service even without an ownership row. That bypass is the service's
 rule, not a second copy in the view.
 
-Pagination slices the authorized queryset. `page_size` defaults to 25
+Pagination slices the permitted queryset. `page_size` defaults to 25
 and can be set up to 100. An unauthorized repository with a lower
 primary key is not the first row of the first page.
 

@@ -1,6 +1,6 @@
 """DRF repository list, retrieve, and service-backed create.
 
-Reads use ``Repository.objects.authorized`` before pagination. Retrieve
+Reads use ``Repository.objects.permitted`` before pagination. Retrieve
 of a row the caller cannot read is 404, the same body as a missing or
 malformed primary key. Create calls ``create_repository``.
 """
@@ -185,7 +185,7 @@ class RepositoryApiTests(TestCase):
         """List, retrieve, and ``has_perm`` agree, except active superusers.
 
         An active superuser's ``has_perm`` is Django's outer true. The
-        API still follows ``.authorized()``, so a repository with no
+        API follows ``.permitted()``, so a repository with no
         persisted grant is absent from the list and is 404 on retrieve.
         """
         visible_ids = [repo.pk for repo in visible]
@@ -351,7 +351,7 @@ class RepositoryApiTests(TestCase):
             self.assertEqual(response.data, {'detail': 'Not allowed.'})
         self.assertFalse(Repository.objects.filter(name='inactive-repo').exists())
 
-    def test_active_superuser_list_follows_authorized_not_has_perm(self):
+    def test_active_superuser_list_follows_permitted_not_has_perm(self):
         self.assertTrue(is_active_principal(self.superuser))
         self.assertTrue(self.superuser.has_perm(READ_REPOSITORY, self.repo_b))
         self.assertNotIn(
@@ -449,7 +449,7 @@ class RepositoryApiTests(TestCase):
         )
         self.assertIsNone(follow.data['next'])
 
-    def test_list_queryset_is_the_authorized_queryset(self):
+    def test_list_queryset_is_the_permitted_queryset(self):
         from django.test import RequestFactory
 
         from example.api import RepositoryViewSet
