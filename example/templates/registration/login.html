@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Log in</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; }
+    main { max-width: 24rem; margin: 4rem auto; background: #fff; padding: 1.5rem; border: 1px solid #d0d7de; }
+    button { margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Log in</h1>
+    <p>Sign in to continue authorization.</p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Log in</button>
+    </form>
+  </main>
+</body>
+</html>

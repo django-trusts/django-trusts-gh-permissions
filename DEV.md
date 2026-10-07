@@ -267,9 +267,17 @@ not an organization grant.
 ```
 python -m pip install "Django>=6.1,<6.2" coverage
 python -m pip install -e .
+python -m pip install "django-oauth-toolkit==3.4.1"
 python -m tests.runtests
 python -m django check --settings=tests.settings
 ```
+
+The OAuth toolkit pin is the runnable example's MCP authorization spike
+([#38](https://github.com/django-trusts/django-trusts-gh-permissions/issues/38)).
+`gh_permissions` does not import it. Approve returns an authorization
+code that exchanges for a one-hour test credential at the example MCP
+endpoint. See
+[docs/mcp-authorization-spike.md](docs/mcp-authorization-spike.md).
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
 with Django 6.1 against exact paired-core commit `47ae25cffcfa542b3e4a2940f528a63fcb32062d`.

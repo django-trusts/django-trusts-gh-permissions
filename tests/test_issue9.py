@@ -237,6 +237,8 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         # README's configure block is the object-authorization install.
         # The live settings add the admin harness and ModelBackend so
         # stock admin can authenticate and read no-object model permissions.
+        # oauth2_provider is the example MCP authorization spike, not that
+        # install.
         self.assertEqual(
             settings.INSTALLED_APPS,
             (
@@ -247,6 +249,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
                 'django.contrib.messages',
                 'django.contrib.staticfiles',
                 'django.contrib.admin',
+                'oauth2_provider',
                 'gh_permissions.apps.GhPermissionsConfig',
             ),
         )
