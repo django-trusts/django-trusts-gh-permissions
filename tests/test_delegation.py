@@ -191,6 +191,61 @@ class RepositoryDelegationTest(TestCase):
         self._approve(organization_delegation)
         self._assert_all_projections(True)
 
+    def test_named_personal_path_requires_the_sponsors_personal_repository(self):
+        User = get_user_model()
+        other_owner = User.objects.create_user('other-personal-owner')
+        other_personal_organization = Organization.objects.create(
+            personal_user=other_owner, owner_group=self.owner_group,
+        )
+        other_personal_repository = Repository.objects.create(
+            organization=other_personal_organization,
+            name='other-personal-repo',
+        )
+        collaboration = RepositoryCollaborator.objects.create(
+            user=self.sponsor, repository=other_personal_repository,
+        )
+        collaboration.permissions.add(self.read)
+
+        self._select_personal(repository=other_personal_repository)
+        self._select_personal(repository=self.repository)
+
+        # An ordinary collaborator may not present someone else's personal
+        # repository, or a conventional organization repository, as their
+        # own personal repository when delegating it.
+        self.assertTrue(
+            self.sponsor.has_perm(_READ, other_personal_repository)
+        )
+        self._assert_all_projections(
+            False, repository=other_personal_repository,
+        )
+        self.assertTrue(self.sponsor.has_perm(_READ, self.repository))
+        self._assert_all_projections(False)
+
+    def test_all_personal_path_fails_closed_without_personal_organization(self):
+        User = get_user_model()
+        sponsor_without_personal_organization = User.objects.create_user(
+            'sponsor-without-personal-organization',
+        )
+        collaboration = RepositoryCollaborator.objects.create(
+            user=sponsor_without_personal_organization,
+            repository=self.personal_repository,
+        )
+        collaboration.permissions.add(self.read)
+        self._select_all_personal(
+            sponsor=sponsor_without_personal_organization,
+        )
+
+        # The sponsor has a live ordinary path, so denial comes specifically
+        # from the absent reverse one-to-one content prefix.
+        self.assertTrue(
+            sponsor_without_personal_organization.has_perm(
+                _READ, self.personal_repository,
+            )
+        )
+        self._assert_all_projections(
+            False, repository=self.personal_repository,
+        )
+
     def test_selection_approval_scope_and_sponsor_grant_are_all_required(self):
         delegation = self._select()
         self._assert_all_projections(False)
