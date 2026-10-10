@@ -1,5 +1,7 @@
 # django-trusts-gh-permissions
 
+[![Coverage](https://coveralls.io/repos/github/django-trusts/django-trusts-gh-permissions/badge.svg?branch=dev)](https://coveralls.io/github/django-trusts/django-trusts-gh-permissions?branch=dev)
+
 `django-trusts-gh-permissions` is a **bounded reference implementation**
 that shows how permissions can emerge from persisted user,
 organization, team, and repository relationships on

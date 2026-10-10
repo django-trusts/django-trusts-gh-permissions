@@ -1,0 +1,12 @@
+[run]
+branch = True
+source = .
+omit =
+    */tests/*
+    */docs/*
+    */scripts/*
+    */.deps/*
+
+[report]
+include =
+    gh_permissions/*
