@@ -714,7 +714,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             ])
             executor.loader.build_graph()
             executor.migrate([
-                ('gh_permissions', '0005_repositorydelegation'),
+                ('gh_permissions', '0006_personal_delegations'),
             ])
             ensure_owner_group()
             User = get_user_model()
@@ -761,7 +761,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             ).exists())
         finally:
             MigrationExecutor(connection).migrate([
-                ('gh_permissions', '0005_repositorydelegation'),
+                ('gh_permissions', '0006_personal_delegations'),
             ])
 
 

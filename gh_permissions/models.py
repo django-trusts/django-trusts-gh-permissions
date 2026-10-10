@@ -280,6 +280,77 @@ class RepositoryDelegation(models.Model):
         )
 
 
+class PersonalRepositoryDelegation(models.Model):
+    """A user's delegation of authority over one personal repository.
+
+    The sponsor is matched to the repository's personal organization. Unlike
+    ``RepositoryDelegation``, this relationship needs no independent
+    organization approval. It remains a delegated bridge rather than an
+    ordinary grant: the sponsor must still hold the requested permission.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_personal_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='sponsored_personal_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    repository = models.ForeignKey(
+        Repository,
+        related_name='personal_delegations',
+        on_delete=models.CASCADE,
+    )
+    allowed_permissions = models.ManyToManyField(
+        Permission,
+        related_name='personal_repository_delegations',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor', 'repository'),
+                name='unique_personal_repository_delegation',
+            ),
+        )
+
+
+class AllPersonalRepositoriesDelegation(models.Model):
+    """A user's delegation over every repository in their personal org.
+
+    This relationship deliberately has no repository field. Its registered
+    content path reaches repositories through ``sponsor.personal_organization``.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_all_personal_repositories_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='sponsored_all_personal_repositories_delegations',
+        on_delete=models.CASCADE,
+    )
+    allowed_permissions = models.ManyToManyField(
+        Permission,
+        related_name='all_personal_repositories_delegations',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor'),
+                name='unique_all_personal_repositories_delegation',
+            ),
+        )
+
+
 class TeamRepositoryPermission(models.Model):
     """Team → repository permission. Alignment compares team and repository orgs."""
 

@@ -64,9 +64,11 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         from django.db.models.signals import post_migrate
 
         from gh_permissions.policy import (
+            register_all_personal_repositories_delegation,
             register_collaborator,
             register_delegation,
             register_organization_owner,
+            register_personal_delegation,
             register_team,
         )
         from gh_permissions.services import seed_owner_group_on_migrate
@@ -85,4 +87,6 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         register_collaborator(handle)
         register_team(handle)
         register_organization_owner(handle)
+        register_personal_delegation(handle)
+        register_all_personal_repositories_delegation(handle)
         register_delegation(handle)
