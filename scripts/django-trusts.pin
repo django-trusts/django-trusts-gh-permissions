@@ -1,4 +1,4 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts#269 merge 47ae25cf (content-type mismatch denial).
+# Paired with the reviewed django-trusts#280 delegation feature head.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=47ae25cffcfa542b3e4a2940f528a63fcb32062d
+ref=78452ae4c5d3e7c8115ddf1e81b404f73a581273

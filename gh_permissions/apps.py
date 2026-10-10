@@ -65,6 +65,7 @@ class GhPermissionsConfig(TrustsImplementationConfig):
 
         from gh_permissions.policy import (
             register_collaborator,
+            register_delegation,
             register_organization_owner,
             register_team,
         )
@@ -84,3 +85,4 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         register_collaborator(handle)
         register_team(handle)
         register_organization_owner(handle)
+        register_delegation(handle)

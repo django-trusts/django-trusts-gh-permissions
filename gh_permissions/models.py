@@ -221,6 +221,65 @@ class RepositoryCollaborator(models.Model):
         return '%s @ %s' % (self.user_id, self.repository_id)
 
 
+class RepositoryDelegation(models.Model):
+    """A sponsor-selected bridge from one user to one repository.
+
+    The selected ``sponsor_ownership`` is part of the delegation path,
+    not an ordinary permission grant. Deleting that ownership cascades
+    this row and revokes the bridge even if the sponsor keeps repository
+    authority through a collaborator or team path.
+
+    Organization approval is recorded independently from the sponsor
+    selection. Until ``approved_organization`` is set to the repository's
+    organization, this row grants nothing. ``allowed_permissions`` is the
+    delegation ceiling; the sponsor must also hold the requested permission
+    through an ordinary registered GH path.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor_ownership = models.ForeignKey(
+        OrganizationOwnership,
+        related_name='repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    repository = models.ForeignKey(
+        Repository,
+        related_name='delegations',
+        on_delete=models.CASCADE,
+    )
+    allowed_permissions = models.ManyToManyField(
+        Permission,
+        related_name='repository_delegations',
+        blank=True,
+    )
+    approved_organization = models.ForeignKey(
+        Organization,
+        related_name='approved_repository_delegations',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='approved_repository_delegations',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor_ownership', 'repository'),
+                name='unique_repository_delegation',
+            ),
+        )
+
+
 class TeamRepositoryPermission(models.Model):
     """Team → repository permission. Alignment compares team and repository orgs."""
 
