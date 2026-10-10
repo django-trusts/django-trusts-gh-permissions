@@ -142,6 +142,8 @@ class RepositoryDelegationTest(TestCase):
         delegation = self._select()
         delegation.allowed_permissions.add(self.write)
         self._approve(delegation)
+        self._assert_all_projections(True, self.write)
+
         self.owner_group.permissions.remove(self.write)
 
         self.assertFalse(self.sponsor.has_perm(_WRITE, self.repository))
@@ -150,6 +152,8 @@ class RepositoryDelegationTest(TestCase):
     def test_sponsor_grant_on_another_repository_cannot_cross_correlate(self):
         delegation = self._select()
         self._approve(delegation)
+        self._assert_all_projections(True)
+
         self.owner_group.permissions.remove(self.read)
         collaboration = RepositoryCollaborator.objects.create(
             user=self.sponsor, repository=self.other_repository,
