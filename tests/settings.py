@@ -1,3 +1,9 @@
+from pathlib import Path
+
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+TRUSTS_POLICY_LOCKFILE = BASE_DIR / 'trusts-policy.lock.yaml'
+
 SECRET_KEY = 'gh-permissions-tests-not-for-production'
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'

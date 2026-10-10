@@ -11,7 +11,7 @@ content identity: ``manage_organization`` on the organization, and the
 repository codenames on that organization's repositories. The crossed
 pairs are denials. A user with no ownership row is not an owner. Team
 does not carry this bundle.
-``GhPermissionsConfig.ready`` contributes the three helpers as separate
+``GhPermissionsConfig.ready`` contributes the four helpers as separate
 calls. Helpers require a ``BackendHandle``; a bare registry is
 ``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
 """
@@ -19,8 +19,11 @@ calls. Helpers require a ``BackendHandle``; a bare registry is
 from trusts.core import BackendHandle
 
 from gh_permissions.models import (
+    AllPersonalRepositoriesDelegation,
     OrganizationOwnership,
+    PersonalRepositoryDelegation,
     RepositoryCollaborator,
+    RepositoryDelegation,
     TeamRepositoryPermission,
 )
 
@@ -42,6 +45,65 @@ def register_collaborator(handle):
         user='user',
         permission='permissions',
         content='repository',
+    )
+
+
+def register_delegation(handle):
+    """Register one-level repository delegation through an exact sponsor.
+
+    Selection, organization approval, repository alignment, and the
+    delegation ceiling are the left side. Core correlates that row with
+    the sponsor's live ordinary GH grants on the right side.
+    """
+    handle = _require_handle(handle)
+    return handle.register(
+        trust=RepositoryDelegation,
+        delegate='delegate',
+        sponsor='sponsor_ownership__user',
+        content='repository',
+        condition=lambda delegation, permission: (
+            delegation.allowed_permissions.contains(permission)
+            & (
+                delegation.sponsor_ownership.organization
+                == delegation.repository.organization
+            )
+            & (
+                delegation.approved_organization
+                == delegation.repository.organization
+            )
+        ),
+    )
+
+
+def register_personal_delegation(handle):
+    """Register personal-repository delegation without company approval."""
+    handle = _require_handle(handle)
+    return handle.register(
+        trust=PersonalRepositoryDelegation,
+        delegate='delegate',
+        sponsor='sponsor',
+        content='repository',
+        condition=lambda delegation, permission: (
+            delegation.allowed_permissions.contains(permission)
+            & (
+                delegation.repository.organization.personal_user
+                == delegation.sponsor
+            )
+        ),
+    )
+
+
+def register_all_personal_repositories_delegation(handle):
+    """Register delegation over all of one sponsor's personal repositories."""
+    handle = _require_handle(handle)
+    return handle.register(
+        trust=AllPersonalRepositoriesDelegation,
+        delegate='delegate',
+        sponsor='sponsor',
+        content='sponsor__personal_organization__repositories',
+        condition=lambda delegation, permission: (
+            delegation.allowed_permissions.contains(permission)
+        ),
     )
 
 
