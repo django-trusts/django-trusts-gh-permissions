@@ -1,5 +1,6 @@
 """Concrete GH proof of one-level correlated delegation (#43)."""
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -66,25 +67,27 @@ class RepositoryDelegationTest(TestCase):
         )
         return delegation
 
-    def _assert_all_projections(self, expected):
+    def _assert_all_projections(self, expected, permission=None):
         User = get_user_model()
-        self.assertIs(self.delegate.has_perm(_READ, self.repository), expected)
+        permission = permission or self.read
+        code = 'gh_permissions.%s' % permission.codename
+        self.assertIs(self.delegate.has_perm(code, self.repository), expected)
         self.assertEqual(
             self.repository in set(
-                Repository.objects.authorized(self.delegate, self.read)
+                Repository.objects.authorized(self.delegate, permission)
             ),
             expected,
         )
         self.assertEqual(
-            _READ in self.delegate.get_all_permissions(self.repository),
+            code in self.delegate.get_all_permissions(self.repository),
             expected,
         )
         self.assertEqual(
-            self.delegate in set(User.objects.permitted(self.repository, _READ)),
+            self.delegate in set(User.objects.permitted(self.repository, code)),
             expected,
         )
         self.assertEqual(
-            self.delegate in set(self.repository.get_permitted_users(_READ)),
+            self.delegate in set(self.repository.get_permitted_users(code)),
             expected,
         )
 
@@ -124,11 +127,38 @@ class RepositoryDelegationTest(TestCase):
         )
         team.members.add(self.sponsor)
         team.allowed_operations.add(self.read)
-        TeamRepositoryPermission.objects.create(
+        team_grant = TeamRepositoryPermission.objects.create(
             team=team, repository=self.repository, operation=self.read,
         )
         self.assertTrue(self.sponsor.has_perm(_READ, self.repository))
         self.assertTrue(self.delegate.has_perm(_READ, self.repository))
+
+        # The bridge and approval remain, but no ordinary sponsor path does.
+        team_grant.delete()
+        self.assertFalse(self.sponsor.has_perm(_READ, self.repository))
+        self._assert_all_projections(False)
+
+    def test_ceiling_cannot_exceed_the_sponsors_live_authority(self):
+        delegation = self._select()
+        delegation.allowed_permissions.add(self.write)
+        self._approve(delegation)
+        self.owner_group.permissions.remove(self.write)
+
+        self.assertFalse(self.sponsor.has_perm(_WRITE, self.repository))
+        self._assert_all_projections(False, self.write)
+
+    def test_sponsor_grant_on_another_repository_cannot_cross_correlate(self):
+        delegation = self._select()
+        self._approve(delegation)
+        self.owner_group.permissions.remove(self.read)
+        collaboration = RepositoryCollaborator.objects.create(
+            user=self.sponsor, repository=self.other_repository,
+        )
+        collaboration.permissions.add(self.read)
+
+        self.assertTrue(self.sponsor.has_perm(_READ, self.other_repository))
+        self.assertFalse(self.sponsor.has_perm(_READ, self.repository))
+        self._assert_all_projections(False)
 
     def test_removing_sponsor_ownership_revokes_even_if_direct_grant_remains(self):
         delegation = self._select()
@@ -228,17 +258,17 @@ class RepositoryDelegationTest(TestCase):
                 self.assertEqual(
                     sql.count('gh_permissions_repositorydelegation"'), 1,
                 )
-                self.assertGreaterEqual(
+                self.assertEqual(
                     sql.count('gh_permissions_repositorycollaborator"'), 2,
                 )
-                self.assertGreaterEqual(
+                self.assertEqual(
                     sql.count('gh_permissions_teamrepositorypermission"'), 2,
                 )
-                self.assertGreaterEqual(
+                self.assertEqual(
                     sql.count('gh_permissions_organizationownership"'), 3,
                 )
                 self.assertIn('approved_organization_id', sql)
                 self.assertIn('sponsor_ownership_id', sql)
 
-        with open('trusts-policy.lock.yaml', 'rb') as lockfile:
+        with open(settings.TRUSTS_POLICY_LOCKFILE, 'rb') as lockfile:
             self.assertEqual(lockfile.read(), render_policy_sql_bytes())

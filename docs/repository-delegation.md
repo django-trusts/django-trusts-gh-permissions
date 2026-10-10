@@ -30,6 +30,16 @@ The selected ownership remains an independent left-side requirement. Removing
 that ownership deletes the bridge and revokes the delegate even when the
 sponsor still has a direct or team grant on the repository.
 
+`approved_organization` is the authoritative approval fact.
+`approved_by` is optional audit data, not an authorization predicate, and may
+become null if that user is deleted. A trusted organization-approval write
+path must be the only code allowed to set or clear the approval fact. This
+bounded authorization example does not implement that workflow.
+
+If a repository is moved to another organization by a raw write, both the
+sponsor-ownership alignment and approval alignment fail closed. The supported
+repository services already refuse organization moves.
+
 The registration is:
 
 ```python
