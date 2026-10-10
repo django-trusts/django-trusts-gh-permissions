@@ -1,4 +1,4 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with the reviewed django-trusts#280 delegation feature head.
+# Paired with the reviewed django-trusts#280 delegation merge commit.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=75ea0bdf26d11730786aa089975bf8178aca7054
+ref=1aa3872b84813682d3513c4856fabf189bcbd8c0

@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # Companion core: django-trusts#280 delegation feature head.
-  COMPANION_KERNEL_SHA: 75ea0bdf26d11730786aa089975bf8178aca7054
+  # Companion core: django-trusts#280 delegation merge commit.
+  COMPANION_KERNEL_SHA: 1aa3872b84813682d3513c4856fabf189bcbd8c0
 
 jobs:
   tests:
@@ -47,7 +47,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '75ea0bdf26d11730786aa089975bf8178aca7054' in pin, pin
+        assert '1aa3872b84813682d3513c4856fabf189bcbd8c0' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
@@ -78,8 +78,8 @@ jobs:
         python-version: "3.12"
     - name: Exact companion checkout
       run: |
-        test "${COMPANION_KERNEL_SHA}" = "75ea0bdf26d11730786aa089975bf8178aca7054"
-        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "75ea0bdf26d11730786aa089975bf8178aca7054"
+        test "${COMPANION_KERNEL_SHA}" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
+        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
