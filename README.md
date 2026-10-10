@@ -34,6 +34,12 @@ complete team path. Direct and team paths OR together. Deleting any
 required persisted relationship removes that path. Malformed,
 incomplete, or revoked paths fail closed.
 
+The [repository delegation example](docs/repository-delegation.md) adds a
+sponsor-selected, organization-approved bridge. It is limited by both its own
+repository/permission scope and the sponsor's live ordinary authority. The
+sponsor's ordinary authority remains the union of direct, team, and owner
+paths; delegation itself is one level only.
+
 `Alias` is the shared current-name ledger (`name` unique). It is not an
 authorization edge and it does not store redirects or older names.
 Creating a user reserves an alias, creates the user, creates a personal

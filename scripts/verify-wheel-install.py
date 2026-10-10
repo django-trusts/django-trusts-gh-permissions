@@ -91,9 +91,12 @@ def main() -> int:
     from django.apps import apps as django_apps
     from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
     from gh_permissions.models import (
+        AllPersonalRepositoriesDelegation,
         OrganizationOwnership,
+        PersonalRepositoryDelegation,
         Repository,
         RepositoryCollaborator,
+        RepositoryDelegation,
         TeamRepositoryPermission,
     )
     import trusts.apps as trusts_apps
@@ -142,6 +145,16 @@ def main() -> int:
             'GH-only populate must register collaborator, team, and '
             'owner roots: %r' % roots
         )
+    delegation_roots = [record.root for record in registry.delegations]
+    if delegation_roots != [
+        PersonalRepositoryDelegation,
+        AllPersonalRepositoriesDelegation,
+        RepositoryDelegation,
+    ]:
+        raise SystemExit(
+            'GH-only populate must register personal and organization '
+            'delegation roots: %r' % delegation_roots
+        )
 
     print('wheel import ok')
     print('django', django.get_version())
@@ -150,6 +163,10 @@ def main() -> int:
     print('Repository', Repository)
     print('owner', type(owners[0]).__name__, owners[0].label)
     print('startup roots', [root.__name__ for root in roots])
+    print(
+        'delegation roots',
+        [root.__name__ for root in delegation_roots],
+    )
     print('absent zero modules', ' '.join(ABSENT_ZERO_MODULES))
     return 0
 
