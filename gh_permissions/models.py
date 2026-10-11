@@ -193,7 +193,9 @@ class Issue(PermittedUsersMixin, models.Model):
 
     The modeled service permits sub-issues to cross repository boundaries.
     The repository therefore identifies the issue, while ``parent`` alone
-    defines the hierarchy traversed by the authorization policy.
+    defines the hierarchy traversed by the authorization policy. Application
+    writes are responsible for rejecting cycles and enforcing any owner rule;
+    the bounded authorization walk still terminates if malformed rows exist.
     """
 
     repository = models.ForeignKey(

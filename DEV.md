@@ -23,8 +23,8 @@ collections #264.
 
 [#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
 is the consumer acceptance proof: `IssueTriageGrant` applies `triage_issue`
-at one issue and its sub-issues through eight parent edges. Reverse inquiry
-on a descendant returns its active assignees. A parent, sibling, unrelated
+at one issue and its sub-issues through a relative eight-edge ceiling. Reverse
+inquiry on a descendant returns its active assignees. A parent, sibling, unrelated
 tree, and depth nine are denied. Re-parenting moves effective authority. This
 is an example policy and does not claim GitHub's repository-level triage role
 natively inherits through sub-issues.

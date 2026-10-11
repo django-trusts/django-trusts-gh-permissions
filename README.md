@@ -33,9 +33,8 @@ not required, so an outside collaborator is just that row.
 
 A repository may also contain `Issue` rows connected through an optional
 `parent`. An `IssueTriageGrant` assigns a user a permission bundle at one
-issue. The `triage_issue` example permission reaches that issue and its
-sub-issues through eight `parent` edges. It does not reach an ancestor or a
-sibling.
+issue. The `triage_issue` example permission reaches that issue and bounded
+sub-issues. It does not reach an ancestor or a sibling.
 
 Organization alignment and the team's allowed operations constrain a
 complete team path. Direct and team paths OR together. Deleting any
@@ -104,7 +103,10 @@ backend.register(
 ```
 
 Depth zero is the assigned issue. Eight parent edges are included; a ninth is
-denied. Forward authorization answers whether one user may triage one issue.
+denied. That relative query-safety ceiling is not the same as GitHub's
+absolute eight-level tree limit. Valid application writes remain responsible
+for the absolute level rule, rejecting cycles, and the separate same-owner
+rule. Forward authorization answers whether one user may triage one issue.
 Reverse inquiry answers who may triage a selected issue:
 
 ```python
