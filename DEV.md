@@ -11,18 +11,22 @@ This tree is `django-trusts-gh-permissions==0.1.0.dev0` against the
 final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
-`requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts commit
-`47ae25cffcfa542b3e4a2940f528a63fcb32062d`, the merge commit of
-[#269](https://github.com/django-trusts/django-trusts/pull/269)
-(`cursor/content-type-mismatch-denial-6f05`). That commit denies an
-`auth.Permission` whose `content_type` is not the protected object's
-content identity. `user.has_perm` stays a permission string. It is based on `dev`
-`7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
-[#264](https://github.com/django-trusts/django-trusts/pull/264).
-Do not float past `47ae25cffcfa542b3e4a2940f528a63fcb32062d`.
-The #264 merge is what lets `permission=`
-end on one forward to-many step to `auth.Permission`.
+`requirements.txt`, and `scripts/django-trusts.pin` point at reviewed
+django-trusts [#286](https://github.com/django-trusts/django-trusts/pull/286)
+head `04ce6798e420966acf5dc38d6682d040f23f28ea`. That provisional pairing
+adds reverse inquiry and complete policy SQL for bounded `along=` on top of
+the portable recursive walk merged in Core #289. Re-pin to the #286 merge
+commit before this consumer proof leaves draft; do not float past the
+reviewed head meanwhile. The paired Core also contains delegation #280,
+permission content-type enforcement #269, and terminal permission
+collections #264.
+
+[#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
+is the consumer acceptance proof: `RepositoryPathGrant` applies
+`review_repositorypath` at one path and descendants through eight parent
+edges. Reverse inquiry on a leaf returns its active reviewers. A sibling,
+another tree, and depth nine are denied. This is not a CODEOWNERS parser and
+does not implement nested-team repository inheritance.
 
 [#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
 adds `Alias`, personal versus conventional organizations,
@@ -202,10 +206,13 @@ and never installs `'trusts'`.
 - Revocation and malformed configuration fail closed
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
+- `RepositoryPathGrant` carries a terminal permission collection and uses
+  `along=("path__parent", 8)` to reach bounded path descendants
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and
-`collaborator.permissions`. Callers pass `AUTH_USER_MODEL` and
+`collaborator.permissions`, plus `path.parent` and
+`path_grant.permissions`. Callers pass `AUTH_USER_MODEL` and
 `auth.Permission` **instances**. `Repository.objects.authorized` takes
 the permission instance. `has_perm` and `permitted` accept
 `gh_permissions.read_repository` (and the write and admin codenames)
@@ -272,7 +279,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `47ae25cffcfa542b3e4a2940f528a63fcb32062d`.
+with Django 6.1 against exact paired-core commit `04ce6798e420966acf5dc38d6682d040f23f28ea`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -288,11 +295,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, RepositoryPath, and RepositoryPathGrant. Permission rows are `auth.Permission`, including `manage_organization` and `review_repositorypath`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
-| Policy registrations | `policy.py` | Collaborator, team, and owner `handle.register` calls. No aggregate helper |
+| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded repository-path `handle.register` calls. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | `register_collaborator`, `register_team`, `register_organization_owner`, then owner-group seed on `post_migrate` |
+| Ready contribution | `apps.py` | Registers ordinary, delegation, and repository-path relations, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

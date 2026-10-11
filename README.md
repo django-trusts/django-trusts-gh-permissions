@@ -31,6 +31,12 @@ A direct path is one `RepositoryCollaborator` row: the user, the
 repository, and the selected `permissions`. Organization membership is
 not required, so an outside collaborator is just that row.
 
+A repository may also have one `RepositoryPath` tree. A
+`RepositoryPathGrant` assigns a user a permission bundle at one path. The
+`review_repositorypath` example permission reaches that path and descendants
+through eight `parent` edges. It does not reach an ancestor, a sibling, or a
+different repository tree.
+
 Organization alignment and the team's allowed operations constrain a
 complete team path. Direct and team paths OR together. Deleting any
 required persisted relationship removes that path. Malformed,
@@ -71,6 +77,45 @@ grant this bundle.
 
 `Repository.name` is unique per organization and may repeat across
 organizations.
+
+## Bounded repository-path reviews
+
+The path example is the concrete consumer of provisional `along=`. A root
+has a one-to-one `repository` and no parent. Every non-root path has one
+parent and no second repository identifier, so the stored edge cannot
+disagree with a duplicated repository field.
+
+Startup registers the path assignment as:
+
+```python
+from gh_permissions.models import RepositoryPathGrant
+
+backend.register(
+    trust=RepositoryPathGrant,
+    user="user",
+    permission="permissions",
+    content="path",
+    along=("path__parent", 8),
+)
+```
+
+Depth zero is the assigned path. Eight parent edges are included; a ninth is
+denied. Forward authorization answers whether one user may review one path.
+Reverse inquiry answers who may review a selected path:
+
+```python
+user.has_perm("gh_permissions.review_repositorypath", path)
+RepositoryPath.objects.authorized(user, review_permission)
+User.objects.permitted(path, review_permission)
+path.get_permitted_users(review_permission)
+```
+
+Removing the permission from the assignment, or deleting the assignment,
+revokes both directions immediately. The policy lock records the same
+bounded recursive SQL for forward and reverse inquiries.
+
+This is a bounded GH-style review-assignment example. It is not a CODEOWNERS
+parser and does not claim to reproduce GitHub's complete review model.
 
 ## Changing authorization relationships
 
@@ -353,7 +398,7 @@ in production.
 | --- | --- | --- |
 | `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
 | `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants `manage_organization` on that organization and `read_repository`, `write_repository`, and `admin_repository` on its repositories. A repository permission on the organization, or `manage_organization` on a repository, is denied. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
-| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
+| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`, plus path-review authority at `/src`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
 | `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |
 
@@ -366,6 +411,11 @@ Team `readers` allows `read_repository` only. A team grant for
 `write_repository` on `shared-repo` is stored and excluded by that
 ceiling. Repository `shared-repo` carries both the direct collaborator
 and the team path, so those paths can be compared on one repository.
+
+The same repository has `/src/crypto/check.py` and `/docs/readme.md`.
+`example-direct` receives `review_repositorypath` at `/src`, so the first
+leaf is permitted and the sibling leaf is denied. Reverse inquiry on
+`check.py` returns `example-direct` among ordinary users.
 
 Repeat the default seed with an explicit name:
 
@@ -382,7 +432,8 @@ invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
 repository permission. Team membership, the team ceiling, collaborator
 bundles, and team grants change through the domain services above. A
-raw queryset write does not.
+raw queryset write does not. The path-review example is not CODEOWNERS and
+does not make repository permissions imply path permissions.
 
 ## Documentation
 

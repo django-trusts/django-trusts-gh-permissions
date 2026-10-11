@@ -6,6 +6,8 @@ Public relations used to authorize:
     team.allowed_operations
     repository.organization
     collaborator.permissions
+    repository.root_path / path.parent
+    path_grant.permissions
 
 ``organization.teams`` and ``organization.repositories`` are containment.
 ``Alias`` reserves the shared current name. Authorization does not
@@ -184,6 +186,86 @@ class Repository(PermittedUsersMixin, models.Model):
 
     def __str__(self):
         return self.name
+
+
+class RepositoryPath(PermittedUsersMixin, models.Model):
+    """One node in a repository's bounded review path tree.
+
+    A root points at exactly one repository. Every other node points at
+    exactly one parent and derives its repository from that ancestry. This
+    avoids storing a second repository identifier that could disagree with
+    the recursive edge.
+    """
+
+    repository = models.OneToOneField(
+        Repository,
+        related_name='root_path',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    parent = models.ForeignKey(
+        'self',
+        related_name='children',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    name = models.CharField(max_length=255)
+
+    objects = AuthorizedManager()
+
+    class Meta:
+        permissions = (
+            ('review_repositorypath', 'Can review repository path'),
+        )
+        constraints = (
+            models.CheckConstraint(
+                condition=(
+                    models.Q(repository__isnull=False, parent__isnull=True)
+                    | models.Q(repository__isnull=True, parent__isnull=False)
+                ),
+                name='repository_path_root_or_child',
+            ),
+            models.UniqueConstraint(
+                fields=('parent', 'name'),
+                name='unique_repository_path_name_per_parent',
+            ),
+        )
+
+    def __str__(self):
+        return self.name
+
+
+class RepositoryPathGrant(models.Model):
+    """A user's permission bundle at one repository path subtree."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='repository_path_grants',
+        on_delete=models.CASCADE,
+    )
+    path = models.ForeignKey(
+        RepositoryPath,
+        related_name='grants',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='repository_path_grants',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'path'),
+                name='unique_repository_path_grant',
+            ),
+        )
+
+    def __str__(self):
+        return '%s @ %s' % (self.user_id, self.path_id)
 
 
 class RepositoryCollaborator(models.Model):

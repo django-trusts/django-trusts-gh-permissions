@@ -25,6 +25,13 @@ from example.management.commands.seed_example import (
     EXCLUDED_CODENAME,
     OUTSIDER_USERNAME,
     OWNER_USERNAME,
+    PATH_REVIEW_CHILD_NAME,
+    PATH_REVIEW_CODENAME,
+    PATH_REVIEW_LEAF_NAME,
+    PATH_REVIEW_ROOT_NAME,
+    PATH_ROOT_NAME,
+    PATH_SIBLING_LEAF_NAME,
+    PATH_SIBLING_NAME,
     REPOSITORY_TITLE,
     SUPERUSER_USERNAME,
     TEAM_NAME,
@@ -39,6 +46,8 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    RepositoryPath,
+    RepositoryPathGrant,
     Team,
     TeamRepositoryPermission,
 )
@@ -196,6 +205,50 @@ class SeedExampleCommandTests(TestCase):
         )
         return organization, repository, users
 
+    def _assert_repository_path_inquiries(self, repository, users):
+        review = _permission('repositorypath', PATH_REVIEW_CODENAME)
+        root = repository.root_path
+        self.assertEqual(root.name, PATH_ROOT_NAME)
+        review_root = root.children.get(name=PATH_REVIEW_ROOT_NAME)
+        review_child = review_root.children.get(name=PATH_REVIEW_CHILD_NAME)
+        leaf = review_child.children.get(name=PATH_REVIEW_LEAF_NAME)
+        sibling = root.children.get(name=PATH_SIBLING_NAME)
+        sibling_leaf = sibling.children.get(name=PATH_SIBLING_LEAF_NAME)
+        direct = users[DIRECT_USERNAME]
+        superuser = users[SUPERUSER_USERNAME]
+
+        self.assertTrue(direct.has_perm(
+            'gh_permissions.%s' % PATH_REVIEW_CODENAME, leaf,
+        ))
+        self.assertFalse(direct.has_perm(
+            'gh_permissions.%s' % PATH_REVIEW_CODENAME, root,
+        ))
+        self.assertFalse(direct.has_perm(
+            'gh_permissions.%s' % PATH_REVIEW_CODENAME, sibling_leaf,
+        ))
+        self.assertEqual(
+            set(RepositoryPath.objects.authorized(direct, review)),
+            {review_root, review_child, leaf},
+        )
+        self.assertEqual(
+            set(leaf.get_permitted_users(review)),
+            {direct, superuser},
+        )
+        self.assertEqual(
+            set(get_user_model().objects.permitted(leaf, review)),
+            {direct, superuser},
+        )
+        self.assertEqual(
+            RepositoryPathGrant.objects.get(
+                user=direct, path=review_root,
+            ).permissions.get(),
+            review,
+        )
+        for username in (TEAM_USERNAME, OUTSIDER_USERNAME, OWNER_USERNAME):
+            self.assertFalse(users[username].has_perm(
+                'gh_permissions.%s' % PATH_REVIEW_CODENAME, leaf,
+            ))
+
     def _assert_owner_scope(self, organization, repository, users):
         owner = users[OWNER_USERNAME]
         manage = _permission('organization', 'manage_organization')
@@ -309,6 +362,9 @@ class SeedExampleCommandTests(TestCase):
         self.assertIn('RepositoryCollaborator', text)
         self.assertIn('OrganizationOwnership', text)
         self.assertIn(EXCLUDED_CODENAME, text)
+        self.assertIn('Repository path review', text)
+        self.assertIn('/src/crypto/check.py', text)
+        self.assertIn('/docs/readme.md', text)
         for spec in USER_SPECS:
             self.assertIn(spec['username'], text)
             self.assertIn(spec['password'], text)
@@ -316,6 +372,7 @@ class SeedExampleCommandTests(TestCase):
         organization, repository, users = self._assert_repository_inquiries(
             DEFAULT_ORGANIZATION_NAME,
         )
+        self._assert_repository_path_inquiries(repository, users)
         self._assert_owner_scope(organization, repository, users)
         read = _permission('repository', 'read_repository')
         self.assertNotIn(
@@ -348,8 +405,10 @@ class SeedExampleCommandTests(TestCase):
             TeamRepositoryPermission.objects.count(),
             OrganizationOwnership.objects.count(),
             Alias.objects.count(),
+            RepositoryPath.objects.count(),
+            RepositoryPathGrant.objects.count(),
         )
-        self.assertEqual(counts, (6, 7, 2, 2, 1, 2, 6, 7))
+        self.assertEqual(counts, (6, 7, 2, 2, 1, 2, 6, 7, 6, 1))
 
         again = StringIO()
         with CaptureQueriesContext(connection) as captured:
@@ -371,6 +430,8 @@ class SeedExampleCommandTests(TestCase):
                 TeamRepositoryPermission.objects.count(),
                 OrganizationOwnership.objects.count(),
                 Alias.objects.count(),
+                RepositoryPath.objects.count(),
+                RepositoryPathGrant.objects.count(),
             ),
             counts,
         )
@@ -394,6 +455,7 @@ class SeedExampleCommandTests(TestCase):
             Organization.objects.filter(name=DEFAULT_ORGANIZATION_NAME).exists()
         )
         organization, repository, users = self._assert_repository_inquiries('Acme Lab')
+        self._assert_repository_path_inquiries(repository, users)
         self._assert_owner_scope(organization, repository, users)
         again = StringIO()
         with CaptureQueriesContext(connection) as captured:

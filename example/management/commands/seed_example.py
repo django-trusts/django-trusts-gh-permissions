@@ -22,6 +22,8 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    RepositoryPath,
+    RepositoryPathGrant,
     Team,
     TeamRepositoryPermission,
 )
@@ -38,6 +40,13 @@ from gh_permissions.services import (
 DEFAULT_ORGANIZATION_NAME = 'Example Organization'
 TEAM_NAME = 'readers'
 REPOSITORY_TITLE = 'shared-repo'
+PATH_ROOT_NAME = '/'
+PATH_REVIEW_ROOT_NAME = 'src'
+PATH_REVIEW_CHILD_NAME = 'crypto'
+PATH_REVIEW_LEAF_NAME = 'check.py'
+PATH_SIBLING_NAME = 'docs'
+PATH_SIBLING_LEAF_NAME = 'readme.md'
+PATH_REVIEW_CODENAME = 'review_repositorypath'
 
 SUPERUSER_USERNAME = 'example-superuser'
 OWNER_USERNAME = 'example-owner'
@@ -166,7 +175,9 @@ class Command(BaseCommand):
         organization_name = _validate_organization_name(
             options['organization_name'],
         )
-        repository_permissions, owner_permissions = _load_permissions()
+        repository_permissions, path_permission, owner_permissions = (
+            _load_permissions()
+        )
         organization = Organization.objects.filter(
             name=organization_name, personal_user__isnull=True,
         ).first()
@@ -177,6 +188,7 @@ class Command(BaseCommand):
                     _create_graph(
                         organization_name,
                         repository_permissions,
+                        path_permission,
                         owner_permissions,
                     )
             except (IntegrityError, AliasConflict) as exc:
@@ -233,6 +245,19 @@ class Command(BaseCommand):
             'and is not an allowed operation.'
             % (EXCLUDED_CODENAME, REPOSITORY_TITLE, TEAM_NAME)
         )
+        self.stdout.write(
+            'Repository path review: %s at /%s reaches '
+            '/%s/%s/%s through bounded along=, but not /%s/%s.'
+            % (
+                DIRECT_USERNAME,
+                PATH_REVIEW_ROOT_NAME,
+                PATH_REVIEW_ROOT_NAME,
+                PATH_REVIEW_CHILD_NAME,
+                PATH_REVIEW_LEAF_NAME,
+                PATH_SIBLING_NAME,
+                PATH_SIBLING_LEAF_NAME,
+            )
+        )
 
 
 def _validate_organization_name(raw):
@@ -284,7 +309,10 @@ def _load_permissions():
     owner_permissions = {
         key: _get_permission(*key) for key in _owner_permission_keys()
     }
-    return repository_permissions, owner_permissions
+    path_permission = _get_permission(
+        'gh_permissions', 'repositorypath', PATH_REVIEW_CODENAME,
+    )
+    return repository_permissions, path_permission, owner_permissions
 
 
 def _ensure_names_available(organization_name):
@@ -314,7 +342,10 @@ def _ensure_names_available(organization_name):
         )
 
 
-def _create_graph(organization_name, repository_permissions, owner_permissions):
+def _create_graph(
+    organization_name, repository_permissions, path_permission,
+    owner_permissions,
+):
     users = {}
     for spec in USER_SPECS:
         users[spec['username']] = create_user(
@@ -352,6 +383,28 @@ def _create_graph(organization_name, repository_permissions, owner_permissions):
             repository=repository,
             operation=repository_permissions[codename],
         )
+    root = RepositoryPath.objects.create(
+        repository=repository, name=PATH_ROOT_NAME,
+    )
+    review_root = RepositoryPath.objects.create(
+        parent=root, name=PATH_REVIEW_ROOT_NAME,
+    )
+    review_child = RepositoryPath.objects.create(
+        parent=review_root, name=PATH_REVIEW_CHILD_NAME,
+    )
+    RepositoryPath.objects.create(
+        parent=review_child, name=PATH_REVIEW_LEAF_NAME,
+    )
+    sibling = RepositoryPath.objects.create(
+        parent=root, name=PATH_SIBLING_NAME,
+    )
+    RepositoryPath.objects.create(
+        parent=sibling, name=PATH_SIBLING_LEAF_NAME,
+    )
+    path_grant = RepositoryPathGrant.objects.create(
+        user=users[DIRECT_USERNAME], path=review_root,
+    )
+    path_grant.permissions.add(path_permission)
 
 
 def _graph_problems(organization, owner_permissions):
@@ -367,6 +420,7 @@ def _graph_problems(organization, owner_permissions):
     _repository_problems(organization, problems)
     _collaborator_problems(organization, problems)
     _team_grant_problems(organization, problems)
+    _repository_path_problems(organization, problems)
     return problems
 
 
@@ -585,4 +639,66 @@ def _team_grant_problems(organization, problems):
         problems.append(
             'team grants are %s, expected %s'
             % (sorted(actual), sorted(expected))
+        )
+
+
+def _repository_path_problems(organization, problems):
+    repository = organization.repositories.filter(name=REPOSITORY_TITLE).first()
+    if repository is None:
+        return
+    try:
+        root = repository.root_path
+    except RepositoryPath.DoesNotExist:
+        problems.append('missing repository path root for %s' % REPOSITORY_TITLE)
+        return
+    if root.name != PATH_ROOT_NAME or root.parent_id is not None:
+        problems.append('repository path root differs')
+        return
+
+    expected = {
+        PATH_REVIEW_ROOT_NAME: {
+            PATH_REVIEW_CHILD_NAME: {PATH_REVIEW_LEAF_NAME: {}},
+        },
+        PATH_SIBLING_NAME: {
+            PATH_SIBLING_LEAF_NAME: {},
+        },
+    }
+
+    def compare(node, wanted, prefix):
+        actual = {child.name: child for child in node.children.all()}
+        if set(actual) != set(wanted):
+            problems.append(
+                'repository path children at %s are %s, expected %s'
+                % (prefix, sorted(actual), sorted(wanted))
+            )
+            return
+        for name, descendants in wanted.items():
+            compare(actual[name], descendants, '%s/%s' % (prefix, name))
+
+    compare(root, expected, '')
+    review_root = root.children.filter(name=PATH_REVIEW_ROOT_NAME).first()
+    if review_root is None:
+        return
+    grants = []
+    for grant in RepositoryPathGrant.objects.filter(path__in=(
+        root,
+        *root.children.all(),
+        *RepositoryPath.objects.filter(parent__parent=root),
+        *RepositoryPath.objects.filter(parent__parent__parent=root),
+    )):
+        permissions = tuple(sorted(grant.permissions.values_list(
+            'content_type__app_label',
+            'content_type__model',
+            'codename',
+        )))
+        grants.append((grant.user.username, grant.path.name, permissions))
+    expected_grants = [(
+        DIRECT_USERNAME,
+        PATH_REVIEW_ROOT_NAME,
+        (('gh_permissions', 'repositorypath', PATH_REVIEW_CODENAME),),
+    )]
+    if sorted(grants) != expected_grants:
+        problems.append(
+            'repository path grants are %s, expected %s'
+            % (sorted(grants), expected_grants)
         )

@@ -11,8 +11,10 @@ content identity: ``manage_organization`` on the organization, and the
 repository codenames on that organization's repositories. The crossed
 pairs are denials. A user with no ownership row is not an owner. Team
 does not carry this bundle.
-``GhPermissionsConfig.ready`` contributes the four helpers as separate
-calls. Helpers require a ``BackendHandle``; a bare registry is
+Repository-path review assignments use bounded ``along=`` reachability:
+one grant at a directory applies to that directory and descendants through
+eight parent edges. ``GhPermissionsConfig.ready`` contributes each helper
+as a separate call. Helpers require a ``BackendHandle``; a bare registry is
 ``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
 """
 
@@ -24,6 +26,7 @@ from gh_permissions.models import (
     PersonalRepositoryDelegation,
     RepositoryCollaborator,
     RepositoryDelegation,
+    RepositoryPathGrant,
     TeamRepositoryPermission,
 )
 
@@ -45,6 +48,18 @@ def register_collaborator(handle):
         user='user',
         permission='permissions',
         content='repository',
+    )
+
+
+def register_repository_path_grant(handle):
+    """Register bounded review authority over one path subtree."""
+    handle = _require_handle(handle)
+    return handle.register(
+        trust=RepositoryPathGrant,
+        user='user',
+        permission='permissions',
+        content='path',
+        along=('path__parent', 8),
     )
 
 
