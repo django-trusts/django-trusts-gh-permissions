@@ -96,7 +96,7 @@ class RepositoryDelegationTest(TestCase):
             delegate=self.delegate,
             sponsor=sponsor or self.sponsor,
         )
-        delegation.allowed_permissions.add(self.read)
+        delegation.permissions.add(self.read)
         return delegation
 
     def _assert_all_projections(

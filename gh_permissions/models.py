@@ -409,7 +409,7 @@ class AllPersonalRepositoriesDelegation(models.Model):
         related_name='sponsored_all_personal_repositories_delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='all_personal_repositories_delegations',
         blank=True,

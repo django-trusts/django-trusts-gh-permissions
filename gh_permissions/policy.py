@@ -119,7 +119,7 @@ def register_all_personal_repositories_delegation(handle):
         sponsor='sponsor',
         content='sponsor__personal_organization__repositories',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
         ),
     )
 
