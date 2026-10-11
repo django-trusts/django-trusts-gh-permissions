@@ -97,6 +97,7 @@ def main() -> int:
         Repository,
         RepositoryCollaborator,
         RepositoryDelegation,
+        RepositoryPathGrant,
         TeamRepositoryPermission,
     )
     import trusts.apps as trusts_apps
@@ -140,10 +141,11 @@ def main() -> int:
         TeamRepositoryPermission,
         OrganizationOwnership,
         OrganizationOwnership,
+        RepositoryPathGrant,
     ]:
         raise SystemExit(
-            'GH-only populate must register collaborator, team, and '
-            'owner roots: %r' % roots
+            'GH-only populate must register collaborator, team, owner, '
+            'and repository-path roots: %r' % roots
         )
     delegation_roots = [record.root for record in registry.delegations]
     if delegation_roots != [
