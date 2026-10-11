@@ -228,22 +228,22 @@ class Issue(PermittedUsersMixin, models.Model):
         return '#%s %s' % (self.number, self.title)
 
 
-class IssueTriageGrant(models.Model):
+class IssuePermissions(models.Model):
     """A user's permission bundle at one issue/sub-issue subtree."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='issue_triage_grants',
+        related_name='issue_permissions',
         on_delete=models.CASCADE,
     )
     issue = models.ForeignKey(
         Issue,
-        related_name='triage_grants',
+        related_name='permission_assignments',
         on_delete=models.CASCADE,
     )
     permissions = models.ManyToManyField(
         Permission,
-        related_name='issue_triage_grants',
+        related_name='issue_permissions',
         blank=True,
     )
 
@@ -251,7 +251,7 @@ class IssueTriageGrant(models.Model):
         constraints = (
             models.UniqueConstraint(
                 fields=('user', 'issue'),
-                name='unique_issue_triage_grant',
+                name='unique_issue_permissions',
             ),
         )
 

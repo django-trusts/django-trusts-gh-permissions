@@ -97,7 +97,7 @@ def main() -> int:
         Repository,
         RepositoryCollaborator,
         RepositoryDelegation,
-        IssueTriageGrant,
+        IssuePermissions,
         TeamRepositoryPermission,
     )
     import trusts.apps as trusts_apps
@@ -141,7 +141,7 @@ def main() -> int:
         TeamRepositoryPermission,
         OrganizationOwnership,
         OrganizationOwnership,
-        IssueTriageGrant,
+        IssuePermissions,
     ]:
         raise SystemExit(
             'GH-only populate must register collaborator, team, owner, '

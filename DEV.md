@@ -22,7 +22,7 @@ permission content-type enforcement #269, and terminal permission
 collections #264.
 
 [#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
-is the consumer acceptance proof: `IssueTriageGrant` applies `triage_issue`
+is the consumer acceptance proof: `IssuePermissions` applies `triage_issue`
 at one issue and its sub-issues through a relative eight-edge ceiling. Reverse
 inquiry on a descendant returns its active assignees. A parent, sibling, unrelated
 tree, and depth nine are denied. Re-parenting moves effective authority. This
@@ -207,7 +207,7 @@ and never installs `'trusts'`.
 - Revocation and malformed configuration fail closed
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
-- `IssueTriageGrant` carries a terminal permission collection and uses
+- `IssuePermissions` carries a terminal permission collection and uses
   `along=("issue__parent", 8)` to reach bounded sub-issue descendants
 
 Public relations used to authorize: `user.teams`,
@@ -296,7 +296,7 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, Issue, and IssueTriageGrant. Permission rows are `auth.Permission`, including `manage_organization` and `triage_issue`. |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, Issue, and IssuePermissions. Permission rows are `auth.Permission`, including `manage_organization` and `triage_issue`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
 | Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded sub-issue `handle.register` calls. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |

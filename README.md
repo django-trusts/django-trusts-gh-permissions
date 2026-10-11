@@ -32,7 +32,7 @@ repository, and the selected `permissions`. Organization membership is
 not required, so an outside collaborator is just that row.
 
 A repository may also contain `Issue` rows connected through an optional
-`parent`. An `IssueTriageGrant` assigns a user a permission bundle at one
+`parent`. An `IssuePermissions` row assigns a user a permission bundle at one
 issue. The `triage_issue` example permission reaches that issue and bounded
 sub-issues. It does not reach an ancestor or a sibling.
 
@@ -91,10 +91,10 @@ bounded example does not reproduce that separate write-time owner check.
 Startup registers the triage assignment as:
 
 ```python
-from gh_permissions.models import IssueTriageGrant
+from gh_permissions.models import IssuePermissions
 
 backend.register(
-    trust=IssueTriageGrant,
+    trust=IssuePermissions,
     user="user",
     permission="permissions",
     content="issue",

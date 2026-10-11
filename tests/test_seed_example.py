@@ -41,7 +41,7 @@ from gh_permissions.admin import OrganizationAdmin, RepositoryAdmin, TeamAdmin
 from gh_permissions.models import (
     Alias,
     Issue,
-    IssueTriageGrant,
+    IssuePermissions,
     Organization,
     OrganizationOwnership,
     Repository,
@@ -243,7 +243,7 @@ class SeedExampleCommandTests(TestCase):
             leaf, Issue.objects.authorized(superuser, triage),
         )
         self.assertEqual(
-            IssueTriageGrant.objects.get(
+            IssuePermissions.objects.get(
                 user=direct, issue=assigned,
             ).permissions.get(),
             triage,
@@ -410,7 +410,7 @@ class SeedExampleCommandTests(TestCase):
             OrganizationOwnership.objects.count(),
             Alias.objects.count(),
             Issue.objects.count(),
-            IssueTriageGrant.objects.count(),
+            IssuePermissions.objects.count(),
         )
         self.assertEqual(counts, (6, 7, 2, 2, 1, 2, 6, 7, 4, 1))
 
@@ -435,7 +435,7 @@ class SeedExampleCommandTests(TestCase):
                 OrganizationOwnership.objects.count(),
                 Alias.objects.count(),
                 Issue.objects.count(),
-                IssueTriageGrant.objects.count(),
+                IssuePermissions.objects.count(),
             ),
             counts,
         )
@@ -476,7 +476,7 @@ class SeedExampleCommandTests(TestCase):
             for username in DEVELOPMENT_PASSWORDS
         }
         Issue.objects.filter(repository=repository).delete()
-        self.assertEqual(IssueTriageGrant.objects.count(), 0)
+        self.assertEqual(IssuePermissions.objects.count(), 0)
 
         base_counts = (
             get_user_model().objects.count(),
@@ -492,7 +492,7 @@ class SeedExampleCommandTests(TestCase):
         call_command('seed_example', stdout=upgraded)
         self.assertIn('Status: upgraded', upgraded.getvalue())
         self.assertEqual(Issue.objects.filter(repository=repository).count(), 4)
-        self.assertEqual(IssueTriageGrant.objects.count(), 1)
+        self.assertEqual(IssuePermissions.objects.count(), 1)
         self.assertEqual(
             (
                 get_user_model().objects.count(),

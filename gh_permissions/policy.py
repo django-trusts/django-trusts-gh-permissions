@@ -24,7 +24,7 @@ from trusts.core import BackendHandle
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
-    IssueTriageGrant,
+    IssuePermissions,
     OrganizationOwnership,
     PersonalRepositoryDelegation,
     RepositoryCollaborator,
@@ -53,11 +53,11 @@ def register_collaborator(handle):
     )
 
 
-def register_issue_triage_grant(handle):
-    """Register bounded triage authority over one issue subtree."""
+def register_issue_permissions(handle):
+    """Register a bounded permission bundle over one issue subtree."""
     handle = _require_handle(handle)
     return handle.register(
-        trust=IssueTriageGrant,
+        trust=IssuePermissions,
         user='user',
         permission='permissions',
         content='issue',

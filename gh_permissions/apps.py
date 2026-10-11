@@ -69,7 +69,7 @@ class GhPermissionsConfig(TrustsImplementationConfig):
             register_delegation,
             register_organization_owner,
             register_personal_delegation,
-            register_issue_triage_grant,
+            register_issue_permissions,
             register_team,
         )
         from gh_permissions.services import seed_owner_group_on_migrate
@@ -91,4 +91,4 @@ class GhPermissionsConfig(TrustsImplementationConfig):
         register_personal_delegation(handle)
         register_all_personal_repositories_delegation(handle)
         register_delegation(handle)
-        register_issue_triage_grant(handle)
+        register_issue_permissions(handle)

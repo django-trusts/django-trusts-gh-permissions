@@ -20,7 +20,7 @@ from django.db.models import Q
 from gh_permissions.models import (
     Alias,
     Issue,
-    IssueTriageGrant,
+    IssuePermissions,
     Organization,
     OrganizationOwnership,
     Repository,
@@ -441,7 +441,7 @@ def _create_issue_slice(repository, user, issue_permission):
         number=ISSUE_SIBLING_NUMBER,
         title=ISSUE_SIBLING_TITLE,
     )
-    grant = IssueTriageGrant.objects.create(user=user, issue=assigned)
+    grant = IssuePermissions.objects.create(user=user, issue=assigned)
     grant.permissions.add(issue_permission)
 
 
@@ -740,7 +740,7 @@ def _issue_slice_state(organization):
         )
 
     grants = []
-    for grant in IssueTriageGrant.objects.filter(issue__in=issues):
+    for grant in IssuePermissions.objects.filter(issue__in=issues):
         permissions = tuple(sorted(grant.permissions.values_list(
             'content_type__app_label',
             'content_type__model',

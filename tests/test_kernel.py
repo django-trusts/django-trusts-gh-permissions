@@ -100,7 +100,7 @@ class KernelMigrationLoaderTest(TestCase):
                 ('gh_permissions', '0006_personal_delegations'),
                 (
                     'gh_permissions',
-                    '0007_issue_issuetriagegrant_and_more',
+                    '0007_issue_issuepermissions_and_more',
                 ),
             },
         )

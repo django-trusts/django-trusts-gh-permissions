@@ -11,11 +11,11 @@ from trusts.policy_lock import _load_policy_sql_document, render_policy_sql_byte
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Issue,
-    IssueTriageGrant,
+    IssuePermissions,
     Organization,
     Repository,
 )
-from gh_permissions.policy import register_issue_triage_grant
+from gh_permissions.policy import register_issue_permissions
 from gh_permissions.services import ensure_owner_group
 from tests.fixtures import isolated_handle
 
@@ -35,8 +35,8 @@ class SubIssueAlongRegistrationTest(TestCase):
     def test_registration_is_zero_sql_shape_s_with_bound_eight(self):
         handle = isolated_handle()
         with self.assertNumQueries(0):
-            record = register_issue_triage_grant(handle)
-        self.assertIs(record.root, IssueTriageGrant)
+            record = register_issue_permissions(handle)
+        self.assertIs(record.root, IssuePermissions)
         self.assertIs(record.content_model, Issue)
         self.assertEqual(record.user_path, ('user',))
         self.assertEqual(record.permission_path, ('permissions',))
@@ -92,11 +92,11 @@ class SubIssueAlongAuthorizationTest(TestCase):
         self.inactive.save(update_fields=('is_active',))
         self.triage = _triage_permission()
 
-        self.grant = IssueTriageGrant.objects.create(
+        self.grant = IssuePermissions.objects.create(
             user=self.alice, issue=self.assigned,
         )
         self.grant.permissions.add(self.triage)
-        inactive_grant = IssueTriageGrant.objects.create(
+        inactive_grant = IssuePermissions.objects.create(
             user=self.inactive, issue=self.assigned,
         )
         inactive_grant.permissions.add(self.triage)
@@ -133,7 +133,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
     def test_bound_includes_eight_hops_and_denies_ninth(self):
         User = get_user_model()
         bounded = User.objects.create_user('issue-bounded')
-        grant = IssueTriageGrant.objects.create(
+        grant = IssuePermissions.objects.create(
             user=bounded, issue=self.other,
         )
         grant.permissions.add(self.triage)
@@ -172,7 +172,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
         )
         self.assertEqual(len(content['trusts']), 1)
         trust = content['trusts'][0]
-        self.assertEqual(trust['root'], 'gh_permissions.IssueTriageGrant')
+        self.assertEqual(trust['root'], 'gh_permissions.IssuePermissions')
         self.assertEqual(
             trust['along'],
             {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
@@ -222,5 +222,5 @@ class SubIssueStartupTest(TestCase):
             CANONICAL_BACKEND,
         ).registry
         record = registry.records[-1]
-        self.assertIs(record.root, IssueTriageGrant)
+        self.assertIs(record.root, IssuePermissions)
         self.assertEqual(record.along.path, ('issue', 'parent'))

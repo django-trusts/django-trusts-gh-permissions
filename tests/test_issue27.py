@@ -27,7 +27,7 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
-    IssueTriageGrant,
+    IssuePermissions,
     Team,
     TeamRepositoryPermission,
 )
@@ -406,12 +406,12 @@ class OwnershipAndCollaborationTest(TestCase):
             'TeamRepositoryPermission',
             'OrganizationOwnership',
             'OrganizationOwnership',
-            'IssueTriageGrant',
+            'IssuePermissions',
         ])
         rendered = render_policy_sql_bytes(alias='default').decode('utf-8')
         self.assertIn('schema_version: 1', rendered)
         self.assertIn('RepositoryCollaborator', rendered)
-        self.assertIn('IssueTriageGrant', rendered)
+        self.assertIn('IssuePermissions', rendered)
         self.assertIn('TeamRepositoryPermission', rendered)
         self.assertIn('OrganizationOwnership', rendered)
         self.assertNotIn('OrganizationMembership', rendered)
@@ -719,7 +719,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             executor.migrate([
                 (
                     'gh_permissions',
-                    '0007_issue_issuetriagegrant_and_more',
+                    '0007_issue_issuepermissions_and_more',
                 ),
             ])
             ensure_owner_group()
@@ -769,7 +769,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             MigrationExecutor(connection).migrate([
                 (
                     'gh_permissions',
-                    '0007_issue_issuetriagegrant_and_more',
+                    '0007_issue_issuepermissions_and_more',
                 ),
             ])
 
