@@ -104,8 +104,7 @@ class KernelMigrationLoaderTest(TestCase):
                 ),
                 (
                     'gh_permissions',
-                    '0008_rename_allowed_permissions_'
-                    'allpersonalrepositoriesdelegation_permissions',
+                    '0008_rename_delegation_permissions',
                 ),
             },
         )

@@ -80,7 +80,7 @@ handle.register(
     sponsor='sponsor',
     content='repository',
     condition=lambda delegation, permission: (
-        delegation.allowed_permissions.contains(permission)
+        delegation.permissions.contains(permission)
         & (
             delegation.repository.organization.personal_user
             == delegation.sponsor
@@ -94,7 +94,7 @@ handle.register(
     sponsor='sponsor',
     content='sponsor__personal_organization__repositories',
     condition=lambda delegation, permission: (
-        delegation.allowed_permissions.contains(permission)
+        delegation.permissions.contains(permission)
     ),
 )
 
@@ -104,7 +104,7 @@ handle.register(
     sponsor='sponsor_ownership__user',
     content='repository',
     condition=lambda delegation, permission: (
-        delegation.allowed_permissions.contains(permission)
+        delegation.permissions.contains(permission)
         & (
             delegation.sponsor_ownership.organization
             == delegation.repository.organization

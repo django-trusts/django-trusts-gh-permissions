@@ -79,7 +79,7 @@ def register_delegation(handle):
         sponsor='sponsor_ownership__user',
         content='repository',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
             & (
                 delegation.sponsor_ownership.organization
                 == delegation.repository.organization
@@ -101,7 +101,7 @@ def register_personal_delegation(handle):
         sponsor='sponsor',
         content='repository',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
             & (
                 delegation.repository.organization.personal_user
                 == delegation.sponsor

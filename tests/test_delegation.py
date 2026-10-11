@@ -71,7 +71,7 @@ class RepositoryDelegationTest(TestCase):
             sponsor_ownership=ownership or self.sponsor_ownership,
             repository=repository or self.repository,
         )
-        delegation.allowed_permissions.add(self.read)
+        delegation.permissions.add(self.read)
         return delegation
 
     def _approve(self, delegation, organization=None):
@@ -88,7 +88,7 @@ class RepositoryDelegationTest(TestCase):
             sponsor=sponsor or self.sponsor,
             repository=repository or self.personal_repository,
         )
-        delegation.allowed_permissions.add(self.read)
+        delegation.permissions.add(self.read)
         return delegation
 
     def _select_all_personal(self, *, sponsor=None):
@@ -254,7 +254,7 @@ class RepositoryDelegationTest(TestCase):
         self._assert_all_projections(True)
         self.assertFalse(self.delegate.has_perm(_WRITE, self.repository))
 
-        delegation.allowed_permissions.remove(self.read)
+        delegation.permissions.remove(self.read)
         self._assert_all_projections(False)
 
     def test_one_delegation_uses_the_union_of_ordinary_sponsor_paths(self):
@@ -295,7 +295,7 @@ class RepositoryDelegationTest(TestCase):
 
     def test_ceiling_cannot_exceed_the_sponsors_live_authority(self):
         delegation = self._select()
-        delegation.allowed_permissions.add(self.write)
+        delegation.permissions.add(self.write)
         self._approve(delegation)
         self._assert_all_projections(True, self.write)
 

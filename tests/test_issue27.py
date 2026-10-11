@@ -719,8 +719,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             executor.migrate([
                 (
                     'gh_permissions',
-                    '0008_rename_allowed_permissions_'
-                    'allpersonalrepositoriesdelegation_permissions',
+                    '0008_rename_delegation_permissions',
                 ),
             ])
             ensure_owner_group()
@@ -770,8 +769,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             MigrationExecutor(connection).migrate([
                 (
                     'gh_permissions',
-                    '0008_rename_allowed_permissions_'
-                    'allpersonalrepositoriesdelegation_permissions',
+                    '0008_rename_delegation_permissions',
                 ),
             ])
 

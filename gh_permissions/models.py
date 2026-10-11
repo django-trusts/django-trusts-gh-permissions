@@ -304,7 +304,7 @@ class RepositoryDelegation(models.Model):
 
     Organization approval is recorded independently from the sponsor
     selection. Until ``approved_organization`` is set to the repository's
-    organization, this row grants nothing. ``allowed_permissions`` is the
+    organization, this row grants nothing. ``permissions`` is the
     delegation ceiling; the sponsor must also hold the requested permission
     through an ordinary registered GH path.
     """
@@ -324,7 +324,7 @@ class RepositoryDelegation(models.Model):
         related_name='delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='repository_delegations',
         blank=True,
@@ -377,7 +377,7 @@ class PersonalRepositoryDelegation(models.Model):
         related_name='personal_delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='personal_repository_delegations',
         blank=True,
