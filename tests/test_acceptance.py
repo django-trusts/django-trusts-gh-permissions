@@ -15,7 +15,7 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
-    RepositoryPathGrant,
+    IssueTriageGrant,
     TeamRepositoryPermission,
 )
 from tests.fixtures import GhFixtureMixin
@@ -279,7 +279,7 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
                 TeamRepositoryPermission,
                 OrganizationOwnership,
                 OrganizationOwnership,
-                RepositoryPathGrant,
+                IssueTriageGrant,
             ],
         )
 

@@ -6,8 +6,8 @@ Public relations used to authorize:
     team.allowed_operations
     repository.organization
     collaborator.permissions
-    repository.root_path / path.parent
-    path_grant.permissions
+    issue.parent
+    issue_triage_grant.permissions
 
 ``organization.teams`` and ``organization.repositories`` are containment.
 ``Alias`` reserves the shared current name. Authorization does not
@@ -188,84 +188,73 @@ class Repository(PermittedUsersMixin, models.Model):
         return self.name
 
 
-class RepositoryPath(PermittedUsersMixin, models.Model):
-    """One node in a repository's bounded review path tree.
+class Issue(PermittedUsersMixin, models.Model):
+    """GH-style issue that may be nested under another issue.
 
-    A root points at exactly one repository. Every other node points at
-    exactly one parent and derives its repository from that ancestry. This
-    avoids storing a second repository identifier that could disagree with
-    the recursive edge.
+    The modeled service permits sub-issues to cross repository boundaries.
+    The repository therefore identifies the issue, while ``parent`` alone
+    defines the hierarchy traversed by the authorization policy.
     """
 
-    repository = models.OneToOneField(
-        Repository,
-        related_name='root_path',
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
+    repository = models.ForeignKey(
+        Repository, related_name='issues', on_delete=models.CASCADE,
     )
     parent = models.ForeignKey(
         'self',
-        related_name='children',
+        related_name='sub_issues',
         null=True,
         blank=True,
         on_delete=models.CASCADE,
     )
-    name = models.CharField(max_length=255)
+    number = models.PositiveIntegerField()
+    title = models.CharField(max_length=255)
 
     objects = AuthorizedManager()
 
     class Meta:
         permissions = (
-            ('review_repositorypath', 'Can review repository path'),
+            ('triage_issue', 'Can triage issue'),
         )
         constraints = (
-            models.CheckConstraint(
-                condition=(
-                    models.Q(repository__isnull=False, parent__isnull=True)
-                    | models.Q(repository__isnull=True, parent__isnull=False)
-                ),
-                name='repository_path_root_or_child',
-            ),
             models.UniqueConstraint(
-                fields=('parent', 'name'),
-                name='unique_repository_path_name_per_parent',
+                fields=('repository', 'number'),
+                name='unique_issue_number_per_repository',
             ),
         )
 
     def __str__(self):
-        return self.name
+        return '#%s %s' % (self.number, self.title)
 
 
-class RepositoryPathGrant(models.Model):
-    """A user's permission bundle at one repository path subtree."""
+class IssueTriageGrant(models.Model):
+    """A user's permission bundle at one issue/sub-issue subtree."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='repository_path_grants',
+        related_name='issue_triage_grants',
         on_delete=models.CASCADE,
     )
-    path = models.ForeignKey(
-        RepositoryPath,
-        related_name='grants',
+    issue = models.ForeignKey(
+        Issue,
+        related_name='triage_grants',
         on_delete=models.CASCADE,
     )
     permissions = models.ManyToManyField(
         Permission,
-        related_name='repository_path_grants',
+        related_name='issue_triage_grants',
         blank=True,
     )
 
     class Meta:
         constraints = (
             models.UniqueConstraint(
-                fields=('user', 'path'),
-                name='unique_repository_path_grant',
+                fields=('user', 'issue'),
+                name='unique_issue_triage_grant',
             ),
         )
 
     def __str__(self):
-        return '%s @ %s' % (self.user_id, self.path_id)
+        return '%s @ %s' % (self.user_id, self.issue_id)
 
 
 class RepositoryCollaborator(models.Model):

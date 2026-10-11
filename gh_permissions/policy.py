@@ -11,11 +11,12 @@ content identity: ``manage_organization`` on the organization, and the
 repository codenames on that organization's repositories. The crossed
 pairs are denials. A user with no ownership row is not an owner. Team
 does not carry this bundle.
-Repository-path review assignments use bounded ``along=`` reachability:
-one grant at a directory applies to that directory and descendants through
-eight parent edges. ``GhPermissionsConfig.ready`` contributes each helper
-as a separate call. Helpers require a ``BackendHandle``; a bare registry is
-``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
+Issue triage assignments use bounded ``along=`` reachability: one grant at an
+issue applies to that issue and its sub-issues through eight parent edges,
+matching the modeled service's documented nesting limit.
+``GhPermissionsConfig.ready`` contributes each helper as a separate call.
+Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
+``permission=`` does not feed ``get_group_permissions``.
 """
 
 from trusts.core import BackendHandle
@@ -26,7 +27,7 @@ from gh_permissions.models import (
     PersonalRepositoryDelegation,
     RepositoryCollaborator,
     RepositoryDelegation,
-    RepositoryPathGrant,
+    IssueTriageGrant,
     TeamRepositoryPermission,
 )
 
@@ -51,15 +52,15 @@ def register_collaborator(handle):
     )
 
 
-def register_repository_path_grant(handle):
-    """Register bounded review authority over one path subtree."""
+def register_issue_triage_grant(handle):
+    """Register bounded triage authority over one issue subtree."""
     handle = _require_handle(handle)
     return handle.register(
-        trust=RepositoryPathGrant,
+        trust=IssueTriageGrant,
         user='user',
         permission='permissions',
-        content='path',
-        along=('path__parent', 8),
+        content='issue',
+        along=('issue__parent', 8),
     )
 
 

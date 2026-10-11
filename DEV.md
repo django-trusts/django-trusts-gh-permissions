@@ -22,11 +22,12 @@ permission content-type enforcement #269, and terminal permission
 collections #264.
 
 [#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
-is the consumer acceptance proof: `RepositoryPathGrant` applies
-`review_repositorypath` at one path and descendants through eight parent
-edges. Reverse inquiry on a leaf returns its active reviewers. A sibling,
-another tree, and depth nine are denied. This is not a CODEOWNERS parser and
-does not implement nested-team repository inheritance.
+is the consumer acceptance proof: `IssueTriageGrant` applies `triage_issue`
+at one issue and its sub-issues through eight parent edges. Reverse inquiry
+on a descendant returns its active assignees. A parent, sibling, unrelated
+tree, and depth nine are denied. Re-parenting moves effective authority. This
+is an example policy and does not claim GitHub's repository-level triage role
+natively inherits through sub-issues.
 
 [#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
 adds `Alias`, personal versus conventional organizations,
@@ -206,13 +207,13 @@ and never installs `'trusts'`.
 - Revocation and malformed configuration fail closed
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
-- `RepositoryPathGrant` carries a terminal permission collection and uses
-  `along=("path__parent", 8)` to reach bounded path descendants
+- `IssueTriageGrant` carries a terminal permission collection and uses
+  `along=("issue__parent", 8)` to reach bounded sub-issue descendants
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and
-`collaborator.permissions`, plus `path.parent` and
-`path_grant.permissions`. Callers pass `AUTH_USER_MODEL` and
+`collaborator.permissions`, plus `issue.parent` and
+`issue_triage_grant.permissions`. Callers pass `AUTH_USER_MODEL` and
 `auth.Permission` **instances**. `Repository.objects.authorized` takes
 the permission instance. `has_perm` and `permitted` accept
 `gh_permissions.read_repository` (and the write and admin codenames)
@@ -295,11 +296,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, RepositoryPath, and RepositoryPathGrant. Permission rows are `auth.Permission`, including `manage_organization` and `review_repositorypath`. |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, Issue, and IssueTriageGrant. Permission rows are `auth.Permission`, including `manage_organization` and `triage_issue`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
-| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded repository-path `handle.register` calls. No aggregate helper |
+| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded sub-issue `handle.register` calls. No aggregate helper |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | Registers ordinary, delegation, and repository-path relations, then owner-group seed on `post_migrate` |
+| Ready contribution | `apps.py` | Registers ordinary, delegation, and sub-issue relations, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |
