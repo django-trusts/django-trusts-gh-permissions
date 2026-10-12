@@ -246,7 +246,7 @@ jobs:
             raise SystemExit("policy lock is not the SQLite rendering")
         PY
     - name: Upload SQLite policy lockfile
-      if: steps.sqlite-policy-lock.outcome == 'success'
+      if: ${{ !cancelled() && steps.sqlite-policy-lock.outcome == 'success' }}
       uses: actions/upload-artifact@v4
       with:
         name: sqlite-policy-lock
