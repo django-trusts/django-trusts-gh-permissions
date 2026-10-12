@@ -12,13 +12,15 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts `feature/along-complete-surfaces` head
-`603c4dd505f44ffc4b302af46cbe8f20a463c4ed`. That head includes reviewed
+django-trusts [#296](https://github.com/django-trusts/django-trusts/pull/296)
+`cursor/inactive-user-activity-81f8` head
+`e3765497e6fa0589bf031c6dacedb8882c4e5b36`. That head includes reviewed
 [#286](https://github.com/django-trusts/django-trusts/pull/286)
-(`04ce6798e420966acf5dc38d6682d040f23f28ea`) and the
+(`04ce6798e420966acf5dc38d6682d040f23f28ea`), the
 [#292](https://github.com/django-trusts/django-trusts/pull/292)
 policy-lock SQL formatter, so committed policy SQL breaks between
-tokens. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
+tokens, and the [#284](https://github.com/django-trusts/django-trusts/issues/284)
+inactive-user inquiry checks. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
 the byte comparison still run on SQLite. Do not float past this commit.
@@ -143,7 +145,9 @@ adds `Organization.manage_organization` and
 `OrganizationOwnerPermission` after that reset. It does not rewrite
 `0002_auth_permission_terminal`.
 
-The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
+The earlier companion pin `603c4dd505f44ffc4b302af46cbe8f20a463c4ed`
+(`feature/along-complete-surfaces`) is superseded for this pin. The
+earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
 (django-trusts#241) is superseded for this pin. The earlier
 `handle.register` plus symbolic-condition pin from django-trusts
 [#213](https://github.com/django-trusts/django-trusts/pull/213)
@@ -289,7 +293,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `603c4dd505f44ffc4b302af46cbe8f20a463c4ed`.
+with Django 6.1 against exact paired-core commit `e3765497e6fa0589bf031c6dacedb8882c4e5b36`.
 The MySQL 8.4 job checks the committed lockfile with `trusts.E009`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
