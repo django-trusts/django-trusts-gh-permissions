@@ -17,6 +17,7 @@ backends:
             user: {path: "team__members", model: "example.User", target: "id"}
             permission: {path: "operation", model: "auth.Permission", target: "id"}
             content: {path: "repository", model: "gh_permissions.Repository", target: "id"}
+            condition: "operation in team__allowed_operations and team__organization == repository__organization"
             or_group: true
           - id: "gh_permissions__OrganizationOwnership__organization__repositories"
             root: "gh_permissions.OrganizationOwnership"
@@ -27,47 +28,32 @@ backends:
         delegations:
           - id: "gh_permissions__PersonalRepositoryDelegation__repository__cond"
             root: "gh_permissions.PersonalRepositoryDelegation"
-            delegate:
-              path: "delegate"
-              model: "example.User"
-              target: "id"
-            sponsor:
-              path: "sponsor"
-              model: "example.User"
-              target: "id"
+            delegate: {path: "delegate", model: "example.User", target: "id"}
+            sponsor: {path: "sponsor", model: "example.User", target: "id"}
             content: {path: "repository", model: "gh_permissions.Repository", target: "id"}
+            condition: "permissions == $permission and repository__organization__personal_user == sponsor"
             or_group: true
           - id: "gh_permissions__AllPersonalRepositoriesDelegation__sponsor__personal_organization__repositories__cond"
             root: "gh_permissions.AllPersonalRepositoriesDelegation"
-            delegate:
-              path: "delegate"
-              model: "example.User"
-              target: "id"
-            sponsor:
-              path: "sponsor"
-              model: "example.User"
-              target: "id"
+            delegate: {path: "delegate", model: "example.User", target: "id"}
+            sponsor: {path: "sponsor", model: "example.User", target: "id"}
             content: {path: "sponsor__personal_organization__repositories", model: "gh_permissions.Repository", target: "id"}
+            condition: "permissions == $permission"
             or_group: true
           - id: "gh_permissions__RepositoryDelegation__repository__cond"
             root: "gh_permissions.RepositoryDelegation"
-            delegate:
-              path: "delegate"
-              model: "example.User"
-              target: "id"
-            sponsor:
-              path: "sponsor_ownership__user"
-              model: "example.User"
-              target: "id"
+            delegate: {path: "delegate", model: "example.User", target: "id"}
+            sponsor: {path: "sponsor_ownership__user", model: "example.User", target: "id"}
             content: {path: "repository", model: "gh_permissions.Repository", target: "id"}
+            condition: "permissions == $permission and sponsor_ownership__organization == repository__organization and approved_organization == repository__organization"
             or_group: true
         permitted:
-          params: [{const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}]
+          params: [{const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}]
           sql: |-
             SELECT DISTINCT `gh_permissions_repository`.`id`, `gh_permissions_repository`.`organization_id`, `gh_permissions_repository`.`name`
             FROM `gh_permissions_repository`
             WHERE (
-              EXISTS(
+              EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_repositorycollaborator` `U0`
                 INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -81,8 +67,7 @@ backends:
                 )
                 LIMIT 1
               )
-                OR
-              EXISTS(
+              OR EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_teamrepositorypermission` `U0`
                 INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -101,8 +86,7 @@ backends:
                 )
                 LIMIT 1
               )
-                OR
-              EXISTS(
+              OR EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_organizationownership` `U0`
                 INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -119,8 +103,7 @@ backends:
                 )
                 LIMIT 1
               )
-                OR
-              EXISTS(
+              OR EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_personalrepositorydelegation` `V0`
                 INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -132,8 +115,7 @@ backends:
                     AND `V3`.`permission_id` = %s
                     AND `V6`.`personal_user_id` = (`V0`.`sponsor_id`)
                     AND `V5`.`is_active` = %s
-                    AND (
-                    EXISTS(
+                    AND ( EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_repositorycollaborator` `U0`
                       INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -147,8 +129,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_teamrepositorypermission` `U0`
                       INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -167,8 +148,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_organizationownership` `U0`
                       INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -184,13 +164,10 @@ backends:
                           AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                       )
                       LIMIT 1
-                    )
-                  )
-                )
+                    ) ) )
                 LIMIT 1
               )
-                OR
-              EXISTS(
+              OR EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_allpersonalrepositoriesdelegation` `V0`
                 INNER JOIN `example_user` `V2` ON (`V0`.`sponsor_id` = `V2`.`id`)
@@ -201,8 +178,7 @@ backends:
                     AND `V4`.`id` = (`gh_permissions_repository`.`id`)
                     AND `V5`.`permission_id` = %s
                     AND `V2`.`is_active` = %s
-                    AND (
-                    EXISTS(
+                    AND ( EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_repositorycollaborator` `U0`
                       INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -216,8 +192,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_teamrepositorypermission` `U0`
                       INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -236,8 +211,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_organizationownership` `U0`
                       INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -253,13 +227,10 @@ backends:
                           AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                       )
                       LIMIT 1
-                    )
-                  )
-                )
+                    ) ) )
                 LIMIT 1
               )
-                OR
-              EXISTS(
+              OR EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_repositorydelegation` `V0`
                 INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -272,8 +243,7 @@ backends:
                     AND `V6`.`organization_id` = (`V2`.`organization_id`)
                     AND `V0`.`approved_organization_id` = (`V2`.`organization_id`)
                     AND `V9`.`is_active` = %s
-                    AND (
-                    EXISTS(
+                    AND ( EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_repositorycollaborator` `U0`
                       INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -287,8 +257,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_teamrepositorypermission` `U0`
                       INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -307,8 +276,7 @@ backends:
                       )
                       LIMIT 1
                     )
-                      OR
-                    EXISTS(
+                    OR EXISTS (
                       SELECT %s AS `a`
                       FROM `gh_permissions_organizationownership` `U0`
                       INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -324,20 +292,16 @@ backends:
                           AND `U0`.`user_id` = (`V6`.`user_id`)
                       )
                       LIMIT 1
-                    )
-                  )
-                )
+                    ) ) )
                 LIMIT 1
-              )
-            )
+              ) )
         has_perm:
-          params: [{const: 1}, {const: 1}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}]
           sql: |-
             SELECT %s AS `a`
             FROM `gh_permissions_repository`
             WHERE (`gh_permissions_repository`.`id` = %s
-                AND (
-                EXISTS(
+                AND ( EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_repositorycollaborator` `U0`
                   INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -351,8 +315,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_teamrepositorypermission` `U0`
                   INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -371,8 +334,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_organizationownership` `U0`
                   INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -389,8 +351,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_personalrepositorydelegation` `V0`
                   INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -402,8 +363,7 @@ backends:
                       AND `V3`.`permission_id` = %s
                       AND `V6`.`personal_user_id` = (`V0`.`sponsor_id`)
                       AND `V5`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -417,8 +377,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -437,8 +396,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -454,13 +412,10 @@ backends:
                             AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_allpersonalrepositoriesdelegation` `V0`
                   INNER JOIN `example_user` `V2` ON (`V0`.`sponsor_id` = `V2`.`id`)
@@ -471,8 +426,7 @@ backends:
                       AND `V4`.`id` = (`gh_permissions_repository`.`id`)
                       AND `V5`.`permission_id` = %s
                       AND `V2`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -486,8 +440,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -506,8 +459,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -523,13 +475,10 @@ backends:
                             AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_repositorydelegation` `V0`
                   INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -542,8 +491,7 @@ backends:
                       AND `V6`.`organization_id` = (`V2`.`organization_id`)
                       AND `V0`.`approved_organization_id` = (`V2`.`organization_id`)
                       AND `V9`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -557,8 +505,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -577,8 +524,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -594,34 +540,28 @@ backends:
                             AND `U0`.`user_id` = (`V6`.`user_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
-                )
-              )
-            )
+                ) ) )
             LIMIT 1
         get_all_permissions:
-          params: [{const: 1}, {const: 1}, {const: 1}, {const: 1}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {bind: "user.id"}, {const: 1}, {bind: "user.id"}, {const: true}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {const: true}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "user.id"}, {const: true}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: "gh_permissions"}, {const: "repository"}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "user.id", hint: "$user"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
-              EXISTS(
+              EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_repository` `U0`
                 WHERE `U0`.`id` = %s
                 LIMIT 1
               )
-                AND NOT (
-                EXISTS(
+              AND NOT ( EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_repository` `W0`
                   WHERE (`W0`.`id` = %s
-                      AND NOT (
-                      EXISTS(
+                      AND NOT ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -635,8 +575,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -655,8 +594,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -673,8 +611,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_personalrepositorydelegation` `V0`
                         INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -686,8 +623,7 @@ backends:
                             AND `V3`.`permission_id` = (`auth_permission`.`id`)
                             AND `V6`.`personal_user_id` = (`V0`.`sponsor_id`)
                             AND `V5`.`is_active` = %s
-                            AND (
-                            EXISTS(
+                            AND ( EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_repositorycollaborator` `U0`
                               INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -701,8 +637,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_teamrepositorypermission` `U0`
                               INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -721,8 +656,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_organizationownership` `U0`
                               INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -738,13 +672,10 @@ backends:
                                   AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                               )
                               LIMIT 1
-                            )
-                          )
-                        )
+                            ) ) )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_allpersonalrepositoriesdelegation` `V0`
                         INNER JOIN `example_user` `V2` ON (`V0`.`sponsor_id` = `V2`.`id`)
@@ -755,8 +686,7 @@ backends:
                             AND `V4`.`id` = (`W0`.`id`)
                             AND `V5`.`permission_id` = (`auth_permission`.`id`)
                             AND `V2`.`is_active` = %s
-                            AND (
-                            EXISTS(
+                            AND ( EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_repositorycollaborator` `U0`
                               INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -770,8 +700,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_teamrepositorypermission` `U0`
                               INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -790,8 +719,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_organizationownership` `U0`
                               INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -807,13 +735,10 @@ backends:
                                   AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                               )
                               LIMIT 1
-                            )
-                          )
-                        )
+                            ) ) )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorydelegation` `V0`
                         INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -826,8 +751,7 @@ backends:
                             AND `V6`.`organization_id` = (`V2`.`organization_id`)
                             AND `V0`.`approved_organization_id` = (`V2`.`organization_id`)
                             AND `V9`.`is_active` = %s
-                            AND (
-                            EXISTS(
+                            AND ( EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_repositorycollaborator` `U0`
                               INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -841,8 +765,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_teamrepositorypermission` `U0`
                               INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -861,8 +784,7 @@ backends:
                               )
                               LIMIT 1
                             )
-                              OR
-                            EXISTS(
+                            OR EXISTS (
                               SELECT %s AS `a`
                               FROM `gh_permissions_organizationownership` `U0`
                               INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -878,26 +800,19 @@ backends:
                                   AND `U0`.`user_id` = (`V6`.`user_id`)
                               )
                               LIMIT 1
-                            )
-                          )
-                        )
+                            ) ) )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
-                )
-              )
-            )
+                ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: [{const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "content.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {bind: "content.id"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: 1}, {bind: "content.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {const: 1}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "content.id"}, {bind: "permission.id"}, {const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "repository"}]
+          params: [{const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "content.id", hint: "$content"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {bind: "content.id", hint: "$content"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {bind: "content.id", hint: "$content"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "content.id", hint: "$content"}, {bind: "permission.id", hint: "$permission"}, {const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "repository", hint: "content type model"}]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             WHERE (`example_user`.`is_active` = %s
-                AND (
-                EXISTS(
+                AND ( EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_repositorycollaborator` `U0`
                   INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -911,8 +826,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_teamrepositorypermission` `U0`
                   INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -931,8 +845,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_organizationownership` `U0`
                   INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -949,8 +862,7 @@ backends:
                   )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_personalrepositorydelegation` `V0`
                   INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -962,8 +874,7 @@ backends:
                       AND `V3`.`permission_id` = %s
                       AND `V6`.`personal_user_id` = (`V0`.`sponsor_id`)
                       AND `V5`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -977,8 +888,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -997,8 +907,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1014,13 +923,10 @@ backends:
                             AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_allpersonalrepositoriesdelegation` `V0`
                   INNER JOIN `example_user` `V2` ON (`V0`.`sponsor_id` = `V2`.`id`)
@@ -1031,8 +937,7 @@ backends:
                       AND `V4`.`id` = %s
                       AND `V5`.`permission_id` = %s
                       AND `V2`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -1046,8 +951,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -1066,8 +970,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1083,13 +986,10 @@ backends:
                             AND `U0`.`user_id` = (`V0`.`sponsor_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
                 )
-                  OR
-                EXISTS(
+                OR EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_repositorydelegation` `V0`
                   INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
@@ -1102,8 +1002,7 @@ backends:
                       AND `V6`.`organization_id` = (`V2`.`organization_id`)
                       AND `V0`.`approved_organization_id` = (`V2`.`organization_id`)
                       AND `V9`.`is_active` = %s
-                      AND (
-                      EXISTS(
+                      AND ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_repositorycollaborator` `U0`
                         INNER JOIN `gh_permissions_repositorycollaborator_permissions` `U1` ON (`U0`.`id` = `U1`.`repositorycollaborator_id`)
@@ -1117,8 +1016,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_teamrepositorypermission` `U0`
                         INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
@@ -1137,8 +1035,7 @@ backends:
                         )
                         LIMIT 1
                       )
-                        OR
-                      EXISTS(
+                      OR EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1154,13 +1051,9 @@ backends:
                             AND `U0`.`user_id` = (`V6`.`user_id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
-                )
-              )
-            )
+                ) ) )
       - model: "gh_permissions.Organization"
         trusts:
           - id: "gh_permissions__OrganizationOwnership__organization"
@@ -1169,12 +1062,12 @@ backends:
             permission: {path: "organization__owner_group__permissions", model: "auth.Permission", target: "id"}
             content: {path: "organization", model: "gh_permissions.Organization", target: "id"}
         permitted:
-          params: [{const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "organization"}, {bind: "user.id"}]
+          params: [{const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "organization", hint: "content type model"}, {bind: "user.id", hint: "$user"}]
           sql: |-
             SELECT DISTINCT `gh_permissions_organization`.`id`, `gh_permissions_organization`.`name`, `gh_permissions_organization`.`personal_user_id`, `gh_permissions_organization`.`owner_group_id`
             FROM `gh_permissions_organization`
             WHERE
-            EXISTS(
+            EXISTS (
               SELECT %s AS `a`
               FROM `gh_permissions_organizationownership` `U0`
               INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1191,13 +1084,12 @@ backends:
               LIMIT 1
             )
         has_perm:
-          params: [{const: 1}, {const: 1}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "organization"}, {bind: "user.id"}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "organization", hint: "content type model"}, {bind: "user.id", hint: "$user"}]
           sql: |-
             SELECT %s AS `a`
             FROM `gh_permissions_organization`
             WHERE (`gh_permissions_organization`.`id` = %s
-                AND
-              EXISTS(
+              AND EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_organizationownership` `U0`
                 INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1212,29 +1104,26 @@ backends:
                     AND `U0`.`organization_id` = (`gh_permissions_organization`.`id`)
                 )
                 LIMIT 1
-              )
-            )
+              ) )
             LIMIT 1
         get_all_permissions:
-          params: [{const: 1}, {const: 1}, {const: 1}, {const: 1}, {const: 1}, {const: "gh_permissions"}, {const: "organization"}, {bind: "user.id"}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {const: "gh_permissions", hint: "content type app"}, {const: "organization", hint: "content type model"}, {bind: "user.id", hint: "$user"}]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
-              EXISTS(
+              EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_organization` `U0`
                 WHERE `U0`.`id` = %s
                 LIMIT 1
               )
-                AND NOT (
-                EXISTS(
+              AND NOT ( EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_organization` `V0`
                   WHERE (`V0`.`id` = %s
-                      AND NOT (
-                      EXISTS(
+                      AND NOT ( EXISTS (
                         SELECT %s AS `a`
                         FROM `gh_permissions_organizationownership` `U0`
                         INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1249,22 +1138,17 @@ backends:
                             AND `U0`.`organization_id` = (`V0`.`id`)
                         )
                         LIMIT 1
-                      )
-                    )
-                  )
+                      ) ) )
                   LIMIT 1
-                )
-              )
-            )
+                ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: [{const: true}, {const: 1}, {bind: "content.id"}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "organization"}]
+          params: [{const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "content.id", hint: "$content"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "organization", hint: "content type model"}]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             WHERE (`example_user`.`is_active` = %s
-                AND
-              EXISTS(
+              AND EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_organizationownership` `U0`
                 INNER JOIN `gh_permissions_organization` `U1` ON (`U0`.`organization_id` = `U1`.`id`)
@@ -1279,8 +1163,7 @@ backends:
                     AND `U0`.`user_id` = (`example_user`.`id`)
                 )
                 LIMIT 1
-              )
-            )
+              ) )
       - model: "gh_permissions.Issue"
         trusts:
           - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8"
@@ -1293,7 +1176,7 @@ backends:
               shape: "S"
               bound: 8
         permitted:
-          params: [{bind: "permission.id"}, {const: "gh_permissions"}, {const: "issue"}, {bind: "user.id"}, {const: 8}, {const: true}]
+          params: [{bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "issue", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 8, hint: "along bound"}, {const: true, hint: "along match"}]
           sql: |-
             SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`
             FROM `gh_permissions_issue`
@@ -1325,7 +1208,7 @@ backends:
               JOIN `gh_permissions_issue` AS `s` ON `s`.`id` = `gen`.`ident`
             ) = %s
         has_perm:
-          params: [{const: 1}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "issue"}, {bind: "user.id"}, {const: 8}, {const: true}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "issue", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 8, hint: "along bound"}, {const: true, hint: "along match"}]
           sql: |-
             SELECT %s AS `a`
             FROM `gh_permissions_issue`
@@ -1360,20 +1243,19 @@ backends:
             )
             LIMIT 1
         get_all_permissions:
-          params: [{const: 1}, {const: 1}, {const: 1}, {const: 1}, {const: "gh_permissions"}, {const: "issue"}, {bind: "user.id"}, {const: 8}, {const: true}]
+          params: [{const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: 1, hint: "exists marker"}, {const: 1, hint: "content pk"}, {const: "gh_permissions", hint: "content type app"}, {const: "issue", hint: "content type model"}, {bind: "user.id", hint: "$user"}, {const: 8, hint: "along bound"}, {const: true, hint: "along match"}]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
-              EXISTS(
+              EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_issue` `U0`
                 WHERE `U0`.`id` = %s
                 LIMIT 1
               )
-                AND NOT (
-                EXISTS(
+              AND NOT ( EXISTS (
                   SELECT %s AS `a`
                   FROM `gh_permissions_issue` `V0`
                   WHERE (`V0`.`id` = %s
@@ -1407,18 +1289,15 @@ backends:
                     )
                   )
                   LIMIT 1
-                )
-              )
-            )
+                ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: [{const: true}, {const: 1}, {bind: "permission.id"}, {const: "gh_permissions"}, {const: "issue"}, {bind: "content.id"}, {const: 8}, {const: true}, {const: true}]
+          params: [{const: true, hint: "active"}, {const: 1, hint: "exists marker"}, {bind: "permission.id", hint: "$permission"}, {const: "gh_permissions", hint: "content type app"}, {const: "issue", hint: "content type model"}, {bind: "content.id", hint: "$content"}, {const: 8, hint: "along bound"}, {const: true, hint: "along match"}, {const: true, hint: "along match"}]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             WHERE (`example_user`.`is_active` = %s
-                AND
-              EXISTS(
+              AND EXISTS (
                 SELECT %s AS `a`
                 FROM `gh_permissions_issuepermissions` `U0`
                 INNER JOIN `gh_permissions_issuepermissions_permissions` `U1` ON (`U0`.`id` = `U1`.`issuepermissions_id`)
