@@ -169,7 +169,7 @@ jobs:
       id: mysql-policy-lock
       run: |
         mkdir -p .ci
-        TRUSTS_POLICY_LOCKFILE=.ci/trusts-policy.mysql.lock.yaml python -m django trusts_policy_sql --lock --settings=tests.settings
+        TRUSTS_POLICY_LOCKFILE="${GITHUB_WORKSPACE}/.ci/trusts-policy.mysql.lock.yaml" python -m django trusts_policy_sql --lock --settings=tests.settings
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() && steps.mysql-policy-lock.outcome == 'success' }}
       with:
@@ -235,7 +235,7 @@ jobs:
       actions: write
     env:
       TRUSTS_FOLLOW_CORE: "1"
-      TRUSTS_POLICY_LOCKFILE: .ci/trusts-policy.sqlite.lock.yaml
+      TRUSTS_POLICY_LOCKFILE: ${{ github.workspace }}/.ci/trusts-policy.sqlite.lock.yaml
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5

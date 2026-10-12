@@ -291,8 +291,8 @@ class OwnerContentTypeMatrixTest(TestCase):
                 params = statement['params']
                 with self.subTest(model=model_label, key=key):
                     self.assertIn('django_content_type', sql)
-                    self.assertIn({'const': 'gh_permissions'}, params)
-                    self.assertIn({'const': model_name}, params)
+                    self.assertIn({'const': 'gh_permissions', 'hint': 'content type app'}, params)
+                    self.assertIn({'const': model_name, 'hint': 'content type model'}, params)
         self.assertIn('gh_permissions.Organization', seen)
         self.assertIn('gh_permissions.Repository', seen)
 
