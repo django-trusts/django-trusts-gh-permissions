@@ -13,9 +13,8 @@ permissions:
   contents: read
 
 env:
-  # Companion core: django-trusts #296 (cursor/inactive-user-activity-81f8).
-  # Includes #292 policy-lock line breaks and #284 inactive-user checks.
-  COMPANION_KERNEL_SHA: aeabc956d391833cef4598ed93391ba14e5607f7
+  # Exact Core dev after the Along/readability and inactive-user train.
+  COMPANION_KERNEL_SHA: 6917f56a1290b184092b4c167d0721fbc0dc516e
 
 jobs:
   tests:
@@ -58,7 +57,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert 'aeabc956d391833cef4598ed93391ba14e5607f7' in pin, pin
+        assert '6917f56a1290b184092b4c167d0721fbc0dc516e' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -108,8 +107,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "aeabc956d391833cef4598ed93391ba14e5607f7"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "aeabc956d391833cef4598ed93391ba14e5607f7"
+          test "${COMPANION_KERNEL_SHA}" = "6917f56a1290b184092b4c167d0721fbc0dc516e"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "6917f56a1290b184092b4c167d0721fbc0dc516e"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage

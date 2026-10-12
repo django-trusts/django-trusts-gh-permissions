@@ -12,8 +12,8 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-Core #296's integration of the merged `dev` Along train, pinned at
-`aeabc956d391833cef4598ed93391ba14e5607f7`. It includes the Along walk,
+Core `dev` after #296 and #294, pinned at
+`6917f56a1290b184092b4c167d0721fbc0dc516e`. It includes the Along walk,
 policy SQL readability changes, and default inactive-user checks.
 The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
