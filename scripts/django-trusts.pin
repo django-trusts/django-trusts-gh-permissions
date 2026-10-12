@@ -1,5 +1,4 @@
-# Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts feature/along-complete-surfaces, which
-# includes the #292 policy-lock SQL formatter.
+# Preview of django-trusts#293 (cursor/lockfile-readability-c58a).
+# Not merged into feature/along-complete-surfaces.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=603c4dd505f44ffc4b302af46cbe8f20a463c4ed
+ref=105ee7221ab776043b6bf55989fb59a70a04b8e2
