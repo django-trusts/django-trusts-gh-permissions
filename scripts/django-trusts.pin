@@ -1,4 +1,4 @@
-# Preview of django-trusts#293 (cursor/lockfile-readability-c58a).
+# Preview of django-trusts#295 (cursor/condition-line-hints-c58a).
 # Not merged into feature/along-complete-surfaces.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=105ee7221ab776043b6bf55989fb59a70a04b8e2
+ref=3d3528962a3b056cac54afc681341802a276d320

@@ -12,15 +12,16 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts [#293](https://github.com/django-trusts/django-trusts/pull/293)
-head `105ee7221ab776043b6bf55989fb59a70a04b8e2`
-(`cursor/lockfile-readability-c58a`). That commit is not merged into
+django-trusts [#295](https://github.com/django-trusts/django-trusts/pull/295)
+head `3d3528962a3b056cac54afc681341802a276d320`
+(`cursor/condition-line-hints-c58a`). That commit is not merged into
 `feature/along-complete-surfaces`. It includes reviewed
 [#286](https://github.com/django-trusts/django-trusts/pull/286)
 (`04ce6798e420966acf5dc38d6682d040f23f28ea`), the
 [#292](https://github.com/django-trusts/django-trusts/pull/292)
-policy-lock SQL formatter, and the #293 readability pass, so committed
-policy SQL breaks between tokens and shows conditions on their own lines. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
+policy-lock SQL formatter, the #293 readability pass, and the #295
+condition lines, so committed policy SQL breaks between tokens and
+renders each condition as one line. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
 the byte comparison still run on SQLite. Do not float past this commit.
@@ -291,7 +292,7 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `105ee7221ab776043b6bf55989fb59a70a04b8e2`.
+with Django 6.1 against exact paired-core commit `3d3528962a3b056cac54afc681341802a276d320`.
 The MySQL 8.4 job checks the committed lockfile with `trusts.E009`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without

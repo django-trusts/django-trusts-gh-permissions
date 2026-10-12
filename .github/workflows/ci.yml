@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 env:
-  # Companion core: preview of django-trusts#293
-  # (cursor/lockfile-readability-c58a), not yet merged.
-  COMPANION_KERNEL_SHA: 105ee7221ab776043b6bf55989fb59a70a04b8e2
+  # Companion core: preview of django-trusts#295
+  # (cursor/condition-line-hints-c58a), not yet merged.
+  COMPANION_KERNEL_SHA: 3d3528962a3b056cac54afc681341802a276d320
 
 jobs:
   tests:
@@ -52,7 +52,7 @@ jobs:
         python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '105ee7221ab776043b6bf55989fb59a70a04b8e2' in pin, pin
+        assert '3d3528962a3b056cac54afc681341802a276d320' in pin, pin
         PY
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Render SQLite policy lock for this job
@@ -99,8 +99,8 @@ jobs:
         python-version: "3.12"
     - name: Exact companion checkout
       run: |
-        test "${COMPANION_KERNEL_SHA}" = "105ee7221ab776043b6bf55989fb59a70a04b8e2"
-        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "105ee7221ab776043b6bf55989fb59a70a04b8e2"
+        test "${COMPANION_KERNEL_SHA}" = "3d3528962a3b056cac54afc681341802a276d320"
+        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "3d3528962a3b056cac54afc681341802a276d320"
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
