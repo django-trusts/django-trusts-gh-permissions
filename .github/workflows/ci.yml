@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, master, dev]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Nightly. The pinned jobs still run only on push and pull_request.
+    - cron: "0 6 * * *"
 
 permissions:
   contents: read
@@ -15,6 +19,7 @@ env:
 jobs:
   tests:
     name: tests vs final core (Python ${{ matrix.python-version }})
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -44,11 +49,13 @@ jobs:
         python -m pip install -e . --config-settings editable_mode=compat
     - name: Pin guard
       run: |
-        python - <<'PY'
+        if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
+          python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
         assert '1aa3872b84813682d3513c4856fabf189bcbd8c0' in pin, pin
         PY
+        fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
     - name: Tests
       run: |
@@ -74,6 +81,7 @@ jobs:
 
   pair-final-core:
     name: pair with django-trusts
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -89,8 +97,10 @@ jobs:
         python-version: "3.12"
     - name: Exact companion checkout
       run: |
-        test "${COMPANION_KERNEL_SHA}" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
-        test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
+        if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
+          test "${COMPANION_KERNEL_SHA}" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
+        fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
@@ -102,6 +112,7 @@ jobs:
 
   package:
     name: package
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
@@ -135,3 +146,110 @@ jobs:
         WORK="$(mktemp -d)"
         cd "$WORK"
         python "${GITHUB_WORKSPACE}/scripts/verify-wheel-install.py" --checkout "${GITHUB_WORKSPACE}"
+
+  latest-core:
+    name: latest-core
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: write
+    env:
+      TRUSTS_FOLLOW_CORE: "1"
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Guard against Zero
+      run: |
+        test ! -e trusts/zero
+        ! grep -R --include='*.py' -n 'from trusts\.zero\|import trusts\.zero\|django-trusts-zero' gh_permissions
+    - name: Choose the Core ref
+      run: |
+        set -euo pipefail
+        REMOTE=https://github.com/django-trusts/django-trusts
+        if [ -n "${GITHUB_HEAD_REF:-}" ]; then
+          BRANCH="${GITHUB_HEAD_REF}"
+        else
+          BRANCH="${GITHUB_REF_NAME:?GITHUB_REF_NAME is empty}"
+        fi
+        has_branch() {
+          local status
+          set +e
+          git ls-remote --exit-code --heads "$REMOTE" "refs/heads/$1" >/dev/null
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            return 0
+          fi
+          if [ "$status" -eq 2 ]; then
+            return 1
+          fi
+          echo "Could not list Core branches (git ls-remote exited ${status})" >&2
+          exit "$status"
+        }
+        if has_branch "$BRANCH"; then
+          CORE_REF="$BRANCH"
+        elif has_branch dev; then
+          CORE_REF=dev
+        else
+          CORE_REF="$(git ls-remote --symref https://github.com/django-trusts/django-trusts HEAD | sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')"
+          if [ -z "${CORE_REF}" ]; then
+            echo "Could not read Core's GitHub default branch" >&2
+            exit 1
+          fi
+        fi
+        echo "Core ref: ${CORE_REF}"
+        echo "CORE_REF=${CORE_REF}" >> "$GITHUB_ENV"
+    - name: Install requirements, then current Core
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+        python -m pip install -e . --config-settings editable_mode=compat --no-deps
+        python -m pip install --force-reinstall --no-deps "django-trusts @ git+https://github.com/django-trusts/django-trusts.git@${CORE_REF}"
+        python - <<'PY'
+        import json
+        from importlib.metadata import distribution
+        from pathlib import Path
+
+        root = Path(str(distribution("django-trusts").locate_file("")))
+        matches = sorted(root.glob("django_trusts-*.dist-info/direct_url.json"))
+        if not matches:
+            raise SystemExit("installed Core has no direct_url.json")
+        data = json.loads(matches[-1].read_text())
+        sha = (data.get("vcs_info") or {}).get("commit_id")
+        if not sha:
+            raise SystemExit("installed Core has no commit id")
+        print("Core SHA: %s" % sha)
+        PY
+    - name: Tests
+      run: python -m tests.runtests
+    - name: Fresh migrate
+      run: python -m django migrate --noinput --settings=tests.settings
+    - name: System checks
+      run: python -m django check --settings=tests.settings
+    - name: makemigrations --check
+      run: python -m django makemigrations gh_permissions --check --settings=tests.settings
+    - name: Generate SQLite policy lockfile
+      id: sqlite-policy-lock
+      if: ${{ !cancelled() }}
+      run: |
+        set -euo pipefail
+        python -m django trusts_policy_sql --lock --settings=tests.settings
+        python - <<'PY'
+        from pathlib import Path
+        text = Path("trusts-policy.lock.yaml").read_text()
+        header = text.split("backends:", 1)[0]
+        if "django.db.backends.sqlite3" not in header:
+            raise SystemExit("policy lock is not the SQLite rendering")
+        PY
+    - name: Upload SQLite policy lockfile
+      if: steps.sqlite-policy-lock.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sqlite-policy-lock
+        path: trusts-policy.lock.yaml
+        retention-days: 7
+        if-no-files-found: error
