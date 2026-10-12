@@ -11,15 +11,19 @@ This tree is `django-trusts-gh-permissions==0.1.0.dev0` against the
 final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
-`requirements.txt`, and `scripts/django-trusts.pin` point at reviewed
-django-trusts [#286](https://github.com/django-trusts/django-trusts/pull/286)
-head `04ce6798e420966acf5dc38d6682d040f23f28ea`. That provisional pairing
-adds reverse inquiry and complete policy SQL for bounded `along=` on top of
-the portable recursive walk merged in Core #289. Re-pin to the #286 merge
-commit before this consumer proof leaves draft; do not float past the
-reviewed head meanwhile. The paired Core also contains delegation #280,
-permission content-type enforcement #269, and terminal permission
-collections #264.
+`requirements.txt`, and `scripts/django-trusts.pin` point at
+django-trusts `feature/along-complete-surfaces` head
+`603c4dd505f44ffc4b302af46cbe8f20a463c4ed`. That head includes reviewed
+[#286](https://github.com/django-trusts/django-trusts/pull/286)
+(`04ce6798e420966acf5dc38d6682d040f23f28ea`) and the
+[#292](https://github.com/django-trusts/django-trusts/pull/292)
+policy-lock SQL formatter, so committed policy SQL breaks between
+tokens. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
+rendering, matching deployment. SQLite CI renders a job-local lockfile
+and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
+the byte comparison still run on SQLite. Do not float past this commit.
+The paired Core also contains delegation #280, permission content-type
+enforcement #269, and terminal permission collections #264.
 
 [#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
 is the consumer acceptance proof: `IssuePermissions` applies `triage_issue`
@@ -275,12 +279,18 @@ not an organization grant.
 ```
 python -m pip install "Django>=6.1,<6.2" coverage
 python -m pip install -e .
+# Committed trusts-policy.lock.yaml is MySQL 8.4. The SQLite suite
+# compares a rendering at its own path.
+export TRUSTS_POLICY_LOCKFILE="$(pwd)/.ci/trusts-policy.sqlite.lock.yaml"
+mkdir -p .ci
+python -m django trusts_policy_sql --lock --settings=tests.settings
 python -m tests.runtests
 python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `04ce6798e420966acf5dc38d6682d040f23f28ea`.
+with Django 6.1 against exact paired-core commit `603c4dd505f44ffc4b302af46cbe8f20a463c4ed`.
+The MySQL 8.4 job checks the committed lockfile with `trusts.E009`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or

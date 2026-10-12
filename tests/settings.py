@@ -1,8 +1,17 @@
+import os
 from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-TRUSTS_POLICY_LOCKFILE = BASE_DIR / 'trusts-policy.lock.yaml'
+
+# The committed trusts-policy.lock.yaml is the MySQL 8.4 deployment
+# rendering. SQLite runs set TRUSTS_POLICY_LOCKFILE to their own
+# rendering so trusts.E009 and the byte comparison still apply there.
+_lock_override = os.environ.get('TRUSTS_POLICY_LOCKFILE')
+if _lock_override:
+    TRUSTS_POLICY_LOCKFILE = Path(_lock_override)
+else:
+    TRUSTS_POLICY_LOCKFILE = BASE_DIR / 'trusts-policy.lock.yaml'
 
 SECRET_KEY = 'gh-permissions-tests-not-for-production'
 USE_TZ = True
@@ -62,19 +71,35 @@ AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
 )
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
-    },
-    # Empty on purpose. The 0002 upgrade test migrates it itself.
-    # The runner must not apply 0002 here, because that migration
-    # refuses to run backwards.
-    'gh_permission_reset': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
-        'TEST': {'MIGRATE': False},
-    },
+# Empty on purpose. The 0002 upgrade test migrates it itself.
+# The runner must not apply 0002 here, because that migration
+# refuses to run backwards.
+_GH_PERMISSION_RESET = {
+    'ENGINE': 'django.db.backends.sqlite3',
+    'NAME': ':memory:',
+    'TEST': {'MIGRATE': False},
 }
+
+if os.environ.get('TRUSTS_TEST_DATABASE') == 'mysql':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('TRUSTS_MYSQL_NAME', 'trusts'),
+            'USER': os.environ.get('TRUSTS_MYSQL_USER', 'root'),
+            'PASSWORD': os.environ.get('TRUSTS_MYSQL_PASSWORD', ''),
+            'HOST': os.environ.get('TRUSTS_MYSQL_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('TRUSTS_MYSQL_PORT', '3306'),
+            'OPTIONS': {'charset': 'utf8mb4'},
+        },
+        'gh_permission_reset': _GH_PERMISSION_RESET,
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        },
+        'gh_permission_reset': _GH_PERMISSION_RESET,
+    }
 
 ROOT_URLCONF = 'tests.urls'

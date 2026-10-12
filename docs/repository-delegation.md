@@ -117,8 +117,8 @@ handle.register(
 )
 ```
 
-The committed `trusts-policy.lock.yaml` is the audit artifact. For every
-inquiry it shows three sibling delegation `EXISTS` branches. Each branch contains
+The committed `trusts-policy.lock.yaml` is the MySQL 8.4 audit artifact.
+For every inquiry it shows three sibling delegation `EXISTS` branches. Each branch contains
 its own selection, alignment, and permission-ceiling predicates and its own
 inner ordinary-only union of the three GH grant paths. Only the conventional
 organization branch contains the independent approval predicate.

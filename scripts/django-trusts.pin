@@ -1,4 +1,5 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with the reviewed django-trusts#286 Along head pending merge.
+# Paired with django-trusts feature/along-complete-surfaces, which
+# includes the #292 policy-lock SQL formatter.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=04ce6798e420966acf5dc38d6682d040f23f28ea
+ref=603c4dd505f44ffc4b302af46cbe8f20a463c4ed
