@@ -12,15 +12,10 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts [#296](https://github.com/django-trusts/django-trusts/pull/296)
-`cursor/inactive-user-activity-81f8` head
-`e3765497e6fa0589bf031c6dacedb8882c4e5b36`. That head includes reviewed
-[#286](https://github.com/django-trusts/django-trusts/pull/286)
-(`04ce6798e420966acf5dc38d6682d040f23f28ea`), the
-[#292](https://github.com/django-trusts/django-trusts/pull/292)
-policy-lock SQL formatter, so committed policy SQL breaks between
-tokens, and the [#284](https://github.com/django-trusts/django-trusts/issues/284)
-inactive-user inquiry checks. The committed `trusts-policy.lock.yaml` is the MySQL 8.4
+Core #296's integration of the merged `dev` Along train, pinned at
+`aeabc956d391833cef4598ed93391ba14e5607f7`. It includes the Along walk,
+policy SQL readability changes, and default inactive-user checks.
+The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
 the byte comparison still run on SQLite. Do not float past this commit.
@@ -278,6 +273,37 @@ permissions when an object is passed, so organization scope stays on
 `GhAuthorizationBackend` and the admin adapter. A model permission is
 not an organization grant.
 
+## Following current Core
+
+Core lands first. The `latest-core` job follows that Core: a
+django-trusts branch with the same name as this branch, then `dev`,
+then Core's stable branch.
+
+The same-name branch is `GITHUB_HEAD_REF` on a pull request, and
+otherwise `GITHUB_REF_NAME`. The stable branch is Core's GitHub
+default branch. CI reads it with `git ls-remote --symref https://github.com/django-trusts/django-trusts HEAD`.
+CI relies on each repository's GitHub default branch being its stable
+branch (`master` or `main`). Admins must not set the default branch
+to `dev`.
+
+The pinned jobs and deploys keep the exact pin in `requirements.txt`,
+`scripts/django-trusts.pin`, and `COMPANION_KERNEL_SHA`. Those builds
+stay reproducible. `latest-core` is not a required check. If it
+fails, the workflow still succeeds.
+
+The job sets `TRUSTS_FOLLOW_CORE=1`. The pin checks skip only when
+that variable is set. Those checks are the `COMPANION_KERNEL_SHA`
+comparison and the pin file check. Every other run still performs
+them.
+
+The job installs `requirements.txt`, then force-reinstalls Core from
+the chosen revision with `--no-deps`, and logs the Core commit. It
+runs the full test suite, then generates the SQLite policy lockfile.
+If generation fails, the job fails. The file is uploaded as the
+`sqlite-policy-lock` artifact and kept for seven days. The job does
+not comment on pull requests. It also runs from a manual dispatch and
+every night.
+
 ## Verification
 
 ```
@@ -293,7 +319,8 @@ python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `e3765497e6fa0589bf031c6dacedb8882c4e5b36`.
+with Django 6.1. The pinned jobs install the exact Core commit recorded
+in `scripts/django-trusts.pin` and `COMPANION_KERNEL_SHA`.
 The MySQL 8.4 job checks the committed lockfile with `trusts.E009`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without

@@ -3,4 +3,4 @@
 # which includes the #292 policy-lock SQL formatter and the #284
 # inactive-user inquiry checks.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=e3765497e6fa0589bf031c6dacedb8882c4e5b36
+ref=aeabc956d391833cef4598ed93391ba14e5607f7
