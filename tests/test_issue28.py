@@ -989,10 +989,16 @@ class RelationshipWriteTests(TestCase):
         OrganizationOwnership.objects.create(
             user=superuser, organization=self.org,
         )
-        self.assertIn(
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(
+                user=superuser, organization=self.org,
+            ).exists()
+        )
+        self.assertNotIn(
             self.org,
             set(Organization.objects.authorized(superuser, self.manage)),
         )
+        self.assertFalse(superuser.has_perm(_MANAGE, self.org))
         _assert_no_mutation(
             self,
             ManagementDenied,

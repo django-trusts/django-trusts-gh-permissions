@@ -1030,7 +1030,7 @@ class OrgScopedAdminRequestTests(TestCase):
             reverse('admin:gh_permissions_organization_change', args=[self.org_a.pk]),
         )
 
-    def test_repository_paths_do_not_supply_admin_authority(self):
+    def test_issue_assignments_do_not_supply_repository_admin_authority(self):
         registry = _registry()
         self.assertTrue(registry.has_permission(self.owner_a, self.repo_a, self.read))
         self.assertEqual(

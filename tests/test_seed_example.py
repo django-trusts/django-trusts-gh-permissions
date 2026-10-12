@@ -25,6 +25,11 @@ from example.management.commands.seed_example import (
     EXCLUDED_CODENAME,
     OUTSIDER_USERNAME,
     OWNER_USERNAME,
+    ISSUE_ASSIGNED_NUMBER,
+    ISSUE_LEAF_NUMBER,
+    ISSUE_ROOT_NUMBER,
+    ISSUE_SIBLING_NUMBER,
+    ISSUE_TRIAGE_CODENAME,
     REPOSITORY_TITLE,
     SUPERUSER_USERNAME,
     TEAM_NAME,
@@ -35,6 +40,8 @@ from example.management.commands.seed_example import (
 from gh_permissions.admin import OrganizationAdmin, RepositoryAdmin, TeamAdmin
 from gh_permissions.models import (
     Alias,
+    Issue,
+    IssuePermissions,
     Organization,
     OrganizationOwnership,
     Repository,
@@ -196,6 +203,56 @@ class SeedExampleCommandTests(TestCase):
         )
         return organization, repository, users
 
+    def _assert_sub_issue_inquiries(self, repository, users):
+        triage = _permission('issue', ISSUE_TRIAGE_CODENAME)
+        root = repository.issues.get(number=ISSUE_ROOT_NUMBER)
+        assigned = repository.issues.get(number=ISSUE_ASSIGNED_NUMBER)
+        leaf = repository.issues.get(number=ISSUE_LEAF_NUMBER)
+        sibling = repository.issues.get(number=ISSUE_SIBLING_NUMBER)
+        self.assertEqual(assigned.parent, root)
+        self.assertEqual(leaf.parent, assigned)
+        self.assertEqual(sibling.parent, root)
+        direct = users[DIRECT_USERNAME]
+        superuser = users[SUPERUSER_USERNAME]
+
+        self.assertTrue(direct.has_perm(
+            'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, leaf,
+        ))
+        self.assertFalse(direct.has_perm(
+            'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, root,
+        ))
+        self.assertFalse(direct.has_perm(
+            'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, sibling,
+        ))
+        self.assertEqual(
+            set(Issue.objects.authorized(direct, triage)),
+            {assigned, leaf},
+        )
+        self.assertEqual(
+            set(leaf.get_permitted_users(triage)),
+            {direct, superuser},
+        )
+        self.assertEqual(
+            set(get_user_model().objects.permitted(leaf, triage)),
+            {direct, superuser},
+        )
+        self.assertTrue(superuser.has_perm(
+            'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, leaf,
+        ))
+        self.assertNotIn(
+            leaf, Issue.objects.authorized(superuser, triage),
+        )
+        self.assertEqual(
+            IssuePermissions.objects.get(
+                user=direct, issue=assigned,
+            ).permissions.get(),
+            triage,
+        )
+        for username in (TEAM_USERNAME, OUTSIDER_USERNAME, OWNER_USERNAME):
+            self.assertFalse(users[username].has_perm(
+                'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, leaf,
+            ))
+
     def _assert_owner_scope(self, organization, repository, users):
         owner = users[OWNER_USERNAME]
         manage = _permission('organization', 'manage_organization')
@@ -309,6 +366,9 @@ class SeedExampleCommandTests(TestCase):
         self.assertIn('RepositoryCollaborator', text)
         self.assertIn('OrganizationOwnership', text)
         self.assertIn(EXCLUDED_CODENAME, text)
+        self.assertIn('Sub-issue triage', text)
+        self.assertIn('#101', text)
+        self.assertIn('#102', text)
         for spec in USER_SPECS:
             self.assertIn(spec['username'], text)
             self.assertIn(spec['password'], text)
@@ -316,6 +376,7 @@ class SeedExampleCommandTests(TestCase):
         organization, repository, users = self._assert_repository_inquiries(
             DEFAULT_ORGANIZATION_NAME,
         )
+        self._assert_sub_issue_inquiries(repository, users)
         self._assert_owner_scope(organization, repository, users)
         read = _permission('repository', 'read_repository')
         self.assertNotIn(
@@ -348,8 +409,10 @@ class SeedExampleCommandTests(TestCase):
             TeamRepositoryPermission.objects.count(),
             OrganizationOwnership.objects.count(),
             Alias.objects.count(),
+            Issue.objects.count(),
+            IssuePermissions.objects.count(),
         )
-        self.assertEqual(counts, (6, 7, 2, 2, 1, 2, 6, 7))
+        self.assertEqual(counts, (6, 7, 2, 2, 1, 2, 6, 7, 4, 1))
 
         again = StringIO()
         with CaptureQueriesContext(connection) as captured:
@@ -371,6 +434,8 @@ class SeedExampleCommandTests(TestCase):
                 TeamRepositoryPermission.objects.count(),
                 OrganizationOwnership.objects.count(),
                 Alias.objects.count(),
+                Issue.objects.count(),
+                IssuePermissions.objects.count(),
             ),
             counts,
         )
@@ -394,12 +459,100 @@ class SeedExampleCommandTests(TestCase):
             Organization.objects.filter(name=DEFAULT_ORGANIZATION_NAME).exists()
         )
         organization, repository, users = self._assert_repository_inquiries('Acme Lab')
+        self._assert_sub_issue_inquiries(repository, users)
         self._assert_owner_scope(organization, repository, users)
         again = StringIO()
         with CaptureQueriesContext(connection) as captured:
             call_command('seed_example', organization_name='Acme Lab', stdout=again)
         self.assertEqual(_write_sql(captured), [])
         self.assertIn('Status: reused', again.getvalue())
+
+    def test_existing_pre_feature_seed_gets_one_additive_issue_slice(self):
+        call_command('seed_example', stdout=StringIO())
+        organization = Organization.objects.get(name=DEFAULT_ORGANIZATION_NAME)
+        repository = organization.repositories.get(name=REPOSITORY_TITLE)
+        users = {
+            username: get_user_model().objects.get(username=username)
+            for username in DEVELOPMENT_PASSWORDS
+        }
+        Issue.objects.filter(repository=repository).delete()
+        self.assertEqual(IssuePermissions.objects.count(), 0)
+
+        base_counts = (
+            get_user_model().objects.count(),
+            Organization.objects.count(),
+            Team.objects.count(),
+            Repository.objects.count(),
+            RepositoryCollaborator.objects.count(),
+            TeamRepositoryPermission.objects.count(),
+            OrganizationOwnership.objects.count(),
+            Alias.objects.count(),
+        )
+        upgraded = StringIO()
+        call_command('seed_example', stdout=upgraded)
+        self.assertIn('Status: upgraded', upgraded.getvalue())
+        self.assertEqual(Issue.objects.filter(repository=repository).count(), 4)
+        self.assertEqual(IssuePermissions.objects.count(), 1)
+        self.assertEqual(
+            (
+                get_user_model().objects.count(),
+                Organization.objects.count(),
+                Team.objects.count(),
+                Repository.objects.count(),
+                RepositoryCollaborator.objects.count(),
+                TeamRepositoryPermission.objects.count(),
+                OrganizationOwnership.objects.count(),
+                Alias.objects.count(),
+            ),
+            base_counts,
+        )
+        self._assert_sub_issue_inquiries(repository, users)
+
+        reused = StringIO()
+        with CaptureQueriesContext(connection) as captured:
+            call_command('seed_example', stdout=reused)
+        self.assertEqual(_write_sql(captured), [])
+        self.assertIn('Status: reused', reused.getvalue())
+
+    def test_partial_issue_slice_refuses_without_completing_it(self):
+        call_command('seed_example', stdout=StringIO())
+        Issue.objects.get(number=ISSUE_LEAF_NUMBER).delete()
+        before = set(Issue.objects.values_list('pk', 'number', 'parent_id'))
+        with CaptureQueriesContext(connection) as captured:
+            with self.assertRaises(CommandError) as raised:
+                call_command('seed_example')
+        self.assertEqual(_write_sql(captured), [])
+        self.assertIn('partial or different sub-issue', str(raised.exception))
+        self.assertEqual(
+            set(Issue.objects.values_list('pk', 'number', 'parent_id')),
+            before,
+        )
+
+    def test_cross_repository_child_is_detected_as_seed_drift(self):
+        call_command('seed_example', stdout=StringIO())
+        organization = Organization.objects.get(name=DEFAULT_ORGANIZATION_NAME)
+        repository = organization.repositories.get(name=REPOSITORY_TITLE)
+        other = Repository.objects.create(
+            organization=create_organization('Foreign Issue Org'),
+            name='other-repo',
+        )
+        assigned = repository.issues.get(number=ISSUE_ASSIGNED_NUMBER)
+        Issue.objects.create(
+            repository=other,
+            parent=assigned,
+            number=1,
+            title='Cross-repository child',
+        )
+        before = set(Issue.objects.values_list('pk', 'repository_id', 'parent_id'))
+        with CaptureQueriesContext(connection) as captured:
+            with self.assertRaises(CommandError) as raised:
+                call_command('seed_example')
+        self.assertEqual(_write_sql(captured), [])
+        self.assertIn('outside shared-repo', str(raised.exception))
+        self.assertEqual(
+            set(Issue.objects.values_list('pk', 'repository_id', 'parent_id')),
+            before,
+        )
 
     def test_organization_name_uses_the_field_contract(self):
         with CaptureQueriesContext(connection) as captured:
@@ -442,6 +595,7 @@ class SeedExampleCommandTests(TestCase):
 
     def test_different_graph_fails_before_mutation(self):
         call_command('seed_example', stdout=StringIO())
+        Issue.objects.all().delete()
         User = get_user_model()
         owner = User.objects.get(username=OWNER_USERNAME)
         owner.set_password('changed-dev-only')
@@ -464,6 +618,7 @@ class SeedExampleCommandTests(TestCase):
         self.assertEqual(owner.password, changed)
         self.assertTrue(owner.check_password('changed-dev-only'))
         self.assertIn(stranger, team.members.all())
+        self.assertEqual(Issue.objects.count(), 0)
         self.assertEqual(
             Organization.objects.filter(name=DEFAULT_ORGANIZATION_NAME).count(),
             1,

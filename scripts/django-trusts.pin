@@ -1,4 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with the reviewed django-trusts#280 delegation merge commit.
+# Paired with django-trusts cursor/inactive-user-activity-81f8 (#296),
+# which includes the #292 policy-lock SQL formatter and the #284
+# inactive-user inquiry checks.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=1aa3872b84813682d3513c4856fabf189bcbd8c0
+ref=6917f56a1290b184092b4c167d0721fbc0dc516e

@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  # Companion core: django-trusts#280 delegation merge commit.
-  COMPANION_KERNEL_SHA: 1aa3872b84813682d3513c4856fabf189bcbd8c0
+  # Exact Core dev after the Along/readability and inactive-user train.
+  COMPANION_KERNEL_SHA: 6917f56a1290b184092b4c167d0721fbc0dc516e
 
 jobs:
   tests:
@@ -23,6 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
+      # Committed trusts-policy.lock.yaml is the MySQL 8.4 rendering.
+      # This job still runs trusts.E009 and the byte comparison, against
+      # a SQLite rendering at its own path.
+      TRUSTS_POLICY_LOCKFILE: ${{ github.workspace }}/.ci/trusts-policy.sqlite.lock.yaml
     strategy:
       fail-fast: false
       matrix:
@@ -53,10 +57,14 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '1aa3872b84813682d3513c4856fabf189bcbd8c0' in pin, pin
+        assert '6917f56a1290b184092b4c167d0721fbc0dc516e' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
+    - name: Render SQLite policy lock for this job
+      run: |
+        mkdir -p .ci
+        python -m django trusts_policy_sql --lock --settings=tests.settings
     - name: Tests
       run: |
         coverage run -m tests.runtests
@@ -85,6 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
+      TRUSTS_POLICY_LOCKFILE: ${{ github.workspace }}/.ci/trusts-policy.sqlite.lock.yaml
     steps:
     - uses: actions/checkout@v4
     - uses: actions/checkout@v4
@@ -98,16 +107,85 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1aa3872b84813682d3513c4856fabf189bcbd8c0"
+          test "${COMPANION_KERNEL_SHA}" = "6917f56a1290b184092b4c167d0721fbc0dc516e"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "6917f56a1290b184092b4c167d0721fbc0dc516e"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        mkdir -p .ci
+        python -m django trusts_policy_sql --lock --settings=tests.settings
         coverage run -m tests.runtests
         python -m django migrate --noinput --settings=tests.settings
         python -m django check --settings=tests.settings
+        python -m django makemigrations gh_permissions --check --settings=tests.settings
+
+  policy-lock-mysql:
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+    name: policy lock (MySQL 8.4)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: trusts
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KERNEL_CHECKOUT: ${{ github.workspace }}/.deps/django-trusts
+      TRUSTS_TEST_DATABASE: mysql
+      TRUSTS_MYSQL_HOST: 127.0.0.1
+      TRUSTS_MYSQL_PORT: "3306"
+      TRUSTS_MYSQL_USER: root
+      TRUSTS_MYSQL_PASSWORD: root
+      TRUSTS_MYSQL_NAME: trusts
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: django-trusts/django-trusts
+        ref: ${{ env.COMPANION_KERNEL_SHA }}
+        path: .deps/django-trusts
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install final core then GH
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config default-libmysqlclient-dev
+        python -m pip install --upgrade pip
+        python -m pip install "Django>=6.1,<6.2" mysqlclient
+        python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
+        python -m pip install -e . --config-settings editable_mode=compat
+    - name: Render current MySQL policy
+      id: mysql-policy-lock
+      run: |
+        mkdir -p .ci
+        TRUSTS_POLICY_LOCKFILE="${GITHUB_WORKSPACE}/.ci/trusts-policy.mysql.lock.yaml" python -m django trusts_policy_sql --lock --settings=tests.settings
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.mysql-policy-lock.outcome == 'success' }}
+      with:
+        name: gh-mysql-policy-lock
+        path: .ci/trusts-policy.mysql.lock.yaml
+    - name: Lockfile check, migrate, and migration drift
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        text = Path('trusts-policy.lock.yaml').read_text()
+        if 'sql: |-' not in text:
+            raise SystemExit('committed policy SQL is not a multi-line literal')
+        if 'django.db.backends.mysql' not in text:
+            raise SystemExit('committed policy lock is not the MySQL rendering')
+        PY
+        python -m django check --settings=tests.settings
+        python -m django migrate --noinput --settings=tests.settings
         python -m django makemigrations gh_permissions --check --settings=tests.settings
 
   package:
@@ -156,6 +234,7 @@ jobs:
       actions: write
     env:
       TRUSTS_FOLLOW_CORE: "1"
+      TRUSTS_POLICY_LOCKFILE: ${{ github.workspace }}/.ci/trusts-policy.sqlite.lock.yaml
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -224,6 +303,21 @@ jobs:
             raise SystemExit("installed Core has no commit id")
         print("Core SHA: %s" % sha)
         PY
+    - name: Generate SQLite policy lockfile
+      id: sqlite-policy-lock
+      if: ${{ !cancelled() }}
+      run: |
+        set -euo pipefail
+        mkdir -p .ci
+        python -m django trusts_policy_sql --lock --settings=tests.settings
+        python - <<'PY'
+        from pathlib import Path
+        text = Path(".ci/trusts-policy.sqlite.lock.yaml").read_text()
+        header = text.split("backends:", 1)[0]
+        if "django.db.backends.sqlite3" not in header:
+            raise SystemExit("policy lock is not the SQLite rendering")
+        PY
+
     - name: Tests
       run: python -m tests.runtests
     - name: Fresh migrate
@@ -232,24 +326,11 @@ jobs:
       run: python -m django check --settings=tests.settings
     - name: makemigrations --check
       run: python -m django makemigrations gh_permissions --check --settings=tests.settings
-    - name: Generate SQLite policy lockfile
-      id: sqlite-policy-lock
-      if: ${{ !cancelled() }}
-      run: |
-        set -euo pipefail
-        python -m django trusts_policy_sql --lock --settings=tests.settings
-        python - <<'PY'
-        from pathlib import Path
-        text = Path("trusts-policy.lock.yaml").read_text()
-        header = text.split("backends:", 1)[0]
-        if "django.db.backends.sqlite3" not in header:
-            raise SystemExit("policy lock is not the SQLite rendering")
-        PY
     - name: Upload SQLite policy lockfile
       if: ${{ !cancelled() && steps.sqlite-policy-lock.outcome == 'success' }}
       uses: actions/upload-artifact@v4
       with:
         name: sqlite-policy-lock
-        path: trusts-policy.lock.yaml
+        path: .ci/trusts-policy.sqlite.lock.yaml
         retention-days: 7
         if-no-files-found: error

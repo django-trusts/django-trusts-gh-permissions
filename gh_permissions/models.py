@@ -6,6 +6,8 @@ Public relations used to authorize:
     team.allowed_operations
     repository.organization
     collaborator.permissions
+    issue.parent
+    issue_triage_grant.permissions
 
 ``organization.teams`` and ``organization.repositories`` are containment.
 ``Alias`` reserves the shared current name. Authorization does not
@@ -186,6 +188,77 @@ class Repository(PermittedUsersMixin, models.Model):
         return self.name
 
 
+class Issue(PermittedUsersMixin, models.Model):
+    """GH-style issue that may be nested under another issue.
+
+    The modeled service permits sub-issues to cross repository boundaries.
+    The repository therefore identifies the issue, while ``parent`` alone
+    defines the hierarchy traversed by the authorization policy. Application
+    writes are responsible for rejecting cycles and enforcing any owner rule;
+    the bounded authorization walk still terminates if malformed rows exist.
+    """
+
+    repository = models.ForeignKey(
+        Repository, related_name='issues', on_delete=models.CASCADE,
+    )
+    parent = models.ForeignKey(
+        'self',
+        related_name='sub_issues',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    number = models.PositiveIntegerField()
+    title = models.CharField(max_length=255)
+
+    objects = AuthorizedManager()
+
+    class Meta:
+        permissions = (
+            ('triage_issue', 'Can triage issue'),
+        )
+        constraints = (
+            models.UniqueConstraint(
+                fields=('repository', 'number'),
+                name='unique_issue_number_per_repository',
+            ),
+        )
+
+    def __str__(self):
+        return '#%s %s' % (self.number, self.title)
+
+
+class IssuePermissions(models.Model):
+    """A user's permission bundle at one issue/sub-issue subtree."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='issue_permissions',
+        on_delete=models.CASCADE,
+    )
+    issue = models.ForeignKey(
+        Issue,
+        related_name='permission_assignments',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='issue_permissions',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'issue'),
+                name='unique_issue_permissions',
+            ),
+        )
+
+    def __str__(self):
+        return '%s @ %s' % (self.user_id, self.issue_id)
+
+
 class RepositoryCollaborator(models.Model):
     """Direct user access to one repository.
 
@@ -231,7 +304,7 @@ class RepositoryDelegation(models.Model):
 
     Organization approval is recorded independently from the sponsor
     selection. Until ``approved_organization`` is set to the repository's
-    organization, this row grants nothing. ``allowed_permissions`` is the
+    organization, this row grants nothing. ``permissions`` is the
     delegation ceiling; the sponsor must also hold the requested permission
     through an ordinary registered GH path.
     """
@@ -251,7 +324,7 @@ class RepositoryDelegation(models.Model):
         related_name='delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='repository_delegations',
         blank=True,
@@ -304,7 +377,7 @@ class PersonalRepositoryDelegation(models.Model):
         related_name='personal_delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='personal_repository_delegations',
         blank=True,
@@ -336,7 +409,7 @@ class AllPersonalRepositoriesDelegation(models.Model):
         related_name='sponsored_all_personal_repositories_delegations',
         on_delete=models.CASCADE,
     )
-    allowed_permissions = models.ManyToManyField(
+    permissions = models.ManyToManyField(
         Permission,
         related_name='all_personal_repositories_delegations',
         blank=True,

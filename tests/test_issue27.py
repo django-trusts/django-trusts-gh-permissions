@@ -27,6 +27,7 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    IssuePermissions,
     Team,
     TeamRepositoryPermission,
 )
@@ -405,10 +406,12 @@ class OwnershipAndCollaborationTest(TestCase):
             'TeamRepositoryPermission',
             'OrganizationOwnership',
             'OrganizationOwnership',
+            'IssuePermissions',
         ])
         rendered = render_policy_sql_bytes(alias='default').decode('utf-8')
         self.assertIn('schema_version: 1', rendered)
         self.assertIn('RepositoryCollaborator', rendered)
+        self.assertIn('IssuePermissions', rendered)
         self.assertIn('TeamRepositoryPermission', rendered)
         self.assertIn('OrganizationOwnership', rendered)
         self.assertNotIn('OrganizationMembership', rendered)
@@ -714,7 +717,10 @@ class SharedNameMigrationTest(TransactionTestCase):
             ])
             executor.loader.build_graph()
             executor.migrate([
-                ('gh_permissions', '0006_personal_delegations'),
+                (
+                    'gh_permissions',
+                    '0008_rename_delegation_permissions',
+                ),
             ])
             ensure_owner_group()
             User = get_user_model()
@@ -761,7 +767,10 @@ class SharedNameMigrationTest(TransactionTestCase):
             ).exists())
         finally:
             MigrationExecutor(connection).migrate([
-                ('gh_permissions', '0006_personal_delegations'),
+                (
+                    'gh_permissions',
+                    '0008_rename_delegation_permissions',
+                ),
             ])
 
 

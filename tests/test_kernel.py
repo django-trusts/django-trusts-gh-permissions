@@ -98,6 +98,14 @@ class KernelMigrationLoaderTest(TestCase):
                 ('gh_permissions', '0004_shared_names_ownership_collaborators'),
                 ('gh_permissions', '0005_repositorydelegation'),
                 ('gh_permissions', '0006_personal_delegations'),
+                (
+                    'gh_permissions',
+                    '0007_issue_issuepermissions_and_more',
+                ),
+                (
+                    'gh_permissions',
+                    '0008_rename_delegation_permissions',
+                ),
             },
         )
 

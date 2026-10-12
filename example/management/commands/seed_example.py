@@ -3,9 +3,10 @@
 Users and the conventional organization are created through
 ``gh_permissions.services``, so an alias, a personal organization, and
 an ownership row stay together. The organization name is the seed
-identity. An exact match is reused. Anything missing, partial, or
-different for that name fails before this command writes. Passwords
-are development-only and are not for production.
+identity. An exact match is reused. A seed from before the sub-issue example
+gets that wholly absent slice once. A partial or different base graph or
+sub-issue slice fails before this command writes. Passwords are
+development-only and are not for production.
 """
 
 from django.contrib.auth import get_user_model
@@ -18,6 +19,8 @@ from django.db.models import Q
 
 from gh_permissions.models import (
     Alias,
+    Issue,
+    IssuePermissions,
     Organization,
     OrganizationOwnership,
     Repository,
@@ -38,6 +41,15 @@ from gh_permissions.services import (
 DEFAULT_ORGANIZATION_NAME = 'Example Organization'
 TEAM_NAME = 'readers'
 REPOSITORY_TITLE = 'shared-repo'
+ISSUE_ROOT_NUMBER = 100
+ISSUE_ROOT_TITLE = 'Release 1.0'
+ISSUE_ASSIGNED_NUMBER = 101
+ISSUE_ASSIGNED_TITLE = 'Implement permissions'
+ISSUE_LEAF_NUMBER = 102
+ISSUE_LEAF_TITLE = 'Audit recursive policy'
+ISSUE_SIBLING_NUMBER = 103
+ISSUE_SIBLING_TITLE = 'Write release notes'
+ISSUE_TRIAGE_CODENAME = 'triage_issue'
 
 SUPERUSER_USERNAME = 'example-superuser'
 OWNER_USERNAME = 'example-owner'
@@ -166,7 +178,9 @@ class Command(BaseCommand):
         organization_name = _validate_organization_name(
             options['organization_name'],
         )
-        repository_permissions, owner_permissions = _load_permissions()
+        repository_permissions, issue_permission, owner_permissions = (
+            _load_permissions()
+        )
         organization = Organization.objects.filter(
             name=organization_name, personal_user__isnull=True,
         ).first()
@@ -177,6 +191,7 @@ class Command(BaseCommand):
                     _create_graph(
                         organization_name,
                         repository_permissions,
+                        issue_permission,
                         owner_permissions,
                     )
             except (IntegrityError, AliasConflict) as exc:
@@ -197,6 +212,34 @@ class Command(BaseCommand):
                     '\n'.join('- %s' % item for item in problems),
                 )
             )
+        issue_state, issue_problems = _issue_slice_state(organization)
+        if issue_state == 'different':
+            raise CommandError(
+                'Organization %r has a partial or different sub-issue '
+                'example. Refusing to change existing rows:\n%s'
+                % (
+                    organization_name,
+                    '\n'.join('- %s' % item for item in issue_problems),
+                )
+            )
+        if issue_state == 'absent':
+            try:
+                with transaction.atomic():
+                    repository = organization.repositories.get(
+                        name=REPOSITORY_TITLE,
+                    )
+                    direct = get_user_model().objects.get(
+                        username=DIRECT_USERNAME,
+                    )
+                    _create_issue_slice(
+                        repository, direct, issue_permission,
+                    )
+            except IntegrityError as exc:
+                raise CommandError(
+                    'Sub-issue example could not be added: %s' % exc
+                )
+            self._report('upgraded', organization_name)
+            return
         self._report('reused', organization_name)
 
     def _report(self, status, organization_name):
@@ -232,6 +275,17 @@ class Command(BaseCommand):
             'Excluded by the team ceiling: %s on %s is granted to %s '
             'and is not an allowed operation.'
             % (EXCLUDED_CODENAME, REPOSITORY_TITLE, TEAM_NAME)
+        )
+        self.stdout.write(
+            'Sub-issue triage: %s at #%s reaches #%s through bounded '
+            'along=, but not its parent #%s or sibling #%s.'
+            % (
+                DIRECT_USERNAME,
+                ISSUE_ASSIGNED_NUMBER,
+                ISSUE_LEAF_NUMBER,
+                ISSUE_ROOT_NUMBER,
+                ISSUE_SIBLING_NUMBER,
+            )
         )
 
 
@@ -284,7 +338,10 @@ def _load_permissions():
     owner_permissions = {
         key: _get_permission(*key) for key in _owner_permission_keys()
     }
-    return repository_permissions, owner_permissions
+    issue_permission = _get_permission(
+        'gh_permissions', 'issue', ISSUE_TRIAGE_CODENAME,
+    )
+    return repository_permissions, issue_permission, owner_permissions
 
 
 def _ensure_names_available(organization_name):
@@ -314,7 +371,10 @@ def _ensure_names_available(organization_name):
         )
 
 
-def _create_graph(organization_name, repository_permissions, owner_permissions):
+def _create_graph(
+    organization_name, repository_permissions, issue_permission,
+    owner_permissions,
+):
     users = {}
     for spec in USER_SPECS:
         users[spec['username']] = create_user(
@@ -352,6 +412,37 @@ def _create_graph(organization_name, repository_permissions, owner_permissions):
             repository=repository,
             operation=repository_permissions[codename],
         )
+    _create_issue_slice(
+        repository, users[DIRECT_USERNAME], issue_permission,
+    )
+
+
+def _create_issue_slice(repository, user, issue_permission):
+    root = Issue.objects.create(
+        repository=repository,
+        number=ISSUE_ROOT_NUMBER,
+        title=ISSUE_ROOT_TITLE,
+    )
+    assigned = Issue.objects.create(
+        repository=repository,
+        parent=root,
+        number=ISSUE_ASSIGNED_NUMBER,
+        title=ISSUE_ASSIGNED_TITLE,
+    )
+    Issue.objects.create(
+        repository=repository,
+        parent=assigned,
+        number=ISSUE_LEAF_NUMBER,
+        title=ISSUE_LEAF_TITLE,
+    )
+    Issue.objects.create(
+        repository=repository,
+        parent=root,
+        number=ISSUE_SIBLING_NUMBER,
+        title=ISSUE_SIBLING_TITLE,
+    )
+    grant = IssuePermissions.objects.create(user=user, issue=assigned)
+    grant.permissions.add(issue_permission)
 
 
 def _graph_problems(organization, owner_permissions):
@@ -586,3 +677,86 @@ def _team_grant_problems(organization, problems):
             'team grants are %s, expected %s'
             % (sorted(actual), sorted(expected))
         )
+
+
+def _issue_slice_state(organization):
+    repository = organization.repositories.filter(name=REPOSITORY_TITLE).first()
+    if repository is None:
+        return 'different', ['missing repository %s' % REPOSITORY_TITLE]
+
+    issues = list(
+        Issue.objects.filter(repository=repository)
+        .select_related('parent')
+        .order_by('number')
+    )
+    if not issues:
+        return 'absent', []
+
+    problems = []
+    by_number = {issue.number: issue for issue in issues}
+    expected = {
+        ISSUE_ROOT_NUMBER: (ISSUE_ROOT_TITLE, None),
+        ISSUE_ASSIGNED_NUMBER: (ISSUE_ASSIGNED_TITLE, ISSUE_ROOT_NUMBER),
+        ISSUE_LEAF_NUMBER: (ISSUE_LEAF_TITLE, ISSUE_ASSIGNED_NUMBER),
+        ISSUE_SIBLING_NUMBER: (ISSUE_SIBLING_TITLE, ISSUE_ROOT_NUMBER),
+    }
+    if set(by_number) != set(expected) or len(by_number) != len(issues):
+        problems.append(
+            'issue numbers are %s, expected %s'
+            % (sorted(issue.number for issue in issues), sorted(expected))
+        )
+    for number, (title, parent_number) in expected.items():
+        issue = by_number.get(number)
+        if issue is None:
+            continue
+        expected_parent = by_number.get(parent_number)
+        expected_parent_id = (
+            None if parent_number is None or expected_parent is None
+            else expected_parent.pk
+        )
+        if issue.title != title or issue.parent_id != expected_parent_id:
+            actual_parent = None
+            if issue.parent_id is not None:
+                actual_parent = '%s/#%s' % (
+                    issue.parent.repository.name, issue.parent.number,
+                )
+            problems.append(
+                'issue #%s is (%r, parent %r), expected (%r, parent %r)'
+                % (
+                    number, issue.title, actual_parent, title, parent_number,
+                )
+            )
+
+    known_ids = {issue.pk for issue in issues}
+    attached = list(
+        Issue.objects.filter(parent_id__in=known_ids)
+        .exclude(pk__in=known_ids)
+        .values_list('repository__name', 'number')
+    )
+    if attached:
+        problems.append(
+            'issues outside %s attached to the seeded tree are %s'
+            % (REPOSITORY_TITLE, sorted(attached))
+        )
+
+    grants = []
+    for grant in IssuePermissions.objects.filter(issue__in=issues):
+        permissions = tuple(sorted(grant.permissions.values_list(
+            'content_type__app_label',
+            'content_type__model',
+            'codename',
+        )))
+        grants.append((grant.user.username, grant.issue.number, permissions))
+    expected_grants = [(
+        DIRECT_USERNAME,
+        ISSUE_ASSIGNED_NUMBER,
+        (('gh_permissions', 'issue', ISSUE_TRIAGE_CODENAME),),
+    )]
+    if sorted(grants) != expected_grants:
+        problems.append(
+            'issue triage grants are %s, expected %s'
+            % (sorted(grants), expected_grants)
+        )
+    if problems:
+        return 'different', problems
+    return 'exact', []

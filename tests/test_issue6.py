@@ -29,6 +29,7 @@ from gh_permissions.models import (
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
+    IssuePermissions,
     TeamRepositoryPermission,
 )
 
@@ -83,6 +84,7 @@ class Issue6OwnerProofs(SimpleTestCase):
             TeamRepositoryPermission,
             OrganizationOwnership,
             OrganizationOwnership,
+            IssuePermissions,
         ])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):

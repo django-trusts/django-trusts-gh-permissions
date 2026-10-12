@@ -11,15 +11,20 @@ content identity: ``manage_organization`` on the organization, and the
 repository codenames on that organization's repositories. The crossed
 pairs are denials. A user with no ownership row is not an owner. Team
 does not carry this bundle.
-``GhPermissionsConfig.ready`` contributes the four helpers as separate
-calls. Helpers require a ``BackendHandle``; a bare registry is
-``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
+Issue triage assignments use bounded ``along=`` reachability: one grant at an
+issue applies to that issue and its sub-issues through at most eight parent
+edges. This relative query bound is separate from the modeled service's
+absolute eight-level validity rule.
+``GhPermissionsConfig.ready`` contributes each helper as a separate call.
+Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
+``permission=`` does not feed ``get_group_permissions``.
 """
 
 from trusts.core import BackendHandle
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
+    IssuePermissions,
     OrganizationOwnership,
     PersonalRepositoryDelegation,
     RepositoryCollaborator,
@@ -48,6 +53,18 @@ def register_collaborator(handle):
     )
 
 
+def register_issue_permissions(handle):
+    """Register a bounded permission bundle over one issue subtree."""
+    handle = _require_handle(handle)
+    return handle.register(
+        trust=IssuePermissions,
+        user='user',
+        permission='permissions',
+        content='issue',
+        along=('issue__parent', 8),
+    )
+
+
 def register_delegation(handle):
     """Register one-level repository delegation through an exact sponsor.
 
@@ -62,7 +79,7 @@ def register_delegation(handle):
         sponsor='sponsor_ownership__user',
         content='repository',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
             & (
                 delegation.sponsor_ownership.organization
                 == delegation.repository.organization
@@ -84,7 +101,7 @@ def register_personal_delegation(handle):
         sponsor='sponsor',
         content='repository',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
             & (
                 delegation.repository.organization.personal_user
                 == delegation.sponsor
@@ -102,7 +119,7 @@ def register_all_personal_repositories_delegation(handle):
         sponsor='sponsor',
         content='sponsor__personal_organization__repositories',
         condition=lambda delegation, permission: (
-            delegation.allowed_permissions.contains(permission)
+            delegation.permissions.contains(permission)
         ),
     )
 

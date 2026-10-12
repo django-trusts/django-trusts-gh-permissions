@@ -117,7 +117,7 @@ class PermittedUsersAgreementTest(GhFixtureMixin, TestCase):
         )
         self.assertEqual(
             list(Repository.objects.authorized(self.member, self.read)),
-            [self.repo_a],
+            [],
         )
 
         superuser = User.objects.create_superuser(

@@ -10,6 +10,7 @@ from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
     RepositoryCollaborator,
+    IssuePermissions,
     TeamRepositoryPermission,
 )
 from gh_permissions.policy import (
@@ -197,4 +198,5 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
             TeamRepositoryPermission,
             OrganizationOwnership,
             OrganizationOwnership,
+            IssuePermissions,
         ])

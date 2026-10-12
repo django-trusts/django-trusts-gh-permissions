@@ -31,6 +31,11 @@ A direct path is one `RepositoryCollaborator` row: the user, the
 repository, and the selected `permissions`. Organization membership is
 not required, so an outside collaborator is just that row.
 
+A repository may also contain `Issue` rows connected through an optional
+`parent`. An `IssuePermissions` row assigns a user a permission bundle at one
+issue. The `triage_issue` example permission reaches that issue and bounded
+sub-issues. It does not reach an ancestor or a sibling.
+
 Organization alignment and the team's allowed operations constrain a
 complete team path. Direct and team paths OR together. Deleting any
 required persisted relationship removes that path. Malformed,
@@ -71,6 +76,54 @@ grant this bundle.
 
 `Repository.name` is unique per organization and may repeat across
 organizations.
+
+## Bounded sub-issue triage
+
+The sub-issue example is the concrete consumer of provisional `along=`.
+[GitHub documents](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)
+a full parent/sub-issue hierarchy, permits an existing issue to be re-parented,
+and limits nesting to eight levels. Each issue keeps its own repository
+identity while the optional `parent` defines the hierarchy; this also permits
+the cross-repository sub-issues supported by GitHub. GitHub limits those
+cross-repository relationships to repositories with the same owner. This
+bounded example does not reproduce that separate write-time owner check.
+
+Startup registers the triage assignment as:
+
+```python
+from gh_permissions.models import IssuePermissions
+
+backend.register(
+    trust=IssuePermissions,
+    user="user",
+    permission="permissions",
+    content="issue",
+    along=("issue__parent", 8),
+)
+```
+
+Depth zero is the assigned issue. Eight parent edges are included; a ninth is
+denied. That relative query-safety ceiling is not the same as GitHub's
+absolute eight-level tree limit. Valid application writes remain responsible
+for the absolute level rule, rejecting cycles, and the separate same-owner
+rule. Forward authorization answers whether one user may triage one issue.
+Reverse inquiry answers who may triage a selected issue:
+
+```python
+user.has_perm("gh_permissions.triage_issue", issue)
+Issue.objects.authorized(user, triage_permission)
+User.objects.permitted(issue, triage_permission)
+issue.get_permitted_users(triage_permission)
+```
+
+Removing the permission from the assignment, or deleting the assignment,
+revokes both directions immediately. The policy lock records the same
+bounded recursive SQL for forward and reverse inquiries.
+
+Re-parenting changes effective authority immediately because the assignment
+follows persisted issue identity and the current parent edges. This is a
+GH-style finer-grained example policy; it does not claim that GitHub's native
+repository-level triage role inherits through sub-issues this way.
 
 ## Changing authorization relationships
 
@@ -343,7 +396,8 @@ python manage.py seed_example
 The value is checked against `Organization.name` before any rows are
 written. The same name with an exact matching graph is safe to run
 again: the command reuses those rows and does not create duplicates.
-A missing, partial, or different graph for that name fails before it
+A seed created before the sub-issue example receives that wholly absent slice
+once. A partial or different base graph or sub-issue slice fails before it
 changes anything. Rows outside that graph are left alone.
 
 The accounts below are development-only. Do not reuse these passwords
@@ -353,7 +407,7 @@ in production.
 | --- | --- | --- |
 | `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
 | `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants `manage_organization` on that organization and `read_repository`, `write_repository`, and `admin_repository` on its repositories. A repository permission on the organization, or `manage_organization` on a repository, is denied. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
-| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
+| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`, plus sub-issue triage authority at issue `#101`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
 | `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |
 
@@ -366,6 +420,12 @@ Team `readers` allows `read_repository` only. A team grant for
 `write_repository` on `shared-repo` is stored and excluded by that
 ceiling. Repository `shared-repo` carries both the direct collaborator
 and the team path, so those paths can be compared on one repository.
+
+The same repository has issue `#100` with children `#101` and `#103`, and
+`#101` has child `#102`. `example-direct` receives `triage_issue` at `#101`,
+so `#101` and `#102` are permitted while parent `#100` and sibling `#103` are
+denied. Reverse inquiry on `#102` returns `example-direct` among ordinary
+users.
 
 Repeat the default seed with an explicit name:
 
@@ -382,7 +442,8 @@ invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
 repository permission. Team membership, the team ceiling, collaborator
 bundles, and team grants change through the domain services above. A
-raw queryset write does not.
+raw queryset write does not. The path-review example is not CODEOWNERS and
+does not make repository permissions imply path permissions.
 
 ## Documentation
 
