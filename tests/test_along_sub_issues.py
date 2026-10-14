@@ -183,7 +183,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
         ):
             rendered = content[inquiry]
             self.assertIn('WITH RECURSIVE', rendered['sql'].upper())
-            self.assertIn({'const': 8, 'hint': 'along bound'}, rendered['params'])
+            self.assertIn('$along_bound=8', rendered['params'])
 
 
 class SubIssueShapeTest(TestCase):

@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts cursor/inactive-user-activity-81f8 (#296),
-# which includes the #292 policy-lock SQL formatter and the #284
-# inactive-user inquiry checks.
+# Paired with django-trusts cursor/policy-params-notation-1604 (#310).
+# Lockfile params are source=value tokens. Includes the #292 policy-lock
+# SQL formatter and the #284 inactive-user inquiry checks.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=6917f56a1290b184092b4c167d0721fbc0dc516e
+ref=e4599666a3099724e33a76322cf87ef11e8ad823
