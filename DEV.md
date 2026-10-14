@@ -13,10 +13,9 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
 [django-trusts#310](https://github.com/django-trusts/django-trusts/pull/310)
-head `e4599666a3099724e33a76322cf87ef11e8ad823`. That commit writes
+merge `1a327031b3759f8c07e47a46726c5349be441b34`. That commit writes
 lockfile params as `source=value` tokens. It includes the Along walk,
 policy SQL readability changes, and default inactive-user checks.
-Merge this pin alongside #310.
 The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
