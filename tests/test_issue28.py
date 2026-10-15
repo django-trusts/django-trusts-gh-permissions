@@ -883,7 +883,7 @@ class RelationshipWriteTests(TestCase):
         self.assertLess(events.index('atomic'), lock_at)
         self.assertLess(lock_at, inquiry_at)
 
-    def test_active_superuser_bypass_does_not_invent_ownership(self):
+    def test_active_superuser_without_a_grant_is_denied(self):
         User = get_user_model()
         superuser = User.objects.create_superuser(
             username='root', email='root@example.com', password='secret',
@@ -900,30 +900,31 @@ class RelationshipWriteTests(TestCase):
             self.repo,
             set(Repository.objects.authorized(superuser, self.read)),
         )
-        add_organization_owner(superuser, self.org.pk, self.target.pk)
-        replace_collaborator_permissions(
-            superuser, self.collaboration.pk, [self.read.pk],
-        )
-        made = create_repository(superuser, self.org.pk, 'root-repo')
-        self.assertEqual(made.organization_id, self.org.pk)
-        delete_repository(superuser, made.pk)
-        self.assertFalse(Repository.objects.filter(pk=made.pk).exists())
+        before_permissions = set(self.collaboration.permissions.all())
+        for call in (
+            lambda: add_organization_owner(
+                superuser, self.org.pk, self.target.pk,
+            ),
+            lambda: replace_collaborator_permissions(
+                superuser, self.collaboration.pk, [self.read.pk],
+            ),
+            lambda: create_repository(superuser, self.org.pk, 'root-repo'),
+            lambda: delete_repository(superuser, self.repo.pk),
+        ):
+            _assert_no_mutation(self, ManagementDenied, call)
         self.assertFalse(
             OrganizationOwnership.objects.filter(
                 user=superuser, organization=self.org,
             ).exists()
         )
+        self.assertFalse(Repository.objects.filter(name='root-repo').exists())
+        self.assertTrue(Repository.objects.filter(pk=self.repo.pk).exists())
+        self.assertEqual(
+            set(self.collaboration.permissions.all()), before_permissions,
+        )
         self.assertNotIn(
             self.org,
             set(Organization.objects.authorized(superuser, self.manage)),
-        )
-        self.assertNotIn(
-            self.repo,
-            set(Repository.objects.authorized(superuser, self.read)),
-        )
-        self.assertTrue(superuser.has_perm(_MANAGE, self.org))
-        self.assertEqual(
-            set(self.collaboration.permissions.all()), {self.read},
         )
 
     def test_inactive_ordinary_owner_is_denied(self):
@@ -1041,6 +1042,19 @@ class RelationshipWriteTests(TestCase):
         )
         _assert_no_mutation(
             self,
+            ManagementDenied,
+            lambda: create_team_repository_permission(
+                superuser, self.team.pk, self.other_repo.pk, self.read.pk,
+            ),
+        )
+        OrganizationOwnership.objects.create(
+            user=superuser, organization=self.org,
+        )
+        OrganizationOwnership.objects.create(
+            user=superuser, organization=self.other_org,
+        )
+        _assert_no_mutation(
+            self,
             CrossOrganizationRelationship,
             lambda: create_team_repository_permission(
                 superuser, self.team.pk, self.other_repo.pk, self.read.pk,
@@ -1062,7 +1076,6 @@ class RelationshipWriteTests(TestCase):
 
         source = inspect.getsource(admin_module)
         for name in (
-            'add_organization_owner',
             'replace_team_members_and_ceiling',
             'create_repository_collaborator',
             'update_repository_collaborator',
@@ -1071,8 +1084,6 @@ class RelationshipWriteTests(TestCase):
             'create_team_repository_permission',
             'update_team_repository_permission',
             'delete_team_repository_permission',
-            'update_organization_ownership',
-            'delete_organization_ownership',
             'move_team_organization',
             'move_repository_organization',
             'create_repository',
@@ -1082,12 +1093,15 @@ class RelationshipWriteTests(TestCase):
         self.assertIn('delete_team(', source)
         self.assertIn('create_repository(', source)
         self.assertIn('delete_repository(', source)
+        self.assertNotIn('add_organization_owner', source)
+        self.assertNotIn('update_organization_ownership', source)
+        self.assertNotIn('delete_organization_ownership', source)
         self.assertNotIn('form.save_m2m', source)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_add)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_change)
         self.assertFalse(OrganizationOwnershipAdmin.scope_allows_delete)
 
-    def test_first_owner_of_an_ownerless_organization_needs_the_bypass(self):
+    def test_first_owner_of_an_ownerless_organization_needs_an_existing_grant(self):
         bare = create_organization('bare')
         self.assertFalse(bare.ownerships.exists())
         _assert_no_mutation(
@@ -1101,8 +1115,14 @@ class RelationshipWriteTests(TestCase):
         superuser = User.objects.create_superuser(
             username='root', email='root@example.com', password='secret',
         )
-        add_organization_owner(superuser, bare.pk, self.owner.pk)
-        self.assertTrue(self.owner.has_perm(_MANAGE, bare))
+        _assert_no_mutation(
+            self,
+            ManagementDenied,
+            lambda: add_organization_owner(
+                superuser, bare.pk, self.owner.pk,
+            ),
+        )
+        self.assertFalse(bare.ownerships.exists())
         self.assertNotIn(
             bare,
             set(Organization.objects.authorized(superuser, self.manage)),
@@ -1309,56 +1329,49 @@ class OwnershipRetentionTests(TestCase):
             OrganizationOwnership.objects.filter(pk=extra.pk).exists()
         )
 
-    def test_active_superuser_can_fill_an_empty_organization_but_not_empty_it(self):
+    def test_superuser_with_a_grant_cannot_empty_an_organization(self):
         bare = create_organization('bare')
         superuser = self._superuser()
-        self.assertFalse(
-            OrganizationOwnership.objects.filter(user=superuser).exists()
+        with self.assertRaises(ManagementDenied):
+            add_organization_owner(superuser, bare.pk, self.member.pk)
+        self.assertFalse(bare.ownerships.exists())
+
+        OrganizationOwnership.objects.create(
+            user=superuser, organization=bare,
         )
         added = add_organization_owner(superuser, bare.pk, self.member.pk)
         self.assertTrue(self.member.has_perm(_MANAGE, bare))
-        self.assertNotIn(
+        self.assertIn(
             bare,
             set(Organization.objects.authorized(superuser, self.manage)),
         )
 
-        def remove_only():
+        def remove_only_member():
             delete_organization_ownership(superuser, added.pk)
 
-        with self.assertRaises(LastOrganizationOwner) as caught:
-            _assert_inquiry_not_called(self, remove_only)
-        self.assertEqual(caught.exception.organization_ids, (bare.pk,))
-        self.assertTrue(
+        remove_only_member()
+        self.assertFalse(
             OrganizationOwnership.objects.filter(pk=added.pk).exists()
         )
+        sole = OrganizationOwnership.objects.get(
+            user=superuser, organization=bare,
+        )
 
-        def move_only():
-            update_organization_ownership(
-                superuser, added.pk, organization_id=self.org.pk,
-            )
+        def remove_last():
+            delete_organization_ownership(superuser, sole.pk)
 
         with self.assertRaises(LastOrganizationOwner) as caught:
-            _assert_inquiry_not_called(self, move_only)
+            remove_last()
         self.assertEqual(caught.exception.organization_ids, (bare.pk,))
-        added.refresh_from_db()
-        self.assertEqual(added.organization_id, bare.pk)
+        self.assertTrue(
+            OrganizationOwnership.objects.filter(pk=sole.pk).exists()
+        )
 
         updated = update_organization_ownership(
-            superuser, added.pk, user_id=self.owner.pk,
+            superuser, sole.pk, user_id=self.owner.pk,
         )
         self.assertEqual(updated.user_id, self.owner.pk)
         self.assertEqual(bare.ownerships.count(), 1)
-        second = add_organization_owner(
-            superuser, bare.pk, self.member.pk,
-        )
-        delete_organization_ownership(superuser, second.pk)
-        self.assertEqual(
-            set(bare.ownerships.values_list('user_id', flat=True)),
-            {self.owner.pk},
-        )
-        self.assertFalse(
-            OrganizationOwnership.objects.filter(user=superuser).exists()
-        )
         self.assertNotIn(
             bare,
             set(Organization.objects.authorized(superuser, self.manage)),
@@ -1608,10 +1621,19 @@ class OwnershipRetentionTests(TestCase):
             OrganizationOwnership.objects.filter(pk=self.row.pk).exists()
         )
 
-        superuser = self._superuser('root-lock')
+        OrganizationOwnership.objects.create(
+            user=self.owner, organization=self.other_org,
+        )
+        # The same user already owns the destination, so moving this
+        # row there unchanged is a duplicate. Reassigning the user
+        # still has to manage both organizations, and still refuses
+        # when the source would be left with no owner.
         refusal = self._assert_post_lock_current_read(
             lambda: update_organization_ownership(
-                superuser, self.row.pk, organization_id=self.other_org.pk,
+                self.owner,
+                self.row.pk,
+                user_id=self.member.pk,
+                organization_id=self.other_org.pk,
             ),
             self.org.pk,
             second.pk,

@@ -268,10 +268,10 @@ class OwnerContentTypeMatrixTest(TestCase):
             list(Organization.objects.authorized(root, self.read)),
             [],
         )
-        # The reverse inquiry ORs Django's active-superuser rule. The
-        # ordinary owner is still absent from the crossed pair.
+        # No superuser override is registered, so the reverse inquiry
+        # does not add an active superuser. The crossed pair stays empty.
         permitted = set(User.objects.permitted(self.organization, _READ))
-        self.assertIn(root, permitted)
+        self.assertNotIn(root, permitted)
         self.assertNotIn(self.owner, permitted)
 
     def test_policy_sql_requires_the_protected_models_content_type(self):

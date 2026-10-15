@@ -122,7 +122,7 @@ class SeedExampleCommandTests(TestCase):
             self.assertEqual(via_manager, via_manager_row)
             self.assertEqual(via_manager, via_content)
             self.assertEqual(via_manager, via_content_row)
-            self.assertIn(superuser, via_manager)
+            self.assertNotIn(superuser, via_manager)
             self.assertEqual(
                 {user.username for user in via_manager if not user.is_superuser},
                 expected_ordinary,
@@ -230,12 +230,13 @@ class SeedExampleCommandTests(TestCase):
         )
         self.assertEqual(
             set(leaf.get_permitted_users(triage)),
-            {direct, superuser},
+            {direct},
         )
         self.assertEqual(
             set(get_user_model().objects.permitted(leaf, triage)),
-            {direct, superuser},
+            {direct},
         )
+        self.assertNotIn(superuser, set(leaf.get_permitted_users(triage)))
         self.assertTrue(superuser.has_perm(
             'gh_permissions.%s' % ISSUE_TRIAGE_CODENAME, leaf,
         ))
@@ -387,8 +388,12 @@ class SeedExampleCommandTests(TestCase):
         visible = set(
             OrganizationAdmin(Organization, admin.site).get_queryset(super_request)
         )
-        self.assertIn(organization, visible)
-        self.assertIn(other, visible)
+        self.assertEqual(
+            visible,
+            {users[SUPERUSER_USERNAME].personal_organization},
+        )
+        self.assertNotIn(organization, visible)
+        self.assertNotIn(other, visible)
         self.assertEqual(other_team.members.count(), 0)
         self.assertEqual(list(stranger.teams.all()), [])
         self.assertFalse(Alias.objects.filter(name='stranger').exists())
