@@ -14,22 +14,23 @@ behavior of a real GitHub team.
 
 The reusable scope mixin is unchanged. `OrganizationOwnerPermission`
 is gone. An `OrganizationOwnership` row is the owner grant, and
-startup registers it with no condition. Non-superusers therefore see
+startup registers it with no condition. Every actor, including a
+superuser, therefore sees
 `Organization.objects.authorized(user, manage_organization)`, which is
 the organizations they own. A team member with no ownership row is
-outside that queryset. Superusers still bypass the scope. Conventional
+outside that queryset. A superuser does not skip the scope. Conventional
 organization create, rename, and delete call `gh_permissions.services`
 instead of saving the row directly.
 
 The hook plumbing is a private, domain-agnostic mixin. It is not a
 general Core helper, and this note does not promote it to one.
 
-`gh_permissions/_admin_scope.py` (`AuthorizedScopeAdminMixin`, 209
+`gh_permissions/_admin_scope.py` (`AuthorizedScopeAdminMixin`, 217
 physical lines) owns that plumbing. It does not name a GH model and it
 does not call Trusts. The application supplies
 `authorization_scope_paths`, `get_authorized_scopes(request)`,
 `scope_allows_add`, `scope_allows_change`, `scope_allows_delete`, and
-`bypasses_scope` (superuser by default).
+`bypasses_scope` (nobody, including a superuser).
 
 Proven only for this configuration:
 
@@ -60,11 +61,9 @@ before it inserts or updates a grant. `Alias` is not registered
 in admin.
 
 `OrganizationOwnershipAdmin` sets `scope_allows_add`,
-`scope_allows_change`, and `scope_allows_delete` to false, so a
-non-superuser cannot edit the row that grants their authority.
-Superusers still bypass that scope, and those writes call
-`add_organization_owner`, `update_organization_ownership`, and
-`delete_organization_ownership`. The example user admin is
+`scope_allows_change`, and `scope_allows_delete` to false, so nobody,
+including a superuser, can edit the row that grants their authority
+from this admin. The example user admin is
 `ServiceBackedUserAdmin`. No custom grant-management view was
 added. The mixin is private. It is not a Core API.
 
@@ -116,9 +115,9 @@ The hooks stay for the same reasons as before:
 
 | Hook | Why it stays |
 | --- | --- |
-| `get_queryset` | Non-superusers are filtered to `Organization.objects.authorized`. That queryset is the organizations where the user has an ownership row. |
+| `get_queryset` | Every actor, including a superuser, is filtered to `Organization.objects.authorized`. That queryset is the organizations where the user has an ownership row. |
 | `has_add_permission` | Add has no object. `scope_allows_add` is false on `OrganizationAdmin` and on `OrganizationOwnershipAdmin`. |
-| `has_change_permission` / `has_delete_permission` | The flags are consulted even when no object is passed. Object deletes still require `_in_scope`. |
+| `has_change_permission` / `has_delete_permission` | With no object, the flags are the whole answer. An object delete still requires `_in_scope`, including when `scope_allows_delete` is false. |
 | `formfield_for_foreignkey` / `formfield_for_manytomany` | Related choices come from the related admin's scoped queryset when that admin is scoped. `RepositoryCollaborator.permissions` points at `auth.Permission`, which is not scoped. |
 | `save_model` | Concrete admins check the same add/change flags and `_in_scope`, then call the domain service. The mixin method remains the backstop for a class that does not override it. |
 | `get_actions` / `check` | Inlines, `list_editable`, raw-id fields, autocomplete fields, and any action other than `delete_selected` fail closed (`admin_scope.E001`, `admin_scope.E002`). |
@@ -129,7 +128,7 @@ There is no user-listing callsite in the scope hooks.
 ## Known boundary
 
 Staff owners administer the organizations where they have an ownership
-row. Superusers bypass that filter. A team member with no ownership
+row. A superuser is held to that same filter. A team member with no ownership
 row does not. A misaligned team grant is still rejected by
 `TeamRepositoryPermission.clean` on a `ModelForm`. `QuerySet.create`
 does not call `clean`.
@@ -153,12 +152,18 @@ rolls back the change-form or delete transaction and is shown as a
 validation error or a message.
 
 `OrganizationOwnershipAdmin` still sets `scope_allows_add`,
-`scope_allows_change`, and `scope_allows_delete` to false, so a
-non-superuser cannot edit an ownership row here. Superusers still
-bypass the scope mixin. Their add, change, delete, and bulk delete
-call the ownership services. Removing the last owner of a surviving
-conventional organization raises `LastOrganizationOwner`. The admin
-shows that message and leaves the row in place.
+`scope_allows_change`, and `scope_allows_delete` to false, so nobody
+can edit an ownership row here. A superuser does not skip that. An
+in-scope ownership row still reports delete permission. Django's
+delete collector asks that question before it will remove a parent
+organization or user, and a "no" there would block the parent even
+though this admin never deletes the ownership row itself. A direct
+delete of the ownership row still stops in `delete_model`.
+Removing the last owner of a surviving conventional organization
+raises `LastOrganizationOwner` from the service. User deletion shows
+that message and leaves the user in place when the actor's grants
+allow the delete to reach the service. An actor with no ownership of
+the related organizations is refused before that.
 
 `delete_user` does the same when the user is the sole owner of any
 surviving conventional organization. User admin and deleting that

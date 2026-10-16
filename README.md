@@ -135,13 +135,14 @@ organization by primary key, locks that row, and then requires
 a permission being submitted, or an in-memory organization is not
 that authority.
 
-An active superuser skips only that inquiry. A persisted inactive
-actor is denied before that bypass and before the ownership inquiry,
-including an inactive owner and an inactive superuser who already
-owns the organization. The same calls still require every parent row
-to exist, and a team repository grant still has to stay inside one
-organization. A superuser with no ownership row still does not appear
-in `.authorized`.
+An active superuser needs that same ownership row. The superuser
+flag is not a grant, and this package does not register a superuser
+override. A persisted inactive actor is denied before the ownership
+inquiry, including an inactive owner and an inactive superuser who
+already owns the organization. The same calls still require every
+parent row to exist, and a team repository grant still has to stay
+inside one organization. A superuser with no ownership row does not
+appear in `.authorized` or in the permitted-user inquiries.
 
 The functions are:
 
@@ -189,10 +190,10 @@ different organization.
 An ownership update or delete must leave every surviving conventional
 organization with at least one owner. Replacing the user on that same
 organization keeps the row, so the sole owner may be handed to someone
-else. Moving or deleting the last row is refused. An active superuser
-may add the first owner of an organization that has none. The same
-superuser may not remove the last owner. A persisted inactive actor is
-denied before that bypass and before the ownership inquiry.
+else. Moving or deleting the last row is refused. An organization
+with no owner cannot gain its first owner through these calls,
+including when the actor is an active superuser. A persisted inactive
+actor is denied before the ownership inquiry.
 
 `delete_user` omits the user's personal organization from that check
 because the personal organization is deleted in the same transaction
@@ -215,8 +216,7 @@ A raw queryset write does not apply these checks. `register(condition=)`
 reads existing trust rows and does not keep an owner on save or delete.
 Organization-owner admin calls these functions for every
 authorization-bearing edit it still exposes. `OrganizationOwnership`
-stays read-only for anyone who is not a superuser; a superuser add,
-change, or delete calls the ownership service. `Team.organization`
+stays read-only for every actor, including a superuser. `Team.organization`
 and `Repository.organization` cannot be changed from an admin form.
 `LastOrganizationOwner` from user deletion or an ownership delete is
 an admin message, and that write is rolled back.
@@ -354,10 +354,12 @@ admin call the domain services. User create, rename, and delete call
 them through `ServiceBackedUserAdmin`. `delete_user` refuses the
 deletion when a surviving conventional organization would have no
 owner, and the admin shows that refusal instead of deleting the user.
-Team, repository, collaborator, team-grant, and superuser ownership
-edits call the relationship services. `OrganizationOwnership` rows
-stay read-only for non-superusers. `Team.organization` and
-`Repository.organization` are immutable in the admin forms.
+Team, repository, collaborator, and team-grant edits call the
+relationship services when the actor has `manage_organization` on
+the organization. `OrganizationOwnership` rows stay read-only.
+`Team.organization` and `Repository.organization` are immutable in
+the admin forms. A superuser sees the same organizations as any
+other user with the same ownership rows.
 
 The runnable example (`tests.settings`, which `manage.py` loads) lists
 both backends:
@@ -405,7 +407,7 @@ in production.
 
 | Username | Development-only password | What it proves |
 | --- | --- | --- |
-| `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
+| `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` and the permitted-user inquiries list persisted grants only. Django's own `User.has_perm` still returns true for an active superuser; this package's backend does not, unless the superuser has a grant. |
 | `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants `manage_organization` on that organization and `read_repository`, `write_repository`, and `admin_repository` on its repositories. A repository permission on the organization, or `manage_organization` on a repository, is denied. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
 | `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`, plus sub-issue triage authority at issue `#101`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |

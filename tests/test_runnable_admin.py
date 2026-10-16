@@ -601,7 +601,7 @@ class SeededOwnerAdminPathTests(TestCase):
             302,
         )
 
-    def test_superuser_bypass_stays_explicit(self):
+    def test_superuser_sees_only_organizations_they_own(self):
         client, response = self._admin_login(
             SUPERUSER_USERNAME, DEVELOPMENT_PASSWORDS[SUPERUSER_USERNAME],
         )
@@ -609,16 +609,17 @@ class SeededOwnerAdminPathTests(TestCase):
         listed = client.get(reverse('admin:gh_permissions_organization_changelist'))
         self.assertEqual(
             _listed_pks(listed),
-            set(Organization.objects.values_list('pk', flat=True)),
+            {self.superuser.personal_organization.pk},
         )
-        self.assertContains(listed, DEFAULT_ORGANIZATION_NAME)
-        self.assertContains(listed, 'Outside Seed')
-        self.assertContains(listed, OWNER_USERNAME)
-        self.assertContains(listed, DIRECT_USERNAME)
+        self.assertNotContains(listed, DEFAULT_ORGANIZATION_NAME)
+        self.assertNotContains(listed, 'Outside Seed')
+        self.assertNotContains(listed, OWNER_USERNAME)
+        self.assertNotContains(listed, DIRECT_USERNAME)
         foreign_team = client.get(
             reverse('admin:gh_permissions_team_change', args=[self.foreign_team.pk]),
         )
-        self.assertEqual(foreign_team.status_code, 200)
+        self.assertEqual(foreign_team.status_code, 302)
+        self.assertEqual(foreign_team['Location'], reverse('admin:index'))
         self.assertEqual(
             set(Organization.objects.authorized(self.superuser, self.manage)),
             {self.superuser.personal_organization},

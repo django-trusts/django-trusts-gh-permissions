@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  # Exact Core merge of #310 on dev (source=value lockfile params).
-  COMPANION_KERNEL_SHA: 1a327031b3759f8c07e47a46726c5349be441b34
+  # Exact Core merge of #314 on dev (checked-user rules, no GH override).
+  COMPANION_KERNEL_SHA: a599bc7dc9bad8401a9733eaced4e3689ae9de00
 
 jobs:
   tests:
@@ -57,7 +57,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '1a327031b3759f8c07e47a46726c5349be441b34' in pin, pin
+        assert 'a599bc7dc9bad8401a9733eaced4e3689ae9de00' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -107,8 +107,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "1a327031b3759f8c07e47a46726c5349be441b34"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "1a327031b3759f8c07e47a46726c5349be441b34"
+          test "${COMPANION_KERNEL_SHA}" = "a599bc7dc9bad8401a9733eaced4e3689ae9de00"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "a599bc7dc9bad8401a9733eaced4e3689ae9de00"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage

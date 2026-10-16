@@ -65,7 +65,7 @@ USER_SPECS = (
         'is_superuser': True,
         'is_staff': True,
         'proves': (
-            'application superuser; authorized lists persisted grants only'
+            'application superuser; inquiries list persisted grants only'
         ),
     },
     {

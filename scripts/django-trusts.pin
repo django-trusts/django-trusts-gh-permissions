@@ -1,6 +1,5 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts cursor/policy-params-notation-1604 (#310).
-# Lockfile params are source=value tokens. Includes the #292 policy-lock
-# SQL formatter and the #284 inactive-user inquiry checks.
-# Never pin django-trusts-zero. Do not float past this commit.
-ref=1a327031b3759f8c07e47a46726c5349be441b34
+# Paired with django-trusts dev merge of #314 (checked-user rules, #312).
+# Includes the #310 source=value lockfile params. gh-permissions registers
+# no user override. Never pin django-trusts-zero. Do not float past this commit.
+ref=a599bc7dc9bad8401a9733eaced4e3689ae9de00

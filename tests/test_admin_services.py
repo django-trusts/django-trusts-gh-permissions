@@ -4,9 +4,10 @@ Request-level coverage for the admin slice of issue #28: an owner, an
 owner of another organization, an inactive actor, an active superuser,
 a forged parent id, a refused write that leaves the previous graph,
 and the built-in bulk delete action. ``OrganizationOwnership`` stays
-closed to non-superusers. Superuser ownership writes, team and
-repository edits, collaborator and team-grant edits, and user deletion
-call the services. ``LastOrganizationOwner`` is a message.
+closed to every actor, including a superuser. Team and repository
+edits, collaborator and team-grant edits, and user deletion call the
+services when the actor's grants allow them. ``LastOrganizationOwner``
+is a message.
 """
 
 from unittest.mock import patch
@@ -327,7 +328,7 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertEqual(forged_team.status_code, 200)
         self.assertContains(forged_team, 'valid choice')
         self.assertFalse(Team.objects.filter(name='smuggled').exists())
-        missing = self.root_client.post(
+        missing = self.owner_client.post(
             reverse('admin:gh_permissions_repositorycollaborator_add'),
             {
                 'user': '999999',
@@ -339,7 +340,7 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertEqual(missing.status_code, 200)
         self.assertContains(missing, 'valid choice')
         self.assertEqual(RepositoryCollaborator.objects.count(), 0)
-        self.root_client.post(
+        self.owner_client.post(
             reverse('admin:gh_permissions_teamrepositorypermission_add'),
             {
                 'team': str(self.team.pk),
@@ -381,7 +382,7 @@ class AdminRelationshipServiceTests(TestCase):
             get_user_model().objects.filter(pk=self.spare.pk).exists(),
         )
 
-    def test_active_superuser_bootstraps_and_cannot_move_or_empty(self):
+    def test_superuser_with_a_grant_cannot_move_and_cannot_edit_ownership(self):
         added = self.root_client.post(
             reverse('admin:gh_permissions_organizationownership_add'),
             {
@@ -390,10 +391,28 @@ class AdminRelationshipServiceTests(TestCase):
                 '_save': 'Save',
             },
         )
-        self.assertEqual(added.status_code, 302, added.content[:500])
-        self.assertTrue(self.second.has_perm(
+        self.assertEqual(added.status_code, 403)
+        self.assertFalse(self.second.has_perm(
             'gh_permissions.manage_organization', self.bare,
         ))
+        hidden = self._team_post(
+            self.root_client,
+            self.team,
+            name='root-rename',
+            organization=str(self.foreign.pk),
+            members=[str(self.other.pk)],
+        )
+        self.assertEqual(hidden.status_code, 302)
+        self.assertEqual(hidden['Location'], reverse('admin:index'))
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.name, 'writers')
+        OrganizationOwnership.objects.create(
+            user=self.root, organization=self.org,
+        )
+        OrganizationOwnership.objects.create(
+            user=self.root, organization=self.foreign,
+        )
+        _grant_scoped(self.root)
         moved = self._team_post(
             self.root_client,
             self.team,
@@ -432,8 +451,8 @@ class AdminRelationshipServiceTests(TestCase):
             ),
             {'post': 'yes'},
         )
-        self.assertEqual(removed.status_code, 302, removed.content[:500])
-        self.assertFalse(
+        self.assertEqual(removed.status_code, 403)
+        self.assertTrue(
             OrganizationOwnership.objects.filter(
                 pk=self.shared_second_row.pk,
             ).exists(),
@@ -441,41 +460,6 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertTrue(self.owner.has_perm(
             'gh_permissions.manage_organization', self.shared,
         ))
-
-        refused = self.root_client.post(
-            reverse(
-                'admin:gh_permissions_organizationownership_delete',
-                args=[self.owner_row.pk],
-            ),
-            {'post': 'yes'},
-        )
-        self.assertEqual(refused.status_code, 302, refused.content[:500])
-        self.assertTrue(
-            OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
-        )
-        self.assertContains(
-            self.root_client.get(refused['Location']),
-            'must keep an owner',
-        )
-        retarget = self.root_client.post(
-            reverse(
-                'admin:gh_permissions_organizationownership_change',
-                args=[self.owner_row.pk],
-            ),
-            {
-                'user': str(self.owner.pk),
-                'organization': str(self.foreign.pk),
-                '_save': 'Save',
-            },
-        )
-        self.assertEqual(retarget.status_code, 302, retarget.content[:500])
-        self.owner_row.refresh_from_db()
-        self.assertEqual(self.owner_row.organization_id, self.org.pk)
-        self.assertEqual(self.owner_row.user_id, self.owner.pk)
-        self.assertContains(
-            self.root_client.get(retarget['Location']),
-            'must keep an owner',
-        )
 
     def test_refused_bulk_and_user_deletion_persist_nothing(self):
         bulk = self.root_client.post(
@@ -490,11 +474,10 @@ class AdminRelationshipServiceTests(TestCase):
                 ],
             },
         )
-        self.assertEqual(bulk.status_code, 302, bulk.content[:500])
-        self.assertContains(
-            self.root_client.get(bulk['Location']),
-            'must keep an owner',
-        )
+        # The ownership changelist does not offer delete, so the posted
+        # action is ignored and the rows stay.
+        self.assertEqual(bulk.status_code, 200)
+        self.assertNotContains(bulk, 'Successfully deleted')
         self.assertTrue(
             OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
         )
@@ -503,18 +486,14 @@ class AdminRelationshipServiceTests(TestCase):
                 pk=self.shared_second_row.pk,
             ).exists(),
         )
-        self.assertNotContains(
-            self.root_client.get(
-                reverse('admin:gh_permissions_organizationownership_changelist'),
-            ),
-            'Successfully deleted',
-        )
 
         user_delete = self.root_client.post(
             reverse('admin:example_user_delete', args=[self.owner.pk]),
             {'post': 'yes'},
         )
-        self.assertEqual(user_delete.status_code, 302, user_delete.content[:500])
+        # The superuser has no ownership of this user's organizations,
+        # so the collector refuses the related rows.
+        self.assertEqual(user_delete.status_code, 403)
         personal_org = Organization.objects.get(personal_user=self.owner)
         self.assertTrue(get_user_model().objects.filter(pk=self.owner.pk).exists())
         self.assertTrue(Alias.objects.filter(name='ada-owner').exists())
@@ -522,12 +501,8 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertTrue(
             OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
         )
-        self.assertContains(
-            self.root_client.get(user_delete['Location']),
-            'must keep an owner',
-        )
 
-        personal = self.root_client.post(
+        personal = self.owner_client.post(
             reverse(
                 'admin:gh_permissions_organization_delete',
                 args=[personal_org.pk],
@@ -538,7 +513,7 @@ class AdminRelationshipServiceTests(TestCase):
         self.assertTrue(get_user_model().objects.filter(pk=self.owner.pk).exists())
         self.assertTrue(Organization.objects.filter(pk=personal_org.pk).exists())
         self.assertContains(
-            self.root_client.get(personal['Location']),
+            self.owner_client.get(personal['Location']),
             'must keep an owner',
         )
 
@@ -554,14 +529,10 @@ class AdminRelationshipServiceTests(TestCase):
                 ],
             },
         )
-        self.assertEqual(users.status_code, 302, users.content[:500])
+        self.assertEqual(users.status_code, 403)
         self.assertTrue(get_user_model().objects.filter(pk=self.spare.pk).exists())
         self.assertTrue(get_user_model().objects.filter(pk=self.owner.pk).exists())
         self.assertTrue(Alias.objects.filter(name='spare-user').exists())
-        self.assertContains(
-            self.root_client.get(users['Location']),
-            'must keep an owner',
-        )
 
     def test_owner_bulk_delete_uses_the_collaborator_and_team_services(self):
         direct = RepositoryCollaborator.objects.create(
@@ -902,7 +873,7 @@ class AdminRelationshipServiceTests(TestCase):
             OrganizationOwnership.objects.filter(pk=self.owner_row.pk).exists(),
         )
 
-    def test_non_superuser_still_cannot_edit_ownership_rows(self):
+    def test_ownership_rows_stay_closed_for_an_owner_and_a_superuser(self):
         added = self.owner_client.post(
             reverse('admin:gh_permissions_organizationownership_add'),
             {
@@ -932,3 +903,17 @@ class AdminRelationshipServiceTests(TestCase):
         self.owner_row.refresh_from_db()
         self.assertEqual(self.owner_row.user_id, self.owner.pk)
         self.assertEqual(self.owner_row.organization_id, self.org.pk)
+        super_added = self.root_client.post(
+            reverse('admin:gh_permissions_organizationownership_add'),
+            {
+                'organization': str(self.org.pk),
+                'user': str(self.target.pk),
+                '_save': 'Save',
+            },
+        )
+        self.assertEqual(super_added.status_code, 403)
+        self.assertFalse(
+            OrganizationOwnership.objects.filter(
+                user=self.target, organization=self.org,
+            ).exists(),
+        )

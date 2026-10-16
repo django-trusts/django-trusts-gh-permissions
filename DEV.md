@@ -12,10 +12,12 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-[django-trusts#310](https://github.com/django-trusts/django-trusts/pull/310)
-merge `1a327031b3759f8c07e47a46726c5349be441b34`. That commit writes
-lockfile params as `source=value` tokens. It includes the Along walk,
-policy SQL readability changes, and default inactive-user checks.
+[django-trusts#314](https://github.com/django-trusts/django-trusts/pull/314)
+merge `a599bc7dc9bad8401a9733eaced4e3689ae9de00` on `dev`. That commit
+includes the #310 lockfile param notation and the #312 checked-user
+rules. gh-permissions registers no user override. An active superuser
+is included in a reverse permitted-user set only with a real grant,
+and does not skip `manage_organization` or the admin scope filter.
 The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
@@ -67,12 +69,12 @@ organization to be the same row, on the stored pair and on any
 replacement. `QuerySet.create` still does not call `clean`, so the
 service performs that comparison itself. Missing, duplicate,
 cross-organization, and undefined shapes raise before any write. An
-active superuser (`is_active and is_superuser`) skips only the
-inquiry. A persisted inactive actor is denied before that bypass and
-before the ownership inquiry, including an inactive owner and an
-inactive superuser who already owns the organization. Existence and
-same-organization checks still apply. `.authorized` does not gain a
-row for that superuser.
+active superuser used to skip only the inquiry. That skip is gone:
+the actor needs `manage_organization`, superuser or not. A persisted
+inactive actor is denied before the inquiry, including an inactive
+owner and an inactive superuser who already owns the organization.
+Existence and same-organization checks still apply. `.authorized`
+does not gain a row for a superuser who has no ownership row.
 
 The next #28 slice adds ownership update and delete, the
 `delete_user` preflight, and a refusal for `Team.organization` and
@@ -87,10 +89,10 @@ recount guards ownership update and delete.
 `LastOrganizationOwner` lists each organization that would be left
 empty, and the transaction rolls the deletion back. The user's
 personal organization is deleted with the user, so it is not one of
-those survivors. An active
-superuser may add the first owner of an organization that has none,
-and may not remove the last one. A persisted inactive actor is still
-denied before that bypass and before the ownership inquiry.
+those survivors. An active superuser may not add the first owner of
+an organization that has none, and may not remove the last one.
+A persisted inactive actor is still denied before the ownership
+inquiry.
 
 `move_team_organization` and `move_repository_organization` lock the
 stored row and both organizations, then refuse. A move would re-scope
@@ -110,9 +112,8 @@ The admin slice calls those services from the stock hooks.
 members, the team ceiling, and a collaborator's permission bundle.
 `delete_model` and `delete_queryset` (the built-in bulk action)
 delete through the same functions. `OrganizationOwnershipAdmin`
-stays read-only for non-superusers. A superuser ownership change
-calls `add_organization_owner`, `update_organization_ownership`, or
-`delete_organization_ownership`. `move_team_organization` and
+stays read-only for every actor, including a superuser.
+`move_team_organization` and
 `move_repository_organization` refuse a new organization from the
 form and again from `save_model` before a name write.
 `ServiceBackedUserAdmin` and personal-organization deletion call

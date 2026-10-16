@@ -1,7 +1,7 @@
 """Hostile admin requests for organization-ownership boundaries.
 
 Adapted from the organization-owner grant proof. An ownership row is
-the whole owner grant: non-superusers cannot add, change, or delete
+the whole owner grant: nobody can add, change, or delete
 it. Repository collaborators replace direct user/repository/operation
 rows. Owners also receive the seeded repository permissions on
 repositories they own.
@@ -169,29 +169,23 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertEqual(response['Location'], reverse('admin:index'))
         return response
 
-    def test_superuser_sees_every_organization_and_stock_catalogs(self):
+    def test_superuser_without_a_grant_sees_stock_catalogs_only(self):
         response = self.super_client.get(
             reverse('admin:gh_permissions_organization_changelist'),
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'owned-alpha')
-        self.assertContains(response, 'foreign-beta')
-        self.assertContains(response, 'unowned-gamma')
-        self.assertContains(response, 'owned-delta')
+        self.assertNotContains(response, 'owned-alpha')
+        self.assertNotContains(response, 'foreign-beta')
+        self.assertNotContains(response, 'unowned-gamma')
+        self.assertNotContains(response, 'owned-delta')
         names = [template.name for template in response.templates if template.name]
         self.assertIn('admin/change_list.html', names)
         for url_name, owned_pk, foreign_pk in (
             ('admin:gh_permissions_team_change', self.team_a.pk, self.team_b.pk),
             ('admin:gh_permissions_repository_change', self.repo_a.pk, self.repo_b.pk),
         ):
-            self.assertEqual(
-                self.super_client.get(reverse(url_name, args=[owned_pk])).status_code,
-                200,
-            )
-            self.assertEqual(
-                self.super_client.get(reverse(url_name, args=[foreign_pk])).status_code,
-                200,
-            )
+            self._closed(self.super_client, reverse(url_name, args=[owned_pk]))
+            self._closed(self.super_client, reverse(url_name, args=[foreign_pk]))
         self.assertEqual(
             self.super_client.get(reverse('admin:auth_permission_changelist')).status_code,
             200,
@@ -206,25 +200,22 @@ class OrgScopedAdminRequestTests(TestCase):
             reverse('admin:gh_permissions_organization_add'),
             {'name': 'super-added', '_save': 'Save'},
         )
-        self.assertEqual(created.status_code, 302, created.content[:500])
-        added = Organization.objects.get(name='super-added')
-        self.assertFalse(
-            OrganizationOwnership.objects.filter(organization=added).exists(),
-        )
+        self.assertEqual(created.status_code, 403)
+        self.assertFalse(Organization.objects.filter(name='super-added').exists())
         granted = self.super_client.post(
             reverse('admin:gh_permissions_organizationownership_add'),
             {
-                'organization': str(added.pk),
+                'organization': str(self.org_a.pk),
                 'user': str(self.owner_a.pk),
                 '_save': 'Save',
             },
         )
-        self.assertEqual(granted.status_code, 302, granted.content[:500])
-        self.assertContains(
-            self.owner_client.get(
-                reverse('admin:gh_permissions_organization_changelist'),
-            ),
-            'super-added',
+        self.assertEqual(granted.status_code, 403)
+        self.assertEqual(
+            OrganizationOwnership.objects.filter(
+                organization=self.org_a, user=self.owner_a,
+            ).count(),
+            1,
         )
 
     def test_owner_changelist_is_sql_filtered_before_pagination(self):
@@ -570,7 +561,7 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertEqual(misaligned.status_code, 200)
         self.assertContains(misaligned, 'must stay inside one organization')
         self.assertEqual(TeamRepositoryPermission.objects.count(), 0)
-        self.super_client.post(
+        denied_super = self.super_client.post(
             reverse('admin:gh_permissions_teamrepositorypermission_add'),
             {
                 'team': str(self.team_a.pk),
@@ -579,6 +570,7 @@ class OrgScopedAdminRequestTests(TestCase):
                 '_save': 'Save',
             },
         )
+        self.assertEqual(denied_super.status_code, 403)
         self.assertEqual(TeamRepositoryPermission.objects.count(), 0)
 
         over_ceiling = self.owner_client.post(
@@ -705,7 +697,7 @@ class OrgScopedAdminRequestTests(TestCase):
         )
         self.assertTrue(Repository.objects.filter(pk=self.repo_b.pk).exists())
 
-    def test_misaligned_grant_blocks_owner_cascade_until_superuser_removes_it(self):
+    def test_misaligned_grant_stays_when_neither_owner_nor_superuser_can_see_it(self):
         grant = TeamRepositoryPermission.objects.create(
             team=self.team_a, repository=self.repo_b, operation=self.read,
         )
@@ -731,29 +723,21 @@ class OrgScopedAdminRequestTests(TestCase):
             ),
             {'post': 'yes'},
         )
-        removed = self.super_client.post(
+        self._closed(
+            self.super_client,
             reverse(
                 'admin:gh_permissions_teamrepositorypermission_delete',
                 args=[grant.pk],
             ),
             {'post': 'yes'},
         )
-        self.assertEqual(removed.status_code, 302, removed.content[:500])
-        self.assertTrue(TeamRepositoryPermission.objects.filter(pk=grant.pk).exists())
-        self.assertTrue(Team.objects.filter(pk=self.team_a.pk).exists())
-        self.assertContains(
-            self.super_client.get(removed['Location']),
-            'must stay inside one organization',
-        )
-        deleted = self.super_client.post(
+        self._closed(
+            self.super_client,
             reverse('admin:gh_permissions_team_delete', args=[self.team_a.pk]),
             {'post': 'yes'},
         )
-        self.assertEqual(deleted.status_code, 302, deleted.content[:500])
-        self.assertFalse(Team.objects.filter(pk=self.team_a.pk).exists())
-        self.assertFalse(
-            TeamRepositoryPermission.objects.filter(pk=grant.pk).exists(),
-        )
+        self.assertTrue(TeamRepositoryPermission.objects.filter(pk=grant.pk).exists())
+        self.assertTrue(Team.objects.filter(pk=self.team_a.pk).exists())
         self.assertTrue(Repository.objects.filter(pk=self.repo_b.pk).exists())
 
     def test_owner_cannot_mint_or_retarget_the_authority_grant(self):
@@ -860,16 +844,20 @@ class OrgScopedAdminRequestTests(TestCase):
                 '_save': 'Save',
             },
         )
-        self.assertEqual(reassigned.status_code, 302, reassigned.content[:500])
+        # The row is outside the superuser's queryset. Stock admin
+        # redirects when the object is missing and view permission,
+        # which Django still grants an active superuser, is true.
+        self.assertEqual(reassigned.status_code, 302)
+        self.assertEqual(reassigned['Location'], reverse('admin:index'))
         self.grant_b.refresh_from_db()
-        self.assertEqual(self.grant_b.user_id, self.owner_a.pk)
-        self.assertContains(
+        self.assertEqual(self.grant_b.user_id, self.owner_b.pk)
+        self.assertNotContains(
             self.owner_client.get(
                 reverse('admin:gh_permissions_organization_changelist'),
             ),
             'foreign-beta',
         )
-        self.assertNotContains(
+        self.assertContains(
             self.foreign_client.get(
                 reverse('admin:gh_permissions_organization_changelist'),
             ),
@@ -957,7 +945,8 @@ class OrgScopedAdminRequestTests(TestCase):
         listing = self.super_client.get(
             reverse('admin:gh_permissions_organization_changelist'),
         )
-        self.assertContains(listing, 'owned-alpha')
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotContains(listing, 'owned-alpha')
         self.assertNotContains(
             self.foreign_client.get(
                 reverse('admin:gh_permissions_organization_changelist'),
@@ -1176,12 +1165,20 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertFalse(grant_admin.has_change_permission(request, None))
         self.assertFalse(grant_admin.has_delete_permission(request, None))
         self.assertFalse(grant_admin.has_change_permission(request, self.grant_a))
-        self.assertFalse(grant_admin.has_delete_permission(request, self.grant_a))
+        # An in-scope row reports delete permission so a parent cascade
+        # can collect it. The changelist, a foreign row, and an
+        # ungranted superuser do not.
+        self.assertTrue(grant_admin.has_delete_permission(request, self.grant_a))
+        self.assertFalse(grant_admin.has_delete_permission(request, self.grant_b))
         super_request = RequestFactory().get('/')
         super_request.user = self.superuser
-        self.assertTrue(grant_admin.has_add_permission(super_request))
-        self.assertTrue(grant_admin.has_change_permission(super_request, None))
-        self.assertTrue(grant_admin.has_delete_permission(super_request, None))
+        self.assertFalse(grant_admin.bypasses_scope(super_request))
+        self.assertFalse(grant_admin.has_add_permission(super_request))
+        self.assertFalse(grant_admin.has_change_permission(super_request, None))
+        self.assertFalse(grant_admin.has_delete_permission(super_request, None))
+        self.assertFalse(
+            grant_admin.has_delete_permission(super_request, self.grant_a),
+        )
         listing = self.owner_client.get(
             reverse('admin:gh_permissions_organizationownership_changelist'),
         )
