@@ -106,33 +106,22 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 )
         self.assertEqual(registry.records, ())
 
-    def test_late_registration_after_freeze_is_rejected(self):
-        from trusts.apps import implementation_for_path
-
-        from gh_permissions.apps import CANONICAL_BACKEND
-
-        handle = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        )
-        registry = handle.registry
-        self.assertTrue(registry.frozen)
-        d = Ref(RepositoryCollaborator)
+    def test_late_registration_after_build_takes_effect_on_next_build(self):
+        handle = isolated_handle()
+        register_collaborator(handle)
+        built_before = handle.build_registry()
+        self.assertEqual(len(built_before.records), 1)
+        self.assertIs(built_before.records[0].root, RepositoryCollaborator)
         with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                register_collaborator(handle)
+            register_team(handle)
         with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                register_team(handle)
-        with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                register_organization_owner(handle)
-        with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                registry.register(
-                    content=d.repository,
-                    user=d.user,
-                    permission=d.permissions,
-                )
+            register_organization_owner(handle)
+        self.assertEqual(len(handle.registry.records), 4)
+        built_after = handle.build_registry()
+        self.assertIsNot(built_after, built_before)
+        self.assertEqual(len(built_before.records), 1)
+        self.assertEqual(len(built_after.records), 4)
+        self.assertIs(built_after.records[1].root, TeamRepositoryPermission)
 
     def test_system_checks_are_clean_for_complete_gh_install(self):
         with self.assertNumQueries(0):

@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from trusts.policy_lock import _load_policy_sql_document, render_policy_sql_bytes
+from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,

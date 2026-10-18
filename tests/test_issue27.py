@@ -18,7 +18,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
 from trusts.apps import implementation_for_path
-from trusts.policy_lock import render_policy_sql_bytes
+from trusts.inspect.snapshot import render_policy_sql_bytes
 
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (

@@ -6,7 +6,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from trusts.apps import implementation_for_path
-from trusts.policy_lock import _load_policy_sql_document, render_policy_sql_bytes
+from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
 
 from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (

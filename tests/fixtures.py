@@ -23,7 +23,7 @@ def repository_permission(codename):
 
 
 def isolated_handle(registry=None):
-    """Wrap an unfrozen registry in a ``BackendHandle`` for isolated tests."""
+    """Wrap a registry in a ``BackendHandle`` for isolated tests."""
     from trusts.core import BackendHandle, PlanQueryCompiler, TrustsRegistry
 
     if registry is None:
