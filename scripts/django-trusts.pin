@@ -2,4 +2,4 @@
 # Paired with django-trusts cursor/catalog-pullup-f275 (draft #330).
 # Catalog is the inquiry front. gh-permissions registers no user override.
 # Never pin django-trusts-zero. Do not float past this commit.
-ref=b240eed7fd12f34891c6dd0957d944c9f2591473
+ref=3aad8c25f34469f4ecb03e9cd441d9e6315d4f0f
