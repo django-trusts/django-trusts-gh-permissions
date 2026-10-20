@@ -1,4 +1,4 @@
-"""GH IIb kernel topology: no core AppConfig, one owner, no Zero."""
+"""GH kernel topology: lifecycle app, one GH catalog, no Zero."""
 
 import sys
 from importlib import import_module
@@ -10,7 +10,6 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import implementation_configs, implementation_for_path
 from trusts.query import AuthorizedManager
 
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
@@ -19,29 +18,33 @@ from gh_permissions.models import Repository
 
 
 class KernelIdentityTest(SimpleTestCase):
-    def test_installed_apps_are_gh_only(self):
+    def test_installed_apps_include_the_catalog_sweep(self):
         labels = [config.label for config in apps.get_app_configs()]
         self.assertIn('gh_permissions', labels)
+        self.assertIn('trusts_lifecycle', labels)
         self.assertNotIn('trusts_core', labels)
         names = [config.name for config in apps.get_app_configs()]
         self.assertIn('gh_permissions', names)
+        self.assertIn('trusts.apps', names)
         self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
 
-    def test_core_appconfig_is_not_installed(self):
+    def test_models_app_is_not_installed(self):
         import trusts.apps as trusts_apps
 
         self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         self.assertNotIn('trusts_core', apps.app_configs)
         names = [config.name for config in apps.get_app_configs()]
         self.assertNotIn('trusts', names)
+        self.assertEqual(
+            apps.get_app_config('trusts_lifecycle').name, 'trusts.apps',
+        )
 
-    def test_gh_config_is_the_sole_implementation_owner(self):
-        owners = implementation_configs()
-        self.assertEqual(len(owners), 1)
-        self.assertIsInstance(owners[0], GhPermissionsConfig)
-        self.assertIs(owners[0], gh_config())
-        self.assertIs(implementation_for_path(CANONICAL_BACKEND), owners[0])
+    def test_gh_catalog_is_built_for_the_canonical_backend(self):
+        self.assertIsInstance(gh_config(), GhPermissionsConfig)
+        catalog = GhAuthorizationBackend().get_catalog()
+        self.assertEqual(catalog.path, CANONICAL_BACKEND)
+        self.assertEqual(catalog.family, 'relationship')
 
     def test_kernel_config_is_not_importable(self):
         import trusts.apps as trusts_apps

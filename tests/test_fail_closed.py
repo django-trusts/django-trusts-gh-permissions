@@ -3,7 +3,7 @@
 from django.core.checks import run_checks
 from django.test import SimpleTestCase, TestCase
 
-from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
+from trusts.errors import TrustsConfigurationError
 
 from gh_permissions import policy as gh_policy
 from gh_permissions.models import (
@@ -18,7 +18,14 @@ from gh_permissions.policy import (
     register_organization_owner,
     register_team,
 )
-from tests.fixtures import GhFixtureMixin, isolated_handle
+from tests.fixtures import (
+    GhFixtureMixin,
+    IsolatedRegistration,
+    catalog_for,
+    gh_catalog,
+    isolated_catalog,
+    permission_code,
+)
 
 
 # Intentionally unsupported GH behaviors (not defects of this consumer):
@@ -43,85 +50,93 @@ class UnsupportedGhBehaviorTest(SimpleTestCase):
 
 
 class GhFailClosedTest(GhFixtureMixin, TestCase):
+    def _partial_catalog(self):
+        return isolated_catalog(register_collaborator, register_team)
+
     def test_unregistered_resource_fails_closed(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        register_team(handle)
-        registry = handle.registry
+        catalog = self._partial_catalog()
         self.assertFalse(
-            registry.has_permission(self.member, self.org_a, self.read),
+            catalog.has_perm(
+                self.member, permission_code(self.read), self.org_a,
+            ),
         )
         self.assertEqual(
-            list(registry.filter_authorized(
+            list(catalog.filter_authorized(
                 Organization.objects.all(), self.member, self.read,
             )),
             [],
         )
 
     def test_wrong_requester_model_and_raw_pk_fail_closed(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        register_team(handle)
-        registry = handle.registry
+        catalog = self._partial_catalog()
         self.assertFalse(
-            registry.has_permission(self.repo_a, self.repo_b, self.write),
+            catalog.has_perm(
+                self.repo_a, permission_code(self.write), self.repo_b,
+            ),
         )
         with self.assertRaises(TrustsConfigurationError):
-            registry.has_permission(self.member.pk, self.repo_a, self.read)
+            catalog.has_perm(
+                self.member.pk, permission_code(self.read), self.repo_a,
+            )
 
     def test_malformed_direct_path_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
-        d = Ref(RepositoryCollaborator)
+        registration = IsolatedRegistration()
+        registration.recorder.register(
+            trust=RepositoryCollaborator,
+            content='repository__name',
+            user='user',
+            permission='permissions',
+        )
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
-                    content=d.repository.name,
-                    user=d.user,
-                    permission=d.permissions,
-                )
-        self.assertEqual(registry.records, ())
+                catalog_for(registration)
 
     def test_extra_multi_valued_user_path_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
-        t = Ref(TeamRepositoryPermission)
+        registration = IsolatedRegistration()
+        registration.recorder.register(
+            trust=TeamRepositoryPermission,
+            content='repository',
+            user='team__members__teams',
+            permission='operation',
+        )
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
-                    content=t.repository,
-                    user=t.team.members.teams,
-                    permission=t.operation,
-                )
-        self.assertEqual(registry.records, ())
+                catalog_for(registration)
 
     def test_non_none_untyped_condition_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
-        t = Ref(TeamRepositoryPermission)
+        registration = IsolatedRegistration()
+        registration.recorder.register(
+            trust=TeamRepositoryPermission,
+            content='repository',
+            user='team__members',
+            permission='operation',
+            condition=object(),
+        )
+        with self.assertNumQueries(0):
+            with self.assertRaises(TypeError):
+                catalog_for(registration)
+
+    def test_compile_freezes_further_registration(self):
+        registration = IsolatedRegistration()
+        registration.recorder.register(
+            trust=RepositoryCollaborator,
+            user='user',
+            permission='permissions',
+            content='repository',
+        )
+        with self.assertNumQueries(0):
+            built = catalog_for(registration)
+        self.assertEqual(len(built.records), 1)
+        self.assertIs(built.records[0].root, RepositoryCollaborator)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
-                    content=t.repository,
-                    user=t.team,
-                    permission=t.operation,
-                    condition=object(),
+                registration.recorder.register(
+                    trust=TeamRepositoryPermission,
+                    user='team__members',
+                    permission='operation',
+                    content='repository',
                 )
-        self.assertEqual(registry.records, ())
-
-    def test_late_registration_after_build_takes_effect_on_next_build(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        built_before = handle.build_registry()
-        self.assertEqual(len(built_before.records), 1)
-        self.assertIs(built_before.records[0].root, RepositoryCollaborator)
-        with self.assertNumQueries(0):
-            register_team(handle)
-        with self.assertNumQueries(0):
-            register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 4)
-        built_after = handle.build_registry()
-        self.assertIsNot(built_after, built_before)
-        self.assertEqual(len(built_before.records), 1)
-        self.assertEqual(len(built_after.records), 4)
-        self.assertIs(built_after.records[1].root, TeamRepositoryPermission)
+        self.assertEqual(len(built.records), 1)
 
     def test_system_checks_are_clean_for_complete_gh_install(self):
         with self.assertNumQueries(0):
@@ -135,53 +150,44 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
     def test_register_team_adds_one_record_with_zero_sql(self):
-        handle = isolated_handle()
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
+            record = isolated_catalog(register_team).records[0]
         self.assertIs(record.root, TeamRepositoryPermission)
 
-    def test_duplicate_team_registration_fails_closed_without_mutation(self):
-        handle = isolated_handle()
-        register_team(handle)
-        before = handle.registry.records
+    def test_duplicate_team_registration_fails_when_compiled(self):
+        registration = IsolatedRegistration()
+        register_team(registration.recorder)
+        register_team(registration.recorder)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_team(handle)
-        self.assertEqual(handle.registry.records, before)
+                catalog_for(registration)
 
     def test_register_team_adds_independent_root_beside_collaborator(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        before = handle.registry.records
-        self.assertEqual(len(before), 1)
-        self.assertEqual(before[0].root, RepositoryCollaborator)
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 2)
-        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
-        self.assertIs(record.root, TeamRepositoryPermission)
-        self.assertIs(handle.registry.records[1].root, TeamRepositoryPermission)
-        with self.assertNumQueries(0):
-            owner_record = register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 4)
-        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
-        self.assertIs(owner_record.root, OrganizationOwnership)
-        self.assertIsNone(owner_record.condition)
+            catalog = isolated_catalog(
+                register_collaborator,
+                register_team,
+                register_organization_owner,
+            )
+        self.assertEqual(
+            [record.root for record in catalog.records],
+            [
+                RepositoryCollaborator,
+                TeamRepositoryPermission,
+                OrganizationOwnership,
+                OrganizationOwnership,
+            ],
+        )
+        self.assertIsNone(catalog.records[-1].condition)
+        registration = IsolatedRegistration()
+        register_organization_owner(registration.recorder)
+        register_organization_owner(registration.recorder)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 4)
+                catalog_for(registration)
 
     def test_startup_registers_direct_and_team_roots(self):
-        from trusts.apps import implementation_for_path
-
-        from gh_permissions.apps import CANONICAL_BACKEND
-
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        ).registry
-        roots = [record.root for record in registry.records]
+        roots = [record.root for record in gh_catalog().records]
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,

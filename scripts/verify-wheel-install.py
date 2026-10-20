@@ -74,6 +74,7 @@ def main() -> int:
             'django.contrib.contenttypes',
             'django.contrib.auth',
             'gh_permissions.apps.GhPermissionsConfig',
+            'trusts.apps.TrustsImplementationConfig',
         ],
         AUTHENTICATION_BACKENDS=[
             'gh_permissions.backends.GhAuthorizationBackend',
@@ -101,7 +102,7 @@ def main() -> int:
         TeamRepositoryPermission,
     )
     import trusts.apps as trusts_apps
-    from trusts.apps import implementation_configs
+    from gh_permissions.backends import GhAuthorizationBackend
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -129,13 +130,16 @@ def main() -> int:
         raise SystemExit('core AppConfig is installed')
     if 'trusts' in {config.name for config in django_apps.get_app_configs()}:
         raise SystemExit('a trusts Django app is installed')
+    if 'trusts_lifecycle' not in django_apps.app_configs:
+        raise SystemExit('TrustsImplementationConfig is not installed')
 
-    owners = implementation_configs()
-    if len(owners) != 1 or not isinstance(owners[0], GhPermissionsConfig):
-        raise SystemExit('expected one GhPermissionsConfig owner, got %r' % (owners,))
+    if not isinstance(django_apps.get_app_config('gh_permissions'), GhPermissionsConfig):
+        raise SystemExit('gh_permissions is not GhPermissionsConfig')
 
-    registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
-    roots = [record.root for record in registry.records]
+    catalog = GhAuthorizationBackend().get_catalog()
+    if catalog is None or catalog.path != CANONICAL_BACKEND:
+        raise SystemExit('GH catalog was not built for %s' % CANONICAL_BACKEND)
+    roots = [record.root for record in catalog.records]
     if roots != [
         RepositoryCollaborator,
         TeamRepositoryPermission,
@@ -147,7 +151,7 @@ def main() -> int:
             'GH-only populate must register collaborator, team, owner, '
             'and issue-triage roots: %r' % roots
         )
-    delegation_roots = [record.root for record in registry.delegations]
+    delegation_roots = [record.root for record in catalog.delegations]
     if delegation_roots != [
         PersonalRepositoryDelegation,
         AllPersonalRepositoriesDelegation,
@@ -163,7 +167,7 @@ def main() -> int:
     print('gh_permissions.__file__', gh_file)
     print('RepositoryCollaborator', RepositoryCollaborator)
     print('Repository', Repository)
-    print('owner', type(owners[0]).__name__, owners[0].label)
+    print('catalog', catalog.path, catalog.family)
     print('startup roots', [root.__name__ for root in roots])
     print(
         'delegation roots',

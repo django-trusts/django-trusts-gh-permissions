@@ -5,10 +5,8 @@ from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from trusts.apps import implementation_for_path
 from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
 
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Issue,
     IssuePermissions,
@@ -17,7 +15,7 @@ from gh_permissions.models import (
 )
 from gh_permissions.policy import register_issue_permissions
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import isolated_handle
+from tests.fixtures import gh_catalog, isolated_catalog
 
 
 _TRIAGE = 'gh_permissions.triage_issue'
@@ -33,9 +31,8 @@ def _triage_permission():
 
 class SubIssueAlongRegistrationTest(TestCase):
     def test_registration_is_zero_sql_shape_s_with_bound_eight(self):
-        handle = isolated_handle()
         with self.assertNumQueries(0):
-            record = register_issue_permissions(handle)
+            record = isolated_catalog(register_issue_permissions).records[0]
         self.assertIs(record.root, IssuePermissions)
         self.assertIs(record.content_model, Issue)
         self.assertEqual(record.user_path, ('user',))
@@ -218,9 +215,6 @@ class SubIssueShapeTest(TestCase):
 
 class SubIssueStartupTest(TestCase):
     def test_issue_registration_is_the_last_ordinary_record(self):
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        ).registry
-        record = registry.records[-1]
+        record = gh_catalog().records[-1]
         self.assertIs(record.root, IssuePermissions)
         self.assertEqual(record.along.path, ('issue', 'parent'))

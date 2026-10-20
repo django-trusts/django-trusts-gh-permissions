@@ -34,7 +34,6 @@ from gh_permissions.admin import (
     TeamAdmin,
     TeamRepositoryPermissionAdmin,
 )
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -48,7 +47,6 @@ from gh_permissions.services import create_organization, create_user
 from tests.fixtures import repository_permission
 from tests.test_migration_0002 import _ALIAS, _wipe
 from tests.test_org_scoped_requests import OrgScopedAdminRequestTests
-from trusts.apps import implementation_for_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,12 +72,6 @@ SCOPE_HOOKS = (
     'get_actions',
     'check',
 )
-
-
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
 
 
 class _SelectParser(HTMLParser):

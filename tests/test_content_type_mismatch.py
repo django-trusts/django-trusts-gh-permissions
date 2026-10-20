@@ -14,7 +14,6 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest
 from django.test import TestCase
 
-from trusts.apps import implementation_for_path
 from trusts.decorators import (
     _declared_authorization_guards,
     authorization_required,
@@ -24,10 +23,9 @@ from trusts.inspect.snapshot import (
     render_policy_sql_bytes,
 )
 
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import Alias, Organization, Repository, Team
 from gh_permissions.services import create_organization, create_user
-from tests.fixtures import repository_permission
+from tests.fixtures import gh_catalog, permission_code, repository_permission
 
 
 _MANAGE = 'gh_permissions.manage_organization'
@@ -40,9 +38,7 @@ _REPO_CODES = {
 
 
 def _startup():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    )
+    return gh_catalog()
 
 
 def _permission(model, codename):
@@ -81,7 +77,7 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.alias = Alias.objects.get(name='acme')
         self.manage = _permission('organization', 'manage_organization')
         self.read = repository_permission('read_repository')
-        self.registry = _startup().registry
+        self.registry = _startup()
 
     def test_same_model_grants_and_crossed_pairs_deny(self):
         cases = (
@@ -97,7 +93,7 @@ class OwnerContentTypeMatrixTest(TestCase):
                 with self.assertNumQueries(queries):
                     self.assertIs(self.owner.has_perm(code, obj), expected)
                 self.assertIs(
-                    self.registry.has_permission(self.owner, obj, permission),
+                    self.registry.has_perm(self.owner, permission_code(permission), obj),
                     expected,
                 )
                 self.assertIs(self.bystander.has_perm(code, obj), False)

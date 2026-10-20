@@ -1,5 +1,5 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts dev merge of #314 (checked-user rules, #312).
-# Includes the #310 source=value lockfile params. gh-permissions registers
-# no user override. Never pin django-trusts-zero. Do not float past this commit.
-ref=a599bc7dc9bad8401a9733eaced4e3689ae9de00
+# Paired with django-trusts cursor/catalog-pullup-f275 (draft #330).
+# Catalog is the inquiry front. gh-permissions registers no user override.
+# Never pin django-trusts-zero. Do not float past this commit.
+ref=b240eed7fd12f34891c6dd0957d944c9f2591473

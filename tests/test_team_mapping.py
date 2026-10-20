@@ -1,22 +1,10 @@
-"""Accepted team mapping is expressible through ``handle.register``.
+"""Accepted team mapping is expressible through ``recorder.register``.
 
 django-trusts#54 r7 / issue #3 accepted team registration, flattened
 ceiling after #12, public Django ``__`` paths after #131, the
 relationship method after Core #174, and the public ``register`` plus
-symbolic condition after Core #211, pinned through Core #213::
-
-    handle.register(
-        trust=TeamRepositoryPermission,
-        user='team__members',
-        permission='operation',
-        content='repository',
-        condition=lambda t: (
-            t.team.allowed_operations.contains(t.operation)
-            & (t.team.organization == t.repository.organization)
-        ),
-    )
-
-Core stores private ``All`` / ``PermissionIn`` / ``Equal`` IR. The
+symbolic condition after Core #211. The catalog sweep lowers that
+callable to private ``All`` / ``PermissionIn`` / ``Equal`` IR. The
 application callable is not stored. Django 6.1 defines
 ``assertNumQueries`` on ``TransactionTestCase`` (and therefore
 ``TestCase``), not ``SimpleTestCase``.
@@ -24,13 +12,7 @@ application callable is not stored. Django 6.1 defines
 
 from django.test import TestCase
 
-from trusts.core import (
-    All,
-    Equal,
-    PermissionIn,
-    Ref,
-    TrustsRegistry,
-)
+from trusts.compile.nodes import All, Equal, PermissionIn, Ref
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import (
@@ -38,15 +20,13 @@ from gh_permissions.policy import (
     register_organization_owner,
     register_team,
 )
-from tests.fixtures import isolated_handle
+from tests.fixtures import isolated_catalog
 
 
 class TeamMappingRegistrationTest(TestCase):
     def test_accepted_team_mapping_registers_with_zero_sql(self):
-        handle = isolated_handle()
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
+            record = isolated_catalog(register_team).records[0]
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('team', 'members'))
@@ -58,9 +38,7 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_team_ceiling_and_org_equality_are_and_on_one_record(self):
-        handle = isolated_handle()
-        record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
+        record = isolated_catalog(register_team).records[0]
         self.assertIsInstance(record.condition, All)
         kinds = [type(node) for node in record.condition.predicates]
         self.assertEqual(kinds, [PermissionIn, Equal])
@@ -71,11 +49,10 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertEqual(equality.left, root.team.organization)
         self.assertEqual(equality.right, root.repository.organization)
 
-    def test_helpers_require_a_backend_handle(self):
-        registry = TrustsRegistry()
+    def test_helpers_require_a_recorder(self):
         with self.assertRaises(TypeError):
-            register_team(registry)
+            register_team(object())
         with self.assertRaises(TypeError):
-            register_collaborator(registry)
+            register_collaborator(object())
         with self.assertRaises(TypeError):
-            register_organization_owner(registry)
+            register_organization_owner(object())

@@ -17,7 +17,6 @@ from django.test import RequestFactory, TestCase
 
 from gh_permissions import admin as admin_module
 from gh_permissions.admin import OrganizationAdmin, OrganizationOwnershipAdmin
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
@@ -32,21 +31,19 @@ from gh_permissions.services import (
     create_repository,
     create_user,
 )
-from trusts.apps import implementation_for_path
 from trusts.decorators import (
     _declared_authorization_guards,
     authorization_required,
 )
+from tests.fixtures import gh_catalog
 
 
 _READ = 'gh_permissions.read_repository'
 _MANAGE = 'gh_permissions.manage_organization'
 
 
-def _backend():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    )
+def _catalog():
+    return gh_catalog()
 
 
 def _request(user):
@@ -81,8 +78,7 @@ class SuperuserGrantTests(TestCase):
         )
 
     def test_no_user_override_is_registered(self):
-        registry = _backend().registry
-        self.assertIsNone(registry._user_override)
+        self.assertIsNone(_catalog().user_override)
         package = Path(admin_module.__file__).resolve().parent
         for path in package.rglob('*.py'):
             text = path.read_text()
@@ -129,7 +125,6 @@ class SuperuserGrantTests(TestCase):
                     self.repository, _READ,
                 )),
             )
-        self.assertFalse(hasattr(backend, 'with_perm'))
         self.assertEqual(
             backend.get_user_permissions(self.superuser, self.repository),
             set(),

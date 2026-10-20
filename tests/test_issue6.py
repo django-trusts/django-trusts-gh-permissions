@@ -1,12 +1,10 @@
-"""GH owner proofs on final core.
+"""GH startup proofs on the catalog sweep.
 
-Locks the supported owner contract against ``django-trusts`` 1.x:
-
-* ``GhPermissionsConfig`` is the sole implementation owner
-* mixin / ready / list execution resolve through the owner API
-* missing canonical backend path fails at startup
-* no dependency on ``kernel_config()``, a core ``AppConfig``,
-  ``trusts.core_backends``, the removed core historical backend, or Zero
+* ``GhPermissionsConfig`` records GH relations before the sweep
+* ``trusts.apps.TrustsImplementationConfig`` builds the catalog
+* a missing canonical backend path fails at ``ready()``
+* no dependency on ``kernel_config()``, ``trusts.core``,
+  ``implementation_for_path``, or Zero
 """
 
 from __future__ import annotations
@@ -18,11 +16,7 @@ from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from trusts.apps import (
-    TrustsImplementationConfig,
-    implementation_configs,
-    implementation_for_path,
-)
+from trusts.apps import TrustsImplementationConfig
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
@@ -38,46 +32,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Issue6OwnerProofs(SimpleTestCase):
-    def test_gh_config_is_sole_implementation_owner(self):
+    def test_gh_config_registers_before_the_installed_sweep(self):
         import trusts.apps as trusts_apps
 
-        owners = implementation_configs()
-        self.assertEqual(len(owners), 1)
-        self.assertIsInstance(owners[0], GhPermissionsConfig)
-        self.assertIsInstance(owners[0], TrustsImplementationConfig)
-        self.assertIs(owners[0], gh_config())
+        self.assertIsInstance(gh_config(), GhPermissionsConfig)
+        self.assertNotIsInstance(gh_config(), TrustsImplementationConfig)
+        lifecycle = apps.get_app_config('trusts_lifecycle')
+        self.assertIsInstance(lifecycle, TrustsImplementationConfig)
         self.assertNotIn('trusts_core', apps.app_configs)
         self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         names = [config.name for config in apps.get_app_configs()]
         self.assertNotIn('trusts', names)
+        self.assertIn('trusts.apps', names)
 
-    def test_canonical_backend_resolves_only_through_owner(self):
-        owner = implementation_for_path(CANONICAL_BACKEND)
-        self.assertIs(owner, gh_config())
-        self.assertEqual(owner.trusts_backend_paths, (CANONICAL_BACKEND,))
-        handle = owner.configured_backend(CANONICAL_BACKEND)
-        self.assertEqual(handle.path, CANONICAL_BACKEND)
+    def test_canonical_backend_catalog_uses_the_mixin_compiler(self):
+        catalog = GhAuthorizationBackend().get_catalog()
+        self.assertEqual(catalog.path, CANONICAL_BACKEND)
         self.assertIs(
-            type(handle.compiler),
+            type(catalog.compiler),
             GhAuthorizationBackend.query_compiler.__class__,
         )
+        self.assertTrue(callable(catalog.compiler.applies))
 
-    def test_mixin_resolves_owner_without_removed_core_surfaces(self):
+    def test_ready_registers_ordinary_roots(self):
         import trusts.apps as trusts_apps
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        backend = GhAuthorizationBackend()
-        self.assertIs(backend._trusts_config(), gh_config())
-
-    def test_ready_resolves_owner_without_removed_core_surfaces(self):
-        import trusts.apps as trusts_apps
-
-        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        owner = implementation_for_path(CANONICAL_BACKEND)
-        self.assertIs(owner, gh_config())
         roots = [
             record.root
-            for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
+            for record in GhAuthorizationBackend().get_catalog().records
         ]
         self.assertEqual(roots, [
             RepositoryCollaborator,
@@ -104,6 +87,9 @@ class Issue6OwnerProofs(SimpleTestCase):
             'from trusts.zero',
             'import trusts.zero',
             'django-trusts-zero',
+            'implementation_for_path',
+            'from trusts.core',
+            'BackendHandle',
         )
         historical = re.compile(
             r'from trusts\.backends import TrustModelBackend(?!Mixin)'
@@ -123,16 +109,21 @@ class Issue6OwnerProofs(SimpleTestCase):
         from django.conf import settings as django_settings
 
         self.assertNotIn('trusts', django_settings.INSTALLED_APPS)
+        self.assertIn(
+            'trusts.apps.TrustsImplementationConfig',
+            django_settings.INSTALLED_APPS,
+        )
         self.assertNotIn('trusts.apps.AppConfig', django_settings.INSTALLED_APPS)
         ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
-        self.assertIn('register_collaborator(handle)', ready)
-        self.assertIn('register_team(handle)', ready)
-        self.assertIn('register_organization_owner(handle)', ready)
+        self.assertIn('register_collaborator(recorder)', ready)
+        self.assertIn('register_team(recorder)', ready)
+        self.assertIn('register_organization_owner(recorder)', ready)
         self.assertNotIn('_gh_policy_registry_id', ready)
         self.assertNotIn('.registry.register(', ready)
         self.assertNotIn('register_collaborator(registry)', ready)
         self.assertNotIn('register_team(registry)', ready)
         self.assertNotIn('register_organization_owner(registry)', ready)
+        self.assertNotIn('register_collaborator(handle)', ready)
 
 
 class Issue6AuthorizationProofs(TestCase):
@@ -157,7 +148,7 @@ class Issue6AuthorizationProofs(TestCase):
         collaboration.permissions.add(write)
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        backend = GhAuthorizationBackend()
-        self.assertIs(backend._trusts_config(), gh_config())
+        catalog = GhAuthorizationBackend().get_catalog()
+        self.assertEqual(catalog.path, CANONICAL_BACKEND)
         listed = list(Repository.objects.authorized(user, write))
         self.assertIn(repo, listed)
