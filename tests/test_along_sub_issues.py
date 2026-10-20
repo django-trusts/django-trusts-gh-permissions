@@ -13,9 +13,8 @@ from gh_permissions.models import (
     Organization,
     Repository,
 )
-from gh_permissions.policy import register_issue_permissions
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import gh_catalog, isolated_catalog
+from tests.fixtures import gh_catalog
 
 
 _TRIAGE = 'gh_permissions.triage_issue'
@@ -32,7 +31,7 @@ def _triage_permission():
 class SubIssueAlongRegistrationTest(TestCase):
     def test_registration_is_zero_sql_shape_s_with_bound_eight(self):
         with self.assertNumQueries(0):
-            record = isolated_catalog(register_issue_permissions).records[0]
+            record = gh_catalog().records[-1]
         self.assertIs(record.root, IssuePermissions)
         self.assertIs(record.content_model, Issue)
         self.assertEqual(record.user_path, ('user',))

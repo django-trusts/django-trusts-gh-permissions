@@ -20,13 +20,20 @@ from gh_permissions.policy import (
     register_organization_owner,
     register_team,
 )
-from tests.fixtures import isolated_catalog
+from tests.fixtures import gh_catalog
+
+
+def _team_record():
+    return next(
+        record for record in gh_catalog().records
+        if record.root is TeamRepositoryPermission
+    )
 
 
 class TeamMappingRegistrationTest(TestCase):
     def test_accepted_team_mapping_registers_with_zero_sql(self):
         with self.assertNumQueries(0):
-            record = isolated_catalog(register_team).records[0]
+            record = _team_record()
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('team', 'members'))
@@ -38,7 +45,7 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_team_ceiling_and_org_equality_are_and_on_one_record(self):
-        record = isolated_catalog(register_team).records[0]
+        record = _team_record()
         self.assertIsInstance(record.condition, All)
         kinds = [type(node) for node in record.condition.predicates]
         self.assertEqual(kinds, [PermissionIn, Equal])

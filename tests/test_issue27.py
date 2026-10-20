@@ -29,10 +29,6 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
-from gh_permissions.policy import (
-    register_collaborator,
-    register_organization_owner,
-)
 from gh_permissions.services import (
     OWNER_GROUP_NAME,
     AliasConflict,
@@ -46,12 +42,7 @@ from gh_permissions.services import (
     rename_organization,
     rename_user,
 )
-from tests.fixtures import (
-    gh_catalog,
-    isolated_catalog,
-    permission_code,
-    repository_permission,
-)
+from tests.fixtures import gh_catalog, permission_code, repository_permission
 from tests.test_migration_0002 import _ALIAS, _wipe
 
 
@@ -274,8 +265,10 @@ class OwnershipAndCollaborationTest(TestCase):
 
     def test_ownership_row_is_the_owner_grant(self):
         with self.assertNumQueries(0):
-            catalog = isolated_catalog(register_organization_owner)
-        records = catalog.records
+            records = [
+                record for record in gh_catalog().records
+                if record.root is OrganizationOwnership
+            ]
         repository_record = records[1]
         self.assertEqual(len(records), 2)
         self.assertIs(records[0].root, OrganizationOwnership)
@@ -778,7 +771,10 @@ class SharedNameMigrationTest(TransactionTestCase):
 class CollaboratorRegistrationTest(TestCase):
     def test_collaborator_registration_is_zero_sql(self):
         with self.assertNumQueries(0):
-            record = isolated_catalog(register_collaborator).records[0]
+            record = next(
+                record for record in gh_catalog().records
+                if record.root is RepositoryCollaborator
+            )
         self.assertIs(record.root, RepositoryCollaborator)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('user',))

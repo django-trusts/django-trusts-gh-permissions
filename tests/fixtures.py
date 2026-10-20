@@ -1,12 +1,7 @@
 """Shared GH fixtures. Not authorization policy."""
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.backends import BaseBackend
 from django.contrib.auth.models import Permission
-
-from trusts.backends import TrustModelBackendMixin
-from trusts.compile.catalogs import Catalog
-from trusts.compile.factory import compile_recorder
 
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
@@ -39,37 +34,6 @@ def permission_code(permission):
 def gh_catalog():
     """Catalog the ready-time sweep stored for the GH backend."""
     return GhAuthorizationBackend().get_catalog()
-
-
-class IsolatedRegistration(object):
-    """A fresh backend class and its still-open recorder."""
-
-    def __init__(self):
-        class Backend(TrustModelBackendMixin, BaseBackend):
-            pass
-
-        self.backend = Backend
-        self.recorder = Backend().get_registry()
-
-
-def catalog_for(registration):
-    """Build ``Catalog(factory.build())`` from one isolated recorder."""
-    shape = compile_recorder(
-        registration.recorder,
-        path='tests.isolated',
-        family=registration.backend.family,
-        compiler=registration.backend.query_compiler,
-        user_model=get_user_model(),
-    )
-    return Catalog(shape)
-
-
-def isolated_catalog(*registrars):
-    """Register GH helpers on a new recorder and return its catalog."""
-    registration = IsolatedRegistration()
-    for registrar in registrars:
-        registrar(registration.recorder)
-    return catalog_for(registration)
 
 
 class GhFixtureMixin(object):
