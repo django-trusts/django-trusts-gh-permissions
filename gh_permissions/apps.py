@@ -47,6 +47,7 @@ class GhPermissionsConfig(AppConfig):
                 % CANONICAL_BACKEND
             )
 
+        # auth.backends imports auth.models before the app registry is ready.
         from gh_permissions.backends import GhAuthorizationBackend
         from gh_permissions.policy import (
             register_all_personal_repositories_delegation,
