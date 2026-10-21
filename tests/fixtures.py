@@ -3,6 +3,10 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 
+from trusts.apps import Recorder
+from trusts.compile.factory import Compiler
+from trusts.plan.relations import PlanQueryCompiler
+
 from gh_permissions.models import (
     Organization,
     Repository,
@@ -22,17 +26,33 @@ def repository_permission(codename):
     )
 
 
-def isolated_handle(registry=None):
-    """Wrap an unfrozen registry in a ``BackendHandle`` for isolated tests."""
-    from trusts.core import BackendHandle, PlanQueryCompiler, TrustsRegistry
+def isolated_recorder():
+    """Unfrozen recorder. Replay it with ``compile_recorder``."""
+    return Recorder()
 
-    if registry is None:
-        registry = TrustsRegistry()
-    return BackendHandle(
-        path='tests.isolated',
-        registry=registry,
-        compiler=PlanQueryCompiler(),
+
+def isolated_compiler():
+    """Unfrozen compiler for one registration shape. Not the live catalog."""
+    return Compiler(
+        user_model=get_user_model(),
+        query_compiler=PlanQueryCompiler(),
+        path='tests.isolated.Compiler',
+        family='relationship',
     )
+
+
+def compile_recorder(recorder):
+    """Freeze ``recorder``, replay it, and return the built catalog."""
+    if not recorder.frozen:
+        recorder.freeze()
+    compiler = Compiler(
+        user_model=get_user_model(),
+        query_compiler=PlanQueryCompiler(),
+        path='tests.isolated.Registration',
+        family='relationship',
+    )
+    recorder.play(compiler.get_recorder_target())
+    return compiler.compile()
 
 
 class GhFixtureMixin(object):

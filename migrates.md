@@ -804,3 +804,39 @@ migration.
 - [ ] Confirm the matching owner pairs stay grants and the crossed
       pairs deny.
 - [ ] Leave package version at `0.1.0.dev0`. Do not add Zero.
+
+# Catalog per app config (django-trusts#330)
+
+Pair CI pins Core
+[django-trusts#330](https://github.com/django-trusts/django-trusts/pull/330)
+head `f898123987569817bc93e31e34505211e1c61b82`. Historical sections
+above stay as written.
+
+## Old → new
+
+| Surface | Old | New |
+| --- | --- | --- |
+| App config | `TrustsImplementationConfig` | `trusts.apps.TrustsConfigMixin` |
+| Registration | `implementation_for_path(...).configured_backend(...).register` | `self.recorder.register` in `GhPermissionsConfig.ready` |
+| Helper argument | `BackendHandle` | `trusts.apps.Recorder` |
+| Query imports | `trusts.query` | `trusts.models` |
+| Policy command | installed by Core | `gh_permissions/management/commands/trusts_policy_sql.py` re-imports `PolicySqlCommand` |
+| Lockfile `backends[].path` | `gh_permissions.backends.GhAuthorizationBackend` | `gh_permissions.apps.GhPermissionsConfig` |
+| Named filters | `Meta.permission_conditions` | not used; `Recorder.add_named_filter` if a filter is added |
+
+`GhPermissionsConfig` is the only installed `TrustsConfigMixin`. The
+backend module lives in that app, so the app registry is the
+dependency. Empty catalogs stay out of the lockfile. The committed
+lockfile remains the MySQL 8.4 rendering. The only byte change is
+`backends[].path`: Core's `catalog_path()` is
+`gh_permissions.apps.GhPermissionsConfig` instead of the backend
+dotted path. The SQL statements are unchanged.
+
+## Checklist
+
+- [ ] Extend `TrustsConfigMixin` on every app that registers or hosts a Trusts backend.
+- [ ] Record relations on that config's `recorder` before `super().ready()`.
+- [ ] Keep the one-line `trusts_policy_sql` command on `gh_permissions`.
+- [ ] Import managers and mixins from `trusts.models`.
+- [ ] Do not add a `permission_conditions` meta option.
+- [ ] Pin `f898123987569817bc93e31e34505211e1c61b82`. Do not add Zero.

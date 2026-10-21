@@ -17,10 +17,9 @@ from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
-from trusts.apps import implementation_for_path
-from trusts.policy_lock import render_policy_sql_bytes
+from trusts.inspect.snapshot import render_policy_sql_bytes
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import gh_catalog
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -48,14 +47,12 @@ from gh_permissions.services import (
     rename_organization,
     rename_user,
 )
-from tests.fixtures import isolated_handle, repository_permission
+from tests.fixtures import compile_recorder, isolated_recorder, repository_permission
 from tests.test_migration_0002 import _ALIAS, _wipe
 
 
-def _startup_registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
+def _startup_catalog():
+    return gh_catalog()
 
 
 def _manage():
@@ -272,10 +269,12 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertEqual(organization.owner_group_id, group.pk)
 
     def test_ownership_row_is_the_owner_grant(self):
-        handle = isolated_handle()
+        recorder = isolated_recorder()
         with self.assertNumQueries(0):
-            repository_record = register_organization_owner(handle)
-        records = handle.registry.records
+            register_organization_owner(recorder)
+            catalog = compile_recorder(recorder)
+        records = catalog.records
+        repository_record = records[1]
         self.assertEqual(len(records), 2)
         self.assertIs(records[0].root, OrganizationOwnership)
         self.assertIs(records[0].content_model, Organization)
@@ -304,7 +303,7 @@ class OwnershipAndCollaborationTest(TestCase):
         read = repository_permission('read_repository')
         write = repository_permission('write_repository')
         admin = repository_permission('admin_repository')
-        startup = _startup_registry()
+        startup = _startup_catalog()
         self.assertTrue(startup.has_permission(owner, organization, manage))
         self.assertFalse(startup.has_permission(bystander, organization, manage))
         self.assertTrue(owner.has_perm(
@@ -376,12 +375,12 @@ class OwnershipAndCollaborationTest(TestCase):
             {'gh_permissions.read_repository'},
         )
         self.assertEqual(outsider.get_group_permissions(repository), set())
-        record = _startup_registry().records[0]
+        record = _startup_catalog().records[0]
         self.assertIs(record.root, RepositoryCollaborator)
         self.assertFalse(record.via_group)
         self.assertEqual(record.permission_path, ('permissions',))
         self.assertNotIn(write.pk, {
-            row.pk for row in _startup_registry().permissions_for(
+            row.pk for row in _startup_catalog().permissions_for(
                 outsider, repository,
             )
         })
@@ -400,7 +399,7 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertFalse(hasattr(models, 'OrganizationOwnerPermission'))
         self.assertFalse(hasattr(models, 'UserRepositoryPermission'))
         self.assertFalse(hasattr(models, 'OrganizationMembership'))
-        names = [record.root.__name__ for record in _startup_registry().records]
+        names = [record.root.__name__ for record in _startup_catalog().records]
         self.assertEqual(names, [
             'RepositoryCollaborator',
             'TeamRepositoryPermission',
@@ -776,9 +775,11 @@ class SharedNameMigrationTest(TransactionTestCase):
 
 class CollaboratorRegistrationTest(TestCase):
     def test_collaborator_registration_is_zero_sql(self):
-        handle = isolated_handle()
+        recorder = isolated_recorder()
         with self.assertNumQueries(0):
-            record = register_collaborator(handle)
+            register_collaborator(recorder)
+            catalog = compile_recorder(recorder)
+        record = catalog.records[0]
         self.assertIs(record.root, RepositoryCollaborator)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('user',))

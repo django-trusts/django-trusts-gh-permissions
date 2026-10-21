@@ -8,10 +8,9 @@
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase, override_settings
 
-from trusts.apps import implementation_for_path
 from trusts.backends import TrustModelBackendMixin
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import gh_catalog
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 from tests.fixtures import GhFixtureMixin
@@ -32,10 +31,8 @@ class StringContributingBackend(object):
         return set(_OTHER_GROUP)
 
 
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
+def _catalog():
+    return gh_catalog()
 
 
 class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
@@ -137,12 +134,12 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
         )
 
     def test_supported_registry_paths_still_authorize(self):
-        registry = _registry()
+        catalog = _catalog()
         self.assertTrue(
-            registry.has_permission(self.member, self.repo_a, self.read),
+            catalog.has_permission(self.member, self.repo_a, self.read),
         )
         enumerated = {
-            row.pk for row in registry.permissions_for(self.member, self.repo_a)
+            row.pk for row in catalog.permissions_for(self.member, self.repo_a)
         }
         self.assertIn(self.read.pk, enumerated)
         self.assertEqual(
@@ -158,5 +155,5 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
             {_READ},
         )
         self.assertTrue(
-            registry.has_permission(self.member, self.repo_a, self.read),
+            catalog.has_permission(self.member, self.repo_a, self.read),
         )

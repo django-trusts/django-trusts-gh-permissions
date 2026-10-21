@@ -258,7 +258,7 @@ registration (contributed at startup) is:
 ```python
 from gh_permissions.models import TeamRepositoryPermission
 
-backend.register(
+recorder.register(
     trust=TeamRepositoryPermission,
     user="team__members",
     permission="operation",
@@ -277,7 +277,7 @@ many-to-many to `auth.Permission`:
 ```python
 from gh_permissions.models import RepositoryCollaborator
 
-backend.register(
+recorder.register(
     trust=RepositoryCollaborator,
     user="user",
     permission="permissions",
@@ -299,14 +299,11 @@ the Django permission string as the alias.
 
 ```python
 from example.models import User
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import gh_catalog
 from gh_permissions.models import Repository
-from trusts.apps import implementation_for_path
 
-registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-    CANONICAL_BACKEND,
-).registry
-registry.has_permission(user, repository, operation)
+catalog = gh_catalog()
+catalog.has_permission(user, repository, operation)
 Repository.objects.authorized(user, operation)
 user.has_perm('gh_permissions.read_repository', repository)
 User.objects.permitted(repository, 'gh_permissions.read_repository')

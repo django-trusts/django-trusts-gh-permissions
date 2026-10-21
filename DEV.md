@@ -12,12 +12,17 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-[django-trusts#314](https://github.com/django-trusts/django-trusts/pull/314)
-merge `a599bc7dc9bad8401a9733eaced4e3689ae9de00` on `dev`. That commit
-includes the #310 lockfile param notation and the #312 checked-user
-rules. gh-permissions registers no user override. An active superuser
-is included in a reverse permitted-user set only with a real grant,
-and does not skip `manage_organization` or the admin scope filter.
+[django-trusts#330](https://github.com/django-trusts/django-trusts/pull/330)
+head `f898123987569817bc93e31e34505211e1c61b82` (`cursor/catalog-pullup-f275`).
+That commit gives each app config its own recorder and catalog.
+`GhPermissionsConfig` extends `trusts.apps.TrustsConfigMixin`.
+`ready()` records relations on `self.recorder`. The host app opts in
+to `trusts_policy_sql` with `gh_permissions/management/commands/trusts_policy_sql.py`.
+Query helpers import from `trusts.models`. gh-permissions registers
+no user override and does not use `Meta.permission_conditions`. An
+active superuser is included in a reverse permitted-user set only
+with a real grant, and does not skip `manage_organization` or the
+admin scope filter.
 The committed `trusts-policy.lock.yaml` is the MySQL 8.4
 rendering, matching deployment. SQLite CI renders a job-local lockfile
 and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
@@ -193,9 +198,10 @@ The previous top-level README described pairing against Step I
 `LookupError` helper, and inventoried CI against that Step I SHA.
 Those statements are false after the final core cut. Final core
 deleted `kernel_config()`, the core `AppConfig`, and
-`trusts.backends.TrustModelBackend`. Supported GH startup still uses
-`implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`
-and never installs `'trusts'`.
+`trusts.backends.TrustModelBackend`. Supported GH startup extends `TrustsConfigMixin` on
+`GhPermissionsConfig`, lists
+`gh_permissions.backends.GhAuthorizationBackend`, and never installs
+`'trusts'`.
 
 ## Bounded policy (still true)
 
@@ -226,7 +232,7 @@ as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct repository access is `register_collaborator`. Both take the
-configured `BackendHandle` and call `handle.register` with `trust=`
+app config's `Recorder` and call `recorder.register` with `trust=`
 plus Django `__` path strings.
 Team adds a one-argument symbolic `condition=` using `.contains`, `==`,
 and `&`. Literal Python `in` is unsupported. There is no aggregate

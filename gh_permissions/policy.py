@@ -1,4 +1,4 @@
-"""GH policy registrations on public ``BackendHandle.register``.
+"""GH policy registrations on the app config's ``Recorder``.
 
 Collaborators are one user/repository row. ``permission`` is the
 terminal many-to-many ``permissions``. Team keeps the accepted mapping:
@@ -15,12 +15,12 @@ Issue triage assignments use bounded ``along=`` reachability: one grant at an
 issue applies to that issue and its sub-issues through at most eight parent
 edges. This relative query bound is separate from the modeled service's
 absolute eight-level validity rule.
-``GhPermissionsConfig.ready`` contributes each helper as a separate call.
-Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
-``permission=`` does not feed ``get_group_permissions``.
+``GhPermissionsConfig.ready`` contributes each helper as a separate call
+on ``self.recorder``. Helpers require a ``Recorder``; a compiler is
+``TypeError``. ``permission=`` does not feed ``get_group_permissions``.
 """
 
-from trusts.core import BackendHandle
+from trusts.apps import Recorder
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
@@ -33,19 +33,19 @@ from gh_permissions.models import (
 )
 
 
-def _require_handle(handle):
-    if not isinstance(handle, BackendHandle):
+def _require_recorder(recorder):
+    if not isinstance(recorder, Recorder):
         raise TypeError(
-            'GH relation helpers require a BackendHandle, not %r.'
-            % (type(handle).__name__,)
+            'GH relation helpers require a Recorder, not %r.'
+            % (type(recorder).__name__,)
         )
-    return handle
+    return recorder
 
 
-def register_collaborator(handle):
+def register_collaborator(recorder):
     """Register direct repository collaboration."""
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=RepositoryCollaborator,
         user='user',
         permission='permissions',
@@ -53,10 +53,10 @@ def register_collaborator(handle):
     )
 
 
-def register_issue_permissions(handle):
+def register_issue_permissions(recorder):
     """Register a bounded permission bundle over one issue subtree."""
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=IssuePermissions,
         user='user',
         permission='permissions',
@@ -65,15 +65,15 @@ def register_issue_permissions(handle):
     )
 
 
-def register_delegation(handle):
+def register_delegation(recorder):
     """Register one-level repository delegation through an exact sponsor.
 
     Selection, organization approval, repository alignment, and the
     delegation ceiling are the left side. Core correlates that row with
     the sponsor's live ordinary GH grants on the right side.
     """
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=RepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor_ownership__user',
@@ -92,10 +92,10 @@ def register_delegation(handle):
     )
 
 
-def register_personal_delegation(handle):
+def register_personal_delegation(recorder):
     """Register personal-repository delegation without company approval."""
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=PersonalRepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -110,10 +110,10 @@ def register_personal_delegation(handle):
     )
 
 
-def register_all_personal_repositories_delegation(handle):
+def register_all_personal_repositories_delegation(recorder):
     """Register delegation over all of one sponsor's personal repositories."""
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=AllPersonalRepositoriesDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -124,10 +124,10 @@ def register_all_personal_repositories_delegation(handle):
     )
 
 
-def register_team(handle):
+def register_team(recorder):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
-    handle = _require_handle(handle)
-    return handle.register(
+    recorder = _require_recorder(recorder)
+    return recorder.register(
         trust=TeamRepositoryPermission,
         user='team__members',
         permission='operation',
@@ -139,19 +139,19 @@ def register_team(handle):
     )
 
 
-def register_organization_owner(handle):
+def register_organization_owner(recorder):
     """Register each ownership row for one organization and its repositories.
 
     The ownership row is the grant. No condition is applied.
     """
-    handle = _require_handle(handle)
-    handle.register(
+    recorder = _require_recorder(recorder)
+    recorder.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
         content='organization',
     )
-    return handle.register(
+    return recorder.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',

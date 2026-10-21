@@ -89,7 +89,7 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
-    from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
+    from gh_permissions.apps import GhPermissionsConfig
     from gh_permissions.models import (
         AllPersonalRepositoriesDelegation,
         OrganizationOwnership,
@@ -101,7 +101,7 @@ def main() -> int:
         TeamRepositoryPermission,
     )
     import trusts.apps as trusts_apps
-    from trusts.apps import implementation_configs
+    from trusts.apps import TrustsConfigMixin
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -130,12 +130,15 @@ def main() -> int:
     if 'trusts' in {config.name for config in django_apps.get_app_configs()}:
         raise SystemExit('a trusts Django app is installed')
 
-    owners = implementation_configs()
+    owners = [
+        config for config in django_apps.get_app_configs()
+        if isinstance(config, TrustsConfigMixin)
+    ]
     if len(owners) != 1 or not isinstance(owners[0], GhPermissionsConfig):
         raise SystemExit('expected one GhPermissionsConfig owner, got %r' % (owners,))
 
-    registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
-    roots = [record.root for record in registry.records]
+    catalog = owners[0].get_catalog()
+    roots = [record.root for record in catalog.records]
     if roots != [
         RepositoryCollaborator,
         TeamRepositoryPermission,
@@ -147,7 +150,7 @@ def main() -> int:
             'GH-only populate must register collaborator, team, owner, '
             'and issue-triage roots: %r' % roots
         )
-    delegation_roots = [record.root for record in registry.delegations]
+    delegation_roots = [record.root for record in catalog.delegations]
     if delegation_roots != [
         PersonalRepositoryDelegation,
         AllPersonalRepositoriesDelegation,

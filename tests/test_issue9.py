@@ -5,26 +5,17 @@ accepted team ``backend.register`` mapping, the owner/registry object
 call, and the two-checkout install sequence.
 """
 
-import sys
-import types
 from pathlib import Path
-from unittest.mock import patch
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase
 
-from gh_permissions.apps import (
-    CANONICAL_BACKEND,
-    CORE_REQUIREMENT,
-    FLOOR_MESSAGE,
-    _load_implementation_config,
-)
+from gh_permissions.apps import GhPermissionsConfig, gh_catalog
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import register_collaborator, register_team
 from tests.fixtures import GhFixtureMixin
-from trusts.apps import implementation_for_path
-from trusts.core import All, Equal, PermissionIn
+from trusts.apps import TrustsConfigMixin
+from trusts.compile.nodes import All, Equal, PermissionIn
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,14 +102,10 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn('Organization administration was `OrganizationOwnerPermission`. That\nmodel is gone.', readme)
         self.assertNotIn('UserRepositoryPermission', readme)
         self.assertIn('AUTH_USER_MODEL', readme)
-        self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
-        self.assertIn('from trusts.apps import implementation_for_path', readme)
+        self.assertIn('from gh_permissions.apps import gh_catalog', readme)
+        self.assertIn('catalog = gh_catalog()', readme)
         self.assertIn(
-            'registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(',
-            readme,
-        )
-        self.assertIn(
-            'registry.has_permission(user, repository, operation)',
+            'catalog.has_permission(user, repository, operation)',
             readme,
         )
         self.assertIn('Repository.objects.authorized(user, operation)', readme)
@@ -170,8 +157,8 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             readme,
         )
         policy = (ROOT / 'gh_permissions' / 'policy.py').read_text()
-        self.assertIn('def register_team(handle):', policy)
-        self.assertIn('handle.register(', policy)
+        self.assertIn('def register_team(recorder):', policy)
+        self.assertIn('recorder.register(', policy)
         self.assertIn('trust=TeamRepositoryPermission', policy)
         self.assertNotIn('register_relationship(', policy)
         self.assertIn("user='team__members'", policy)
@@ -213,23 +200,16 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         )
 
 
-class FloorMessageTest(SimpleTestCase):
-    def test_floor_message_names_final_core(self):
+class TrustsConfigMixinTest(SimpleTestCase):
+    def test_gh_config_extends_trusts_config_mixin(self):
         source = (ROOT / 'gh_permissions' / 'apps.py').read_text()
-        self.assertEqual(CORE_REQUIREMENT, 'django-trusts>=1.0.0.dev3,<2')
-        self.assertIn(CORE_REQUIREMENT, FLOOR_MESSAGE)
-        self.assertIn('TrustsImplementationConfig', FLOOR_MESSAGE)
-        self.assertIn('raise ImproperlyConfigured(FLOOR_MESSAGE)', source)
+        self.assertTrue(issubclass(GhPermissionsConfig, TrustsConfigMixin))
+        self.assertIn('from trusts.apps import TrustsConfigMixin', source)
+        self.assertNotIn('TrustsImplementationConfig', source)
+        self.assertNotIn('implementation_for_path', source)
         self.assertNotIn('1.0.0.dev2', source)
-        self.assertNotIn('1.0.0.dev2', FLOOR_MESSAGE)
-
-    def test_missing_implementation_config_raises_floor_message(self):
-        fake = types.ModuleType('trusts.apps')
-        with patch.dict(sys.modules, {'trusts.apps': fake}):
-            with self.assertRaises(ImproperlyConfigured) as ctx:
-                _load_implementation_config()
-        self.assertEqual(str(ctx.exception), FLOOR_MESSAGE)
-        self.assertIn('django-trusts>=1.0.0.dev3,<2', str(ctx.exception))
+        project = (ROOT / 'pyproject.toml').read_text()
+        self.assertIn('django-trusts>=1.0.0.dev3,<2', project)
 
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
@@ -261,8 +241,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertNotIn('trusts', settings.INSTALLED_APPS)
 
     def test_documented_team_mapping_matches_startup_registration(self):
-        owner = implementation_for_path(CANONICAL_BACKEND)
-        record = owner.configured_backend(CANONICAL_BACKEND).registry.records[1]
+        record = gh_catalog().records[1]
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertEqual(record.user_path, ('team', 'members'))
         self.assertFalse(callable(record.condition))
@@ -271,11 +250,9 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_documented_object_and_listing_share_compiled_policy(self):
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        ).registry
+        catalog = gh_catalog()
         self.assertTrue(
-            registry.has_permission(self.member, self.repo_a, self.read),
+            catalog.has_permission(self.member, self.repo_a, self.read),
         )
         self.assertEqual(
             list(
@@ -285,7 +262,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
             [self.repo_a],
         )
         self.assertTrue(
-            registry.has_permission(
+            catalog.has_permission(
                 self.collaborator, self.repo_b, self.write,
             ),
         )
@@ -297,5 +274,5 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
             [self.repo_b],
         )
         self.assertFalse(
-            registry.has_permission(self.member, self.repo_b, self.read),
+            catalog.has_permission(self.member, self.repo_b, self.read),
         )

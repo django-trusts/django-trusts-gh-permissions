@@ -10,10 +10,10 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import implementation_configs, implementation_for_path
-from trusts.query import AuthorizedManager
+from trusts.apps import TrustsConfigMixin
+from trusts.models import AuthorizedManager
 
-from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
+from gh_permissions.apps import GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 
@@ -37,11 +37,17 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts', names)
 
     def test_gh_config_is_the_sole_implementation_owner(self):
-        owners = implementation_configs()
+        owners = [
+            config for config in apps.get_app_configs()
+            if isinstance(config, TrustsConfigMixin)
+        ]
         self.assertEqual(len(owners), 1)
         self.assertIsInstance(owners[0], GhPermissionsConfig)
         self.assertIs(owners[0], gh_config())
-        self.assertIs(implementation_for_path(CANONICAL_BACKEND), owners[0])
+        self.assertIs(
+            apps.get_containing_app_config(GhAuthorizationBackend.__module__),
+            owners[0],
+        )
 
     def test_kernel_config_is_not_importable(self):
         import trusts.apps as trusts_apps
@@ -67,7 +73,7 @@ class KernelIdentityTest(SimpleTestCase):
 
     def test_repository_uses_stock_authorized_manager(self):
         import gh_permissions.models as gh_models
-        from trusts.query import AuthorizedQuerySet
+        from trusts.models import AuthorizedQuerySet
 
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)

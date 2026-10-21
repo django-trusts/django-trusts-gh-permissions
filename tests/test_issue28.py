@@ -58,7 +58,7 @@ from gh_permissions.services import (
     update_repository_collaborator,
     update_team_repository_permission,
 )
-from tests.fixtures import isolated_handle, repository_permission
+from tests.fixtures import compile_recorder, isolated_recorder, repository_permission
 
 
 _READ = 'gh_permissions.read_repository'
@@ -1684,10 +1684,11 @@ class OwnershipRetentionTests(TestCase):
         return caught.exception
 
     def test_raw_writes_and_register_condition_do_not_keep_an_owner(self):
-        handle = isolated_handle()
-        register_organization_owner(handle)
-        self.assertGreaterEqual(len(handle.registry.records), 1)
-        for record in handle.registry.records:
+        recorder = isolated_recorder()
+        register_organization_owner(recorder)
+        catalog = compile_recorder(recorder)
+        self.assertGreaterEqual(len(catalog.records), 1)
+        for record in catalog.records:
             self.assertIsNone(record.condition)
 
         self.org.owners.remove(self.owner)

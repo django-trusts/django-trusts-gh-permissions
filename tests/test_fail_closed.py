@@ -3,9 +3,11 @@
 from django.core.checks import run_checks
 from django.test import SimpleTestCase, TestCase
 
-from trusts.core import Ref, TrustsConfigurationError, TrustsRegistry
+from trusts.compile.nodes import Ref
+from trusts.errors import TrustsConfigurationError
 
 from gh_permissions import policy as gh_policy
+from gh_permissions.apps import gh_catalog, gh_config
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -18,7 +20,12 @@ from gh_permissions.policy import (
     register_organization_owner,
     register_team,
 )
-from tests.fixtures import GhFixtureMixin, isolated_handle
+from tests.fixtures import (
+    GhFixtureMixin,
+    compile_recorder,
+    isolated_compiler,
+    isolated_recorder,
+)
 
 
 # Intentionally unsupported GH behaviors (not defects of this consumer):
@@ -44,94 +51,87 @@ class UnsupportedGhBehaviorTest(SimpleTestCase):
 
 class GhFailClosedTest(GhFixtureMixin, TestCase):
     def test_unregistered_resource_fails_closed(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        register_team(handle)
-        registry = handle.registry
+        recorder = isolated_recorder()
+        register_collaborator(recorder)
+        register_team(recorder)
+        catalog = compile_recorder(recorder)
         self.assertFalse(
-            registry.has_permission(self.member, self.org_a, self.read),
+            catalog.has_permission(self.member, self.org_a, self.read),
         )
         self.assertEqual(
-            list(registry.filter_authorized(
+            list(catalog.filter_authorized(
                 Organization.objects.all(), self.member, self.read,
             )),
             [],
         )
 
     def test_wrong_requester_model_and_raw_pk_fail_closed(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        register_team(handle)
-        registry = handle.registry
+        recorder = isolated_recorder()
+        register_collaborator(recorder)
+        register_team(recorder)
+        catalog = compile_recorder(recorder)
         self.assertFalse(
-            registry.has_permission(self.repo_a, self.repo_b, self.write),
+            catalog.has_permission(self.repo_a, self.repo_b, self.write),
         )
         with self.assertRaises(TrustsConfigurationError):
-            registry.has_permission(self.member.pk, self.repo_a, self.read)
+            catalog.has_permission(self.member.pk, self.repo_a, self.read)
 
     def test_malformed_direct_path_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
+        compiler = isolated_compiler()
         d = Ref(RepositoryCollaborator)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
+                compiler.register_relation(
                     content=d.repository.name,
                     user=d.user,
                     permission=d.permissions,
                 )
-        self.assertEqual(registry.records, ())
+        self.assertEqual(compiler.records, ())
 
     def test_extra_multi_valued_user_path_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
+        compiler = isolated_compiler()
         t = Ref(TeamRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
+                compiler.register_relation(
                     content=t.repository,
                     user=t.team.members.teams,
                     permission=t.operation,
                 )
-        self.assertEqual(registry.records, ())
+        self.assertEqual(compiler.records, ())
 
     def test_non_none_untyped_condition_rejected_with_zero_sql(self):
-        registry = TrustsRegistry()
+        compiler = isolated_compiler()
         t = Ref(TeamRepositoryPermission)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
+                compiler.register_relation(
                     content=t.repository,
                     user=t.team,
                     permission=t.operation,
                     condition=object(),
                 )
-        self.assertEqual(registry.records, ())
+        self.assertEqual(compiler.records, ())
 
     def test_late_registration_after_freeze_is_rejected(self):
-        from trusts.apps import implementation_for_path
-
-        from gh_permissions.apps import CANONICAL_BACKEND
-
-        handle = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        )
-        registry = handle.registry
-        self.assertTrue(registry.frozen)
-        d = Ref(RepositoryCollaborator)
+        recorder = gh_config().recorder
+        self.assertTrue(recorder.frozen)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_collaborator(handle)
+                register_collaborator(recorder)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_team(handle)
+                register_team(recorder)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_organization_owner(handle)
+                register_organization_owner(recorder)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                registry.register(
-                    content=d.repository,
-                    user=d.user,
-                    permission=d.permissions,
+                recorder.register(
+                    trust=RepositoryCollaborator,
+                    content='repository',
+                    user='user',
+                    permission='permissions',
                 )
 
     def test_system_checks_are_clean_for_complete_gh_install(self):
@@ -146,53 +146,50 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
     def test_register_team_adds_one_record_with_zero_sql(self):
-        handle = isolated_handle()
+        recorder = isolated_recorder()
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
-        self.assertIs(record.root, TeamRepositoryPermission)
+            register_team(recorder)
+            catalog = compile_recorder(recorder)
+        self.assertEqual(len(catalog.records), 1)
+        self.assertIs(catalog.records[0].root, TeamRepositoryPermission)
 
     def test_duplicate_team_registration_fails_closed_without_mutation(self):
-        handle = isolated_handle()
-        register_team(handle)
-        before = handle.registry.records
+        recorder = isolated_recorder()
+        register_team(recorder)
+        catalog = compile_recorder(recorder)
+        before = catalog.records
+        duplicate = isolated_recorder()
+        register_team(duplicate)
+        register_team(duplicate)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_team(handle)
-        self.assertEqual(handle.registry.records, before)
+                compile_recorder(duplicate)
+        self.assertEqual(catalog.records, before)
+        self.assertEqual(len(before), 1)
 
     def test_register_team_adds_independent_root_beside_collaborator(self):
-        handle = isolated_handle()
-        register_collaborator(handle)
-        before = handle.registry.records
-        self.assertEqual(len(before), 1)
-        self.assertEqual(before[0].root, RepositoryCollaborator)
+        recorder = isolated_recorder()
+        register_collaborator(recorder)
+        register_team(recorder)
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 2)
-        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
-        self.assertIs(record.root, TeamRepositoryPermission)
-        self.assertIs(handle.registry.records[1].root, TeamRepositoryPermission)
-        with self.assertNumQueries(0):
-            owner_record = register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 4)
-        self.assertIs(handle.registry.records[0].root, RepositoryCollaborator)
-        self.assertIs(owner_record.root, OrganizationOwnership)
-        self.assertIsNone(owner_record.condition)
+            register_organization_owner(recorder)
+            catalog = compile_recorder(recorder)
+        self.assertEqual(len(catalog.records), 4)
+        self.assertIs(catalog.records[0].root, RepositoryCollaborator)
+        self.assertIs(catalog.records[1].root, TeamRepositoryPermission)
+        self.assertIs(catalog.records[2].root, OrganizationOwnership)
+        self.assertIsNone(catalog.records[2].condition)
+        duplicate = isolated_recorder()
+        register_collaborator(duplicate)
+        register_team(duplicate)
+        register_organization_owner(duplicate)
+        register_organization_owner(duplicate)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
-                register_organization_owner(handle)
-        self.assertEqual(len(handle.registry.records), 4)
+                compile_recorder(duplicate)
 
     def test_startup_registers_direct_and_team_roots(self):
-        from trusts.apps import implementation_for_path
-
-        from gh_permissions.apps import CANONICAL_BACKEND
-
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        ).registry
-        roots = [record.root for record in registry.records]
+        roots = [record.root for record in gh_catalog().records]
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,

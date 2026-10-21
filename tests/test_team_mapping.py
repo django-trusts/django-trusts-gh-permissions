@@ -24,13 +24,8 @@ application callable is not stored. Django 6.1 defines
 
 from django.test import TestCase
 
-from trusts.core import (
-    All,
-    Equal,
-    PermissionIn,
-    Ref,
-    TrustsRegistry,
-)
+from trusts.compile.factory import Compiler
+from trusts.compile.nodes import All, Equal, PermissionIn, Ref
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import (
@@ -38,15 +33,17 @@ from gh_permissions.policy import (
     register_organization_owner,
     register_team,
 )
-from tests.fixtures import isolated_handle
+from tests.fixtures import compile_recorder, isolated_recorder
 
 
 class TeamMappingRegistrationTest(TestCase):
     def test_accepted_team_mapping_registers_with_zero_sql(self):
-        handle = isolated_handle()
+        recorder = isolated_recorder()
         with self.assertNumQueries(0):
-            record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
+            register_team(recorder)
+            catalog = compile_recorder(recorder)
+        record = catalog.records[0]
+        self.assertEqual(len(catalog.records), 1)
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('team', 'members'))
@@ -58,9 +55,11 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_team_ceiling_and_org_equality_are_and_on_one_record(self):
-        handle = isolated_handle()
-        record = register_team(handle)
-        self.assertEqual(len(handle.registry.records), 1)
+        recorder = isolated_recorder()
+        register_team(recorder)
+        catalog = compile_recorder(recorder)
+        record = catalog.records[0]
+        self.assertEqual(len(catalog.records), 1)
         self.assertIsInstance(record.condition, All)
         kinds = [type(node) for node in record.condition.predicates]
         self.assertEqual(kinds, [PermissionIn, Equal])
@@ -71,11 +70,16 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertEqual(equality.left, root.team.organization)
         self.assertEqual(equality.right, root.repository.organization)
 
-    def test_helpers_require_a_backend_handle(self):
-        registry = TrustsRegistry()
+    def test_helpers_require_a_recorder(self):
+        compiler = Compiler(
+            user_model=Repository,
+            query_compiler=object(),
+            path='tests.team.Compiler',
+            family='relationship',
+        )
         with self.assertRaises(TypeError):
-            register_team(registry)
+            register_team(compiler)
         with self.assertRaises(TypeError):
-            register_collaborator(registry)
+            register_collaborator(compiler)
         with self.assertRaises(TypeError):
-            register_organization_owner(registry)
+            register_organization_owner(compiler)
