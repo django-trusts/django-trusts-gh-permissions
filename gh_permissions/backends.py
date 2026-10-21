@@ -1,9 +1,8 @@
-"""Mixin-only Trusts handle so GH can contribute registrations.
+"""Authorization backend for this app's catalog.
 
-Not ``TrustModelBackend``: GH does not use the historical TrustGroup
-compiler. The mixin default is ``PlanQueryCompiler``. The permission
-terminal is ``auth.Permission``, so string enumeration stays on the
-mixin ``_perm_codes`` path.
+``TrustModelBackendMixin`` takes the recorder and catalog from the
+``TrustsConfigMixin`` app config that contains this class. The
+permission terminal is ``auth.Permission``.
 """
 
 from django.contrib.auth.backends import BaseBackend

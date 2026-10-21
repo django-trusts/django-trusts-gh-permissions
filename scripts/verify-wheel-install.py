@@ -74,7 +74,6 @@ def main() -> int:
             'django.contrib.contenttypes',
             'django.contrib.auth',
             'gh_permissions.apps.GhPermissionsConfig',
-            'trusts.apps.TrustsImplementationConfig',
         ],
         AUTHENTICATION_BACKENDS=[
             'gh_permissions.backends.GhAuthorizationBackend',
@@ -90,7 +89,8 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
-    from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
+    from gh_permissions.apps import GhPermissionsConfig, gh_config
+    from trusts.apps import TrustsConfigMixin
     from gh_permissions.models import (
         AllPersonalRepositoriesDelegation,
         OrganizationOwnership,
@@ -101,7 +101,6 @@ def main() -> int:
         IssuePermissions,
         TeamRepositoryPermission,
     )
-    import trusts.apps as trusts_apps
     from gh_permissions.backends import GhAuthorizationBackend
 
     gh_file = Path(gh_permissions.__file__).resolve()
@@ -118,27 +117,23 @@ def main() -> int:
     if 'trusts.zero' in _sys.modules:
         raise SystemExit('GH wheel populate imported trusts.zero')
 
-    if hasattr(trusts_apps, 'kernel_config') or hasattr(trusts_apps, 'AppConfig'):
-        raise SystemExit('final core still exports kernel_config or AppConfig')
-    try:
-        from trusts.apps import kernel_config  # noqa: F401
-    except ImportError:
-        pass
-    else:
-        raise SystemExit('kernel_config is still importable')
     if 'trusts_core' in django_apps.app_configs:
         raise SystemExit('core AppConfig is installed')
-    if 'trusts' in {config.name for config in django_apps.get_app_configs()}:
+    names = {config.name for config in django_apps.get_app_configs()}
+    if 'trusts' in names or 'trusts.apps' in names:
         raise SystemExit('a trusts Django app is installed')
-    if 'trusts_lifecycle' not in django_apps.app_configs:
-        raise SystemExit('TrustsImplementationConfig is not installed')
 
-    if not isinstance(django_apps.get_app_config('gh_permissions'), GhPermissionsConfig):
+    owner = gh_config()
+    if not isinstance(owner, GhPermissionsConfig):
         raise SystemExit('gh_permissions is not GhPermissionsConfig')
+    if not isinstance(owner, TrustsConfigMixin):
+        raise SystemExit('GhPermissionsConfig does not own a Trusts catalog')
 
     catalog = GhAuthorizationBackend().get_catalog()
-    if catalog is None or catalog.path != CANONICAL_BACKEND:
-        raise SystemExit('GH catalog was not built for %s' % CANONICAL_BACKEND)
+    if catalog is not owner.get_catalog() or catalog.path != owner.catalog_path():
+        raise SystemExit(
+            'GH catalog was not built for %s' % owner.catalog_path()
+        )
     roots = [record.root for record in catalog.records]
     if roots != [
         RepositoryCollaborator,

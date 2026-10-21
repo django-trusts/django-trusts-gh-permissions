@@ -1,4 +1,4 @@
-"""GH policy registrations on the backend ``Recorder``.
+"""GH policy registrations on this app's ``Recorder``.
 
 Collaborators are one user/repository row. ``permission`` is the
 terminal many-to-many ``permissions``. Team keeps the accepted mapping:
@@ -20,7 +20,7 @@ Helpers require a ``Recorder``; anything else is ``TypeError``.
 ``permission=`` does not feed ``get_group_permissions``.
 """
 
-from trusts.backends import Recorder
+from trusts.apps import Recorder
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,

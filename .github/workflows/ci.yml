@@ -14,7 +14,7 @@ permissions:
 
 env:
   # Core catalog pullup, draft django-trusts#330 (cursor/catalog-pullup-f275).
-  COMPANION_KERNEL_SHA: 3aad8c25f34469f4ecb03e9cd441d9e6315d4f0f
+  COMPANION_KERNEL_SHA: 873154c86c786098c54a7885b8b5f46be291745b
 
 jobs:
   tests:
@@ -57,7 +57,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '3aad8c25f34469f4ecb03e9cd441d9e6315d4f0f' in pin, pin
+        assert '873154c86c786098c54a7885b8b5f46be291745b' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -107,8 +107,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "3aad8c25f34469f4ecb03e9cd441d9e6315d4f0f"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "3aad8c25f34469f4ecb03e9cd441d9e6315d4f0f"
+          test "${COMPANION_KERNEL_SHA}" = "873154c86c786098c54a7885b8b5f46be291745b"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "873154c86c786098c54a7885b8b5f46be291745b"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage

@@ -4,9 +4,9 @@ from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
 from trusts.errors import TrustsConfigurationError
-from trusts.query import AuthorizedManager, AuthorizedQuerySet
+from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import gh_config
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -265,7 +265,7 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
         self.assertIs(type(Organization.objects), AuthorizedManager)
 
         catalog = _registry()
-        self.assertEqual(catalog.path, CANONICAL_BACKEND)
+        self.assertEqual(catalog.path, gh_config().catalog_path())
         roots = [record.root for record in catalog.records]
         self.assertEqual(
             roots,

@@ -101,15 +101,6 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertNotIn('UserRepositoryPermission', readme)
         self.assertIn('AUTH_USER_MODEL', readme)
         self.assertIn('from gh_permissions.apps import CANONICAL_BACKEND', readme)
-        self.assertIn('from trusts.apps import implementation_for_path', readme)
-        self.assertIn(
-            'registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(',
-            readme,
-        )
-        self.assertIn(
-            'registry.has_permission(user, repository, operation)',
-            readme,
-        )
         self.assertIn('Repository.objects.authorized(user, operation)', readme)
         self.assertNotIn('.exists()', readme)
         self.assertIn(
@@ -202,17 +193,6 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         )
 
 
-class LifecycleImportTest(SimpleTestCase):
-    def test_gh_config_does_not_reexport_the_lifecycle_app(self):
-        source = (ROOT / 'gh_permissions' / 'apps.py').read_text()
-        self.assertIn('class GhPermissionsConfig(AppConfig):', source)
-        self.assertIn('GhAuthorizationBackend().get_registry()', source)
-        self.assertNotIn('implementation_for_path', source)
-        self.assertNotIn('_load_implementation_config', source)
-        self.assertNotIn('TrustsImplementationConfig =', source)
-        self.assertNotIn('1.0.0.dev2', source)
-
-
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
     def test_documented_settings_are_the_live_test_settings(self):
         # README's configure block is the object-authorization install.
@@ -229,7 +209,6 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
                 'django.contrib.staticfiles',
                 'django.contrib.admin',
                 'gh_permissions.apps.GhPermissionsConfig',
-                'trusts.apps.TrustsImplementationConfig',
             ),
         )
         self.assertEqual(settings.AUTH_USER_MODEL, 'example.User')
