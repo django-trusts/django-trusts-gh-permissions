@@ -1,19 +1,21 @@
-"""GH startup proofs on the app-owned catalog.
+"""GH startup proofs on the app-owned policy.
 
-* ``GhPermissionsConfig`` records relations and builds the catalog
+* ``GhPermissionsConfig`` records relations and publishes the policy
 * a missing canonical backend path fails at ``ready()``
-* the listed backend reads that same catalog
+* a second ``ready()`` fails closed
+* the listed backend authorizes from that policy
 """
 
 from __future__ import annotations
 
 from django.apps import apps
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 
-import trusts.apps as trusts_apps
 from trusts.apps import TrustsConfigMixin
+from trusts.backends import policy_document
 from trusts.errors import TrustsConfigurationError
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
@@ -26,39 +28,45 @@ from gh_permissions.models import (
     TeamRepositoryPermission,
 )
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import repository_permission
+from tests.fixtures import gh_trusts, repository_permission
 
 
 class Issue6OwnerProofs(SimpleTestCase):
-    def test_gh_config_owns_the_catalog(self):
+    def test_gh_config_is_the_trusts_mixin(self):
         owner = gh_config()
         self.assertIsInstance(owner, GhPermissionsConfig)
         self.assertIsInstance(owner, TrustsConfigMixin)
         self.assertNotIn('trusts_core', apps.app_configs)
-        self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         names = [config.name for config in apps.get_app_configs()]
         self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.apps', names)
-        catalog = GhAuthorizationBackend().get_catalog()
-        self.assertIs(catalog, owner.get_catalog())
-        self.assertEqual(catalog.path, owner.catalog_path())
 
-    def test_canonical_backend_catalog_path_and_family(self):
-        catalog = GhAuthorizationBackend().get_catalog()
-        self.assertEqual(catalog.path, gh_config().catalog_path())
-        self.assertEqual(catalog.family, 'relationship')
+    def test_policy_document_names_the_gh_config(self):
+        direct = GhAuthorizationBackend().policy_document()
+        project = policy_document()
+        named = policy_document(
+            backend='gh_permissions.backends.GhAuthorizationBackend',
+        )
+        self.assertEqual(direct, project)
+        self.assertEqual(direct, named)
+        self.assertEqual(direct['schema_version'], 1)
+        self.assertEqual(
+            [row['path'] for row in direct['backends']],
+            ['gh_permissions.apps.GhPermissionsConfig'],
+        )
+        self.assertEqual(
+            direct['database']['engine'],
+            settings.DATABASES['default']['ENGINE'],
+        )
 
     def test_ready_registers_ordinary_roots(self):
-        roots = [
-            record.root
-            for record in GhAuthorizationBackend().get_catalog().records
-        ]
+        roots = [trust['root'] for _model, trust in gh_trusts()]
         self.assertEqual(roots, [
-            RepositoryCollaborator,
-            TeamRepositoryPermission,
-            OrganizationOwnership,
-            OrganizationOwnership,
-            IssuePermissions,
+            RepositoryCollaborator._meta.label,
+            TeamRepositoryPermission._meta.label,
+            OrganizationOwnership._meta.label,
+            OrganizationOwnership._meta.label,
+            IssuePermissions._meta.label,
         ])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
@@ -75,7 +83,7 @@ class Issue6OwnerProofs(SimpleTestCase):
 
 
 class Issue6AuthorizationProofs(TestCase):
-    def test_list_authorized_uses_the_app_catalog(self):
+    def test_list_authorized_sees_the_collaborator(self):
         org = Organization.objects.create(
             name='iib-org', owner_group=ensure_owner_group(),
         )
@@ -87,8 +95,10 @@ class Issue6AuthorizationProofs(TestCase):
         )
         collaboration.permissions.add(write)
 
-        catalog = GhAuthorizationBackend().get_catalog()
-        self.assertIs(catalog, gh_config().get_catalog())
-        self.assertEqual(catalog.path, gh_config().catalog_path())
         listed = list(Repository.objects.authorized(user, write))
         self.assertIn(repo, listed)
+        self.assertTrue(
+            GhAuthorizationBackend().has_perm(
+                user, 'gh_permissions.write_repository', repo,
+            ),
+        )

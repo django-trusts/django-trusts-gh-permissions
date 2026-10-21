@@ -34,9 +34,24 @@ def permission_code(permission):
     )
 
 
-def gh_catalog():
-    """Catalog the ready-time sweep stored for the GH backend."""
-    return GhAuthorizationBackend().get_catalog()
+def gh_policy_document():
+    """Policy document for the installed GH backend."""
+    return GhAuthorizationBackend().policy_document()
+
+
+def gh_trusts():
+    """``(content model label, trust row)`` in policy-document order."""
+    backends = gh_policy_document()['backends']
+    if len(backends) != 1:
+        raise AssertionError(
+            'expected one GH policy backend, got %r'
+            % [row['path'] for row in backends]
+        )
+    rows = []
+    for content in backends[0]['contents']:
+        for trust in content.get('trusts', ()):
+            rows.append((content['model'], trust))
+    return rows
 
 
 def policy_sql_text():

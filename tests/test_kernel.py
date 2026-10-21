@@ -8,12 +8,10 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.apps import TrustsConfigMixin
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
 import gh_permissions.models as gh_models
-from gh_permissions.apps import GhPermissionsConfig, gh_config
-from gh_permissions.backends import GhAuthorizationBackend
+from gh_permissions.apps import gh_config
 from gh_permissions.models import Repository
 
 
@@ -28,15 +26,6 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts.apps', names)
         self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
-
-    def test_gh_catalog_belongs_to_gh_permissions_config(self):
-        owner = gh_config()
-        self.assertIsInstance(owner, GhPermissionsConfig)
-        self.assertIsInstance(owner, TrustsConfigMixin)
-        catalog = GhAuthorizationBackend().get_catalog()
-        self.assertIs(catalog, owner.get_catalog())
-        self.assertEqual(catalog.path, owner.catalog_path())
-        self.assertEqual(catalog.family, 'relationship')
 
     def test_repository_uses_stock_authorized_manager(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)

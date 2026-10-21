@@ -2,27 +2,26 @@
 
 from django.test import TestCase
 
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository, TeamRepositoryPermission
-from tests.fixtures import (
-    GhFixtureMixin, gh_catalog, permission_code, policy_sql_text,
-)
+from tests.fixtures import GhFixtureMixin, gh_trusts, permission_code
 
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
     def test_documented_team_mapping_matches_startup_registration(self):
-        record = gh_catalog().records[1]
-        self.assertIs(record.root, TeamRepositoryPermission)
-        self.assertEqual(record.user_path, ('team', 'members'))
-        self.assertIn(
-            'condition: "$permission.id in team__allowed_operations and '
-            'team__organization == repository__organization"',
-            policy_sql_text(),
+        _model, trust = gh_trusts()[1]
+        self.assertEqual(trust['root'], TeamRepositoryPermission._meta.label)
+        self.assertEqual(trust['user']['path'], 'team__members')
+        self.assertEqual(
+            trust['condition'],
+            '$permission.id in team__allowed_operations and '
+            'team__organization == repository__organization',
         )
 
     def test_documented_object_and_listing_share_compiled_policy(self):
-        registry = gh_catalog()
+        backend = GhAuthorizationBackend()
         self.assertTrue(
-            registry.has_perm(
+            backend.has_perm(
                 self.member, permission_code(self.read), self.repo_a,
             ),
         )
@@ -34,7 +33,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
             [self.repo_a],
         )
         self.assertTrue(
-            registry.has_perm(
+            backend.has_perm(
                 self.collaborator, permission_code(self.write), self.repo_b,
             ),
         )
@@ -46,7 +45,7 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
             [self.repo_b],
         )
         self.assertFalse(
-            registry.has_perm(
+            backend.has_perm(
                 self.member, permission_code(self.read), self.repo_b,
             ),
         )
