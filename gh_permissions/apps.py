@@ -39,8 +39,8 @@ class GhPermissionsConfig(TrustsConfigMixin):
     """GH implementation. Owns the recorder and the catalog built from it.
 
     ``ready()`` refuses to start when ``CANONICAL_BACKEND`` is not listed
-    in ``AUTHENTICATION_BACKENDS``. A second call re-checks that path and
-    does not record again.
+    in ``AUTHENTICATION_BACKENDS``. A second call records again, and the
+    frozen recorder raises ``TrustsConfigurationError``.
     """
 
     name = 'gh_permissions'
@@ -55,8 +55,6 @@ class GhPermissionsConfig(TrustsConfigMixin):
                 'AUTHENTICATION_BACKENDS must include %s.'
                 % CANONICAL_BACKEND
             )
-        if self.recorder.frozen:
-            return
 
         # policy and services import model modules. This AppConfig module
         # is imported while the app registry is still populating.

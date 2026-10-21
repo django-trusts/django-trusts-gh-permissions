@@ -45,7 +45,7 @@ def _require_recorder(recorder):
 def register_collaborator(recorder):
     """Register direct repository collaboration."""
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=RepositoryCollaborator,
         user='user',
         permission='permissions',
@@ -56,7 +56,7 @@ def register_collaborator(recorder):
 def register_issue_permissions(recorder):
     """Register a bounded permission bundle over one issue subtree."""
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=IssuePermissions,
         user='user',
         permission='permissions',
@@ -73,7 +73,7 @@ def register_delegation(recorder):
     the sponsor's live ordinary GH grants on the right side.
     """
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=RepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor_ownership__user',
@@ -95,7 +95,7 @@ def register_delegation(recorder):
 def register_personal_delegation(recorder):
     """Register personal-repository delegation without company approval."""
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=PersonalRepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -113,7 +113,7 @@ def register_personal_delegation(recorder):
 def register_all_personal_repositories_delegation(recorder):
     """Register delegation over all of one sponsor's personal repositories."""
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=AllPersonalRepositoriesDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -127,7 +127,7 @@ def register_all_personal_repositories_delegation(recorder):
 def register_team(recorder):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
     recorder = _require_recorder(recorder)
-    return recorder.register(
+    recorder.register(
         trust=TeamRepositoryPermission,
         user='team__members',
         permission='operation',
@@ -151,7 +151,7 @@ def register_organization_owner(recorder):
         permission='organization__owner_group__permissions',
         content='organization',
     )
-    return recorder.register(
+    recorder.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
