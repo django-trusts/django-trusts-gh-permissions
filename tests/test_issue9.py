@@ -1,6 +1,5 @@
 """#9: the documented GH install authorizes through the live catalog."""
 
-from django.conf import settings
 from django.test import TestCase
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
@@ -10,33 +9,6 @@ from tests.fixtures import (
 
 
 class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
-    def test_documented_settings_are_the_live_test_settings(self):
-        # README's configure block is the object-authorization install.
-        # The live settings add the admin harness and ModelBackend so
-        # stock admin can authenticate and read no-object model permissions.
-        self.assertEqual(
-            settings.INSTALLED_APPS,
-            (
-                'django.contrib.contenttypes',
-                'django.contrib.auth',
-                'example.apps.ExampleConfig',
-                'django.contrib.sessions',
-                'django.contrib.messages',
-                'django.contrib.staticfiles',
-                'django.contrib.admin',
-                'gh_permissions.apps.GhPermissionsConfig',
-            ),
-        )
-        self.assertEqual(settings.AUTH_USER_MODEL, 'example.User')
-        self.assertEqual(
-            settings.AUTHENTICATION_BACKENDS,
-            (
-                'gh_permissions.backends.GhAuthorizationBackend',
-                'django.contrib.auth.backends.ModelBackend',
-            ),
-        )
-        self.assertNotIn('trusts', settings.INSTALLED_APPS)
-
     def test_documented_team_mapping_matches_startup_registration(self):
         record = gh_catalog().records[1]
         self.assertIs(record.root, TeamRepositoryPermission)

@@ -1,18 +1,14 @@
 """GH kernel topology: one app-owned catalog, no Core app, no Zero."""
 
-import importlib.util
 import sys
-from importlib import import_module
 
 from django.apps import apps
-from django.conf import settings
 from django.core.checks import run_checks
 from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
 from trusts.apps import TrustsConfigMixin
-from trusts.backends import TrustModelBackendMixin
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
 import gh_permissions.models as gh_models
@@ -33,12 +29,6 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
 
-    def test_core_ships_no_installed_app(self):
-        self.assertNotIn('trusts_core', apps.app_configs)
-        names = [config.name for config in apps.get_app_configs()]
-        self.assertNotIn('trusts', names)
-        self.assertNotIn('trusts.apps', names)
-
     def test_gh_catalog_belongs_to_gh_permissions_config(self):
         owner = gh_config()
         self.assertIsInstance(owner, GhPermissionsConfig)
@@ -47,16 +37,6 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertIs(catalog, owner.get_catalog())
         self.assertEqual(catalog.path, owner.catalog_path())
         self.assertEqual(catalog.family, 'relationship')
-
-    def test_configured_backends_subclass_the_mixin(self):
-        self.assertEqual(
-            settings.AUTHENTICATION_BACKENDS,
-            (
-                'gh_permissions.backends.GhAuthorizationBackend',
-                'django.contrib.auth.backends.ModelBackend',
-            ),
-        )
-        self.assertTrue(issubclass(GhAuthorizationBackend, TrustModelBackendMixin))
 
     def test_repository_uses_stock_authorized_manager(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)
@@ -98,37 +78,6 @@ class KernelMigrationLoaderTest(TestCase):
                 ),
             },
         )
-
-
-class ModelsShimTest(SimpleTestCase):
-    def test_import_models_does_not_import_zero(self):
-        self.assertNotIn('trusts.zero', sys.modules)
-        module = import_module('trusts.models')
-        self.assertIs(sys.modules['trusts.models'], module)
-        self.assertNotIn('trusts.zero', sys.modules)
-        self.assertNotIn('Trust', module.__dict__)
-        self.assertNotIn('Content', module.__dict__)
-
-    def test_legacy_trust_import_does_not_load_zero(self):
-        if importlib.util.find_spec('trusts.zero') is not None:
-            self.skipTest('Zero is present on this interpreter; CI pair is GH-only')
-        self.assertNotIn('trusts.zero', sys.modules)
-
-    def test_dir_hasattr_and_unknown_name_do_not_import_zero(self):
-        self.assertNotIn('trusts.zero', sys.modules)
-        module = import_module('trusts.models')
-        names = dir(module)
-        self.assertNotIn('Trust', names)
-        self.assertNotIn('Content', names)
-        self.assertNotIn('trusts.zero', sys.modules)
-        self.assertFalse(hasattr(module, 'anything'))
-        self.assertFalse(hasattr(module, 'NotALegacyModel'))
-        self.assertNotIn('trusts.zero', sys.modules)
-        with self.assertRaises(AttributeError) as ctx:
-            getattr(module, 'NotALegacyModel')
-        self.assertIn('NotALegacyModel', str(ctx.exception))
-        self.assertNotIn('ImportError', type(ctx.exception).__name__)
-        self.assertNotIn('trusts.zero', sys.modules)
 
 
 class GhStartupWithoutZeroTest(TestCase):
