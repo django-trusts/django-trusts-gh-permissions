@@ -24,15 +24,10 @@ application callable is not stored. Django 6.1 defines
 
 from django.test import TestCase
 
-from trusts.compile.factory import Compiler
 from trusts.compile.nodes import All, Equal, PermissionIn, Ref
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
-from gh_permissions.policy import (
-    register_collaborator,
-    register_organization_owner,
-    register_team,
-)
+from gh_permissions.policy import register_team
 from tests.fixtures import compile_recorder, isolated_recorder
 
 
@@ -69,17 +64,3 @@ class TeamMappingRegistrationTest(TestCase):
         self.assertEqual(membership.refs, (root.team.allowed_operations,))
         self.assertEqual(equality.left, root.team.organization)
         self.assertEqual(equality.right, root.repository.organization)
-
-    def test_helpers_require_a_recorder(self):
-        compiler = Compiler(
-            user_model=Repository,
-            query_compiler=object(),
-            path='tests.team.Compiler',
-            family='relationship',
-        )
-        with self.assertRaises(TypeError):
-            register_team(compiler)
-        with self.assertRaises(TypeError):
-            register_collaborator(compiler)
-        with self.assertRaises(TypeError):
-            register_organization_owner(compiler)

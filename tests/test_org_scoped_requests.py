@@ -9,6 +9,7 @@ repositories they own.
 
 from html.parser import HTMLParser
 
+import django.apps
 from django.contrib import admin
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.contrib.auth import get_user_model
@@ -20,7 +21,6 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from gh_permissions.admin import OrgScopedAdmin
-from gh_permissions.apps import gh_catalog
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -41,7 +41,7 @@ MODEL_BACKEND = 'django.contrib.auth.backends.ModelBackend'
 
 
 def _catalog():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 class _SelectParser(HTMLParser):

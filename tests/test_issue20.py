@@ -5,12 +5,12 @@
 ``content_type__app_label`` and ``codename``.
 """
 
+import django.apps
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase, override_settings
 
 from trusts.backends import TrustModelBackendMixin
 
-from gh_permissions.apps import gh_catalog
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 from tests.fixtures import GhFixtureMixin
@@ -32,7 +32,7 @@ class StringContributingBackend(object):
 
 
 def _catalog():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):

@@ -7,10 +7,11 @@ call, and the two-checkout install sequence.
 
 from pathlib import Path
 
+import django.apps
 from django.conf import settings
 from django.test import SimpleTestCase, TestCase
 
-from gh_permissions.apps import GhPermissionsConfig, gh_catalog
+from gh_permissions.apps import GhPermissionsConfig
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import register_collaborator, register_team
 from tests.fixtures import GhFixtureMixin
@@ -102,8 +103,10 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
         self.assertIn('Organization administration was `OrganizationOwnerPermission`. That\nmodel is gone.', readme)
         self.assertNotIn('UserRepositoryPermission', readme)
         self.assertIn('AUTH_USER_MODEL', readme)
-        self.assertIn('from gh_permissions.apps import gh_catalog', readme)
-        self.assertIn('catalog = gh_catalog()', readme)
+        self.assertIn(
+            "django.apps.apps.get_app_config('gh_permissions').get_catalog()",
+            readme,
+        )
         self.assertIn(
             'catalog.has_permission(user, repository, operation)',
             readme,
@@ -241,7 +244,9 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertNotIn('trusts', settings.INSTALLED_APPS)
 
     def test_documented_team_mapping_matches_startup_registration(self):
-        record = gh_catalog().records[1]
+        record = django.apps.apps.get_app_config(
+            'gh_permissions',
+        ).get_catalog().records[1]
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertEqual(record.user_path, ('team', 'members'))
         self.assertFalse(callable(record.condition))
@@ -250,7 +255,9 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         self.assertIsInstance(record.condition.predicates[1], Equal)
 
     def test_documented_object_and_listing_share_compiled_policy(self):
-        catalog = gh_catalog()
+        catalog = django.apps.apps.get_app_config(
+            'gh_permissions',
+        ).get_catalog()
         self.assertTrue(
             catalog.has_permission(self.member, self.repo_a, self.read),
         )

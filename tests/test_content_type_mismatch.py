@@ -8,6 +8,7 @@ own content identity. The crossed pairs are denials, not exceptions.
 stay the ordinary no-plan denial.
 """
 
+import django.apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
@@ -23,7 +24,6 @@ from trusts.inspect.snapshot import (
     render_policy_sql_bytes,
 )
 
-from gh_permissions.apps import gh_catalog
 from gh_permissions.models import Alias, Organization, Repository, Team
 from gh_permissions.services import create_organization, create_user
 from tests.fixtures import repository_permission
@@ -39,7 +39,7 @@ _REPO_CODES = {
 
 
 def _startup():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 def _permission(model, codename):

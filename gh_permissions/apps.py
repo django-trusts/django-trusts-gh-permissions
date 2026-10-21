@@ -1,36 +1,8 @@
 """GH app config. This app owns its Trusts recorder and catalog."""
 
-from django.apps import apps as django_apps
-from django.core.exceptions import ImproperlyConfigured
 from django.db.models.signals import post_migrate
 
 from trusts.apps import TrustsConfigMixin
-
-
-CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
-
-
-def gh_config(apps_registry=None):
-    """Return the installed ``GhPermissionsConfig`` by class identity."""
-    registry = django_apps if apps_registry is None else apps_registry
-    matches = [
-        config for config in registry.get_app_configs()
-        if type(config) is GhPermissionsConfig
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    if not matches:
-        raise ImproperlyConfigured(
-            'No installed gh_permissions.apps.GhPermissionsConfig.'
-        )
-    raise ImproperlyConfigured(
-        'Multiple GhPermissionsConfig instances: %r' % (matches,)
-    )
-
-
-def gh_catalog():
-    """Catalog this config built in ``ready``."""
-    return gh_config().get_catalog()
 
 
 class GhPermissionsConfig(TrustsConfigMixin):
@@ -50,9 +22,6 @@ class GhPermissionsConfig(TrustsConfigMixin):
     default = True
 
     def ready(self):
-        # Re-entry finds the recorder frozen and stops before register.
-        if self.recorder.frozen:
-            return
         # Phase 1 loads this module before models. policy and services
         # import models, so those imports stay in ready().
         from gh_permissions.policy import (

@@ -21,7 +21,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from trusts.apps import TrustsConfigMixin
 from trusts.plan.relations import PlanQueryCompiler
-from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_catalog, gh_config
+from gh_permissions.apps import GhPermissionsConfig
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     OrganizationOwnership,
@@ -46,7 +46,7 @@ class Issue6OwnerProofs(SimpleTestCase):
         self.assertEqual(len(owners), 1)
         self.assertIsInstance(owners[0], GhPermissionsConfig)
         self.assertIsInstance(owners[0], TrustsConfigMixin)
-        self.assertIs(owners[0], gh_config())
+        self.assertIs(owners[0], apps.get_app_config('gh_permissions'))
         self.assertNotIn('trusts_core', apps.app_configs)
         self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         names = [config.name for config in apps.get_app_configs()]
@@ -54,10 +54,16 @@ class Issue6OwnerProofs(SimpleTestCase):
 
     def test_canonical_backend_resolves_only_through_owner(self):
         owner = apps.get_containing_app_config(GhAuthorizationBackend.__module__)
-        self.assertIs(owner, gh_config())
-        self.assertIn(CANONICAL_BACKEND, settings.AUTHENTICATION_BACKENDS)
+        self.assertIs(owner, apps.get_app_config('gh_permissions'))
+        self.assertIn(
+            'gh_permissions.backends.GhAuthorizationBackend',
+            settings.AUTHENTICATION_BACKENDS,
+        )
         backend = GhAuthorizationBackend()
-        self.assertIs(backend.catalog, gh_catalog())
+        self.assertIs(
+            backend.catalog,
+            apps.get_app_config('gh_permissions').get_catalog(),
+        )
         self.assertIsInstance(backend.catalog.compiler, PlanQueryCompiler)
 
     def test_mixin_resolves_owner_without_removed_core_surfaces(self):
@@ -65,10 +71,13 @@ class Issue6OwnerProofs(SimpleTestCase):
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
         backend = GhAuthorizationBackend()
-        self.assertIs(backend.catalog, gh_catalog())
+        self.assertIs(
+            backend.catalog,
+            apps.get_app_config('gh_permissions').get_catalog(),
+        )
         self.assertIs(
             apps.get_containing_app_config(type(backend).__module__),
-            gh_config(),
+            apps.get_app_config('gh_permissions'),
         )
 
     def test_ready_resolves_owner_without_removed_core_surfaces(self):
@@ -77,9 +86,12 @@ class Issue6OwnerProofs(SimpleTestCase):
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
         self.assertIs(
             apps.get_containing_app_config(GhAuthorizationBackend.__module__),
-            gh_config(),
+            apps.get_app_config('gh_permissions'),
         )
-        roots = [record.root for record in gh_catalog().records]
+        roots = [
+            record.root
+            for record in apps.get_app_config('gh_permissions').get_catalog().records
+        ]
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,
@@ -161,6 +173,9 @@ class Issue6AuthorizationProofs(TestCase):
 
         self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
         backend = GhAuthorizationBackend()
-        self.assertIs(backend.catalog, gh_catalog())
+        self.assertIs(
+            backend.catalog,
+            apps.get_app_config('gh_permissions').get_catalog(),
+        )
         listed = list(Repository.objects.authorized(user, write))
         self.assertIn(repo, listed)

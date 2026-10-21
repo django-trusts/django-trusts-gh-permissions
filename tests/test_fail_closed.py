@@ -1,5 +1,6 @@
 """Malformed, incomplete, or stale registrations fail closed."""
 
+import django.apps
 from django.core.checks import run_checks
 from django.test import SimpleTestCase, TestCase
 
@@ -7,7 +8,6 @@ from trusts.compile.nodes import Ref
 from trusts.errors import TrustsConfigurationError
 
 from gh_permissions import policy as gh_policy
-from gh_permissions.apps import gh_catalog, gh_config
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -114,7 +114,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertEqual(compiler.records, ())
 
     def test_late_registration_after_freeze_is_rejected(self):
-        recorder = gh_config().recorder
+        recorder = django.apps.apps.get_app_config('gh_permissions').recorder
         self.assertTrue(recorder.frozen)
         with self.assertNumQueries(0):
             with self.assertRaises(TrustsConfigurationError):
@@ -189,7 +189,12 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 compile_recorder(duplicate)
 
     def test_startup_registers_direct_and_team_roots(self):
-        roots = [record.root for record in gh_catalog().records]
+        roots = [
+            record.root
+            for record in django.apps.apps.get_app_config(
+                'gh_permissions',
+            ).get_catalog().records
+        ]
         self.assertEqual(roots, [
             RepositoryCollaborator,
             TeamRepositoryPermission,

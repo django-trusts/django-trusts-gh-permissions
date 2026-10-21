@@ -13,7 +13,7 @@ from django.test import SimpleTestCase, TestCase
 from trusts.apps import TrustsConfigMixin
 from trusts.models import AuthorizedManager
 
-from gh_permissions.apps import GhPermissionsConfig, gh_config
+from gh_permissions.apps import GhPermissionsConfig
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
 
@@ -43,7 +43,7 @@ class KernelIdentityTest(SimpleTestCase):
         ]
         self.assertEqual(len(owners), 1)
         self.assertIsInstance(owners[0], GhPermissionsConfig)
-        self.assertIs(owners[0], gh_config())
+        self.assertIs(owners[0], apps.get_app_config('gh_permissions'))
         self.assertIs(
             apps.get_containing_app_config(GhAuthorizationBackend.__module__),
             owners[0],
@@ -162,7 +162,10 @@ class GhStartupWithoutZeroTest(TestCase):
         )
         self.assertTrue(apps.is_installed('gh_permissions'))
         self.assertNotIn('trusts.zero', sys.modules)
-        self.assertIn(Repository, list(gh_config().get_models()))
+        self.assertIn(
+            Repository,
+            list(apps.get_app_config('gh_permissions').get_models()),
+        )
 
     def test_system_checks_are_clean_and_zero_sql(self):
         self.assertNotIn('trusts.zero', sys.modules)

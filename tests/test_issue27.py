@@ -8,6 +8,7 @@ the owner bundle.
 
 from unittest.mock import patch
 
+import django.apps
 from django.apps import apps as global_apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.management import create_permissions
@@ -19,7 +20,6 @@ from django.test import TestCase, TransactionTestCase
 
 from trusts.inspect.snapshot import render_policy_sql_bytes
 
-from gh_permissions.apps import gh_catalog
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -52,7 +52,7 @@ from tests.test_migration_0002 import _ALIAS, _wipe
 
 
 def _startup_catalog():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 def _manage():

@@ -2,16 +2,15 @@
 
 from unittest.mock import patch
 
+import django.apps
+from django.contrib.auth import get_backends
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
-
-from django.contrib.auth import get_backends
 
 from trusts.backends import TrustModelBackendMixin
 from trusts.errors import TrustsConfigurationError
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
-from gh_permissions.apps import gh_catalog
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
@@ -25,7 +24,7 @@ from tests.fixtures import GhFixtureMixin
 
 
 def _catalog():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):

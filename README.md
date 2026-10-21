@@ -298,11 +298,12 @@ takes that permission instance. `has_perm` and `permitted` also accept
 the Django permission string as the alias.
 
 ```python
+import django.apps
+
 from example.models import User
-from gh_permissions.apps import gh_catalog
 from gh_permissions.models import Repository
 
-catalog = gh_catalog()
+catalog = django.apps.apps.get_app_config('gh_permissions').get_catalog()
 catalog.has_permission(user, repository, operation)
 Repository.objects.authorized(user, operation)
 user.has_perm('gh_permissions.read_repository', repository)

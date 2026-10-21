@@ -1,5 +1,6 @@
 """Consumer proof for bounded GitHub-style sub-issue triage (#46)."""
 
+import django.apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
@@ -7,7 +8,6 @@ from django.test import TestCase
 
 from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
 
-from gh_permissions.apps import gh_catalog
 from gh_permissions.models import (
     Issue,
     IssuePermissions,
@@ -219,6 +219,8 @@ class SubIssueShapeTest(TestCase):
 
 class SubIssueStartupTest(TestCase):
     def test_issue_registration_is_the_last_ordinary_record(self):
-        record = gh_catalog().records[-1]
+        record = django.apps.apps.get_app_config(
+            'gh_permissions',
+        ).get_catalog().records[-1]
         self.assertIs(record.root, IssuePermissions)
         self.assertEqual(record.along.path, ('issue', 'parent'))

@@ -9,6 +9,7 @@ any other user. Django's own ``User.has_perm`` and stock
 
 from pathlib import Path
 
+import django.apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
@@ -17,7 +18,6 @@ from django.test import RequestFactory, TestCase
 
 from gh_permissions import admin as admin_module
 from gh_permissions.admin import OrganizationAdmin, OrganizationOwnershipAdmin
-from gh_permissions.apps import gh_catalog
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
@@ -43,7 +43,7 @@ _MANAGE = 'gh_permissions.manage_organization'
 
 
 def _catalog():
-    return gh_catalog()
+    return django.apps.apps.get_app_config('gh_permissions').get_catalog()
 
 
 def _request(user):
