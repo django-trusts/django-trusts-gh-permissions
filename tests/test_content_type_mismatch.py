@@ -8,13 +8,12 @@ own content identity. The crossed pairs are denials, not exceptions.
 stay the ordinary no-plan denial.
 """
 
-import yaml
-
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest
 from django.test import TestCase
+import yaml
 
 from trusts.decorators import authorization_required
 

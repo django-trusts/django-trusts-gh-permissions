@@ -37,7 +37,6 @@ Issues = "https://github.com/django-trusts/django-trusts-gh-permissions/issues"
 [project.optional-dependencies]
 test = [
     "coverage>=7.0",
-    "PyYAML>=6.0.3",
 ]
 
 # django-trusts>=1.0.0.dev3,<2 is required (final core library floor).

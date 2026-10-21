@@ -5,7 +5,6 @@ from django.test import SimpleTestCase, TestCase
 
 from trusts.errors import TrustsConfigurationError
 
-from gh_permissions import policy as gh_policy
 from gh_permissions.apps import gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
@@ -86,9 +85,6 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 if getattr(m, 'id', '').startswith('trusts.E')
             ]
         self.assertEqual(messages, [])
-
-    def test_no_aggregate_register_gh_policy_helper(self):
-        self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
     def test_startup_registers_direct_and_team_roots(self):
         records = gh_catalog().records

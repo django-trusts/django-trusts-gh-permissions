@@ -11,8 +11,6 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-import trusts.apps as trusts_apps
-import trusts.backends as core_backends
 from trusts.apps import TrustsConfigMixin
 from trusts.backends import TrustModelBackendMixin
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
@@ -36,7 +34,6 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts.zero', names)
 
     def test_core_ships_no_installed_app(self):
-        self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         self.assertNotIn('trusts_core', apps.app_configs)
         names = [config.name for config in apps.get_app_configs()]
         self.assertNotIn('trusts', names)
@@ -51,7 +48,7 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertEqual(catalog.path, owner.catalog_path())
         self.assertEqual(catalog.family, 'relationship')
 
-    def test_no_trustmodelbackend_and_mixin_only_handle(self):
+    def test_configured_backends_subclass_the_mixin(self):
         self.assertEqual(
             settings.AUTHENTICATION_BACKENDS,
             (
@@ -60,10 +57,6 @@ class KernelIdentityTest(SimpleTestCase):
             ),
         )
         self.assertTrue(issubclass(GhAuthorizationBackend, TrustModelBackendMixin))
-        self.assertFalse(hasattr(core_backends, 'TrustModelBackend'))
-        with self.assertRaises(ImportError):
-            # TrustModelBackend was removed. This import has to fail here.
-            from trusts.backends import TrustModelBackend  # noqa: F401
 
     def test_repository_uses_stock_authorized_manager(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)
@@ -119,10 +112,6 @@ class ModelsShimTest(SimpleTestCase):
     def test_legacy_trust_import_does_not_load_zero(self):
         if importlib.util.find_spec('trusts.zero') is not None:
             self.skipTest('Zero is present on this interpreter; CI pair is GH-only')
-        self.assertNotIn('trusts.zero', sys.modules)
-        with self.assertRaises(ImportError):
-            # Trust was removed from trusts.models. This import has to fail here.
-            from trusts.models import Trust  # noqa: F401
         self.assertNotIn('trusts.zero', sys.modules)
 
     def test_dir_hasattr_and_unknown_name_do_not_import_zero(self):

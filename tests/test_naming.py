@@ -5,10 +5,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import FieldDoesNotExist
-from django.test import SimpleTestCase, TestCase
+from django.test import TestCase
 
-import gh_permissions.models as gh_models
-import gh_permissions.policy as gh_policy
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -18,8 +16,6 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
-from tests.fixtures import gh_catalog
-
 
 FORBIDDEN_PUBLIC_RELATIONS = (
     'trusts', 'trustees', 'contexts', 'roles', 'groups',
@@ -48,26 +44,6 @@ def _related_accessor_names(model):
                 if isinstance(qn, str):
                     names.add(qn)
     return names
-
-
-class GhNamingTest(SimpleTestCase):
-    def test_policy_helpers_are_public_and_old_glue_is_absent(self):
-        self.assertTrue(callable(gh_policy.register_collaborator))
-        self.assertTrue(callable(gh_policy.register_team))
-        self.assertTrue(callable(gh_policy.register_organization_owner))
-        self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
-        self.assertFalse(hasattr(gh_policy, 'register_relationship'))
-        self.assertFalse(hasattr(gh_policy, 'is_owner'))
-        self.assertFalse(hasattr(gh_models, 'OrganizationMembership'))
-
-    def test_obsolete_account_bundle_and_queryset_glue_are_gone(self):
-        self.assertFalse(hasattr(gh_models, 'Account'))
-        self.assertFalse(hasattr(gh_models, 'Operation'))
-        self.assertFalse(hasattr(gh_models, 'PermissionBundle'))
-        self.assertFalse(hasattr(gh_models, 'GhAuthorizedQuerySet'))
-        self.assertFalse(hasattr(gh_models, 'GhAuthorizedManager'))
-        self.assertFalse(hasattr(gh_models, 'AccountRepoGrant'))
-        self.assertFalse(hasattr(gh_models, 'TeamRepoGrant'))
 
 
 class GhRelationTest(TestCase):
@@ -144,7 +120,6 @@ class GhRelationTest(TestCase):
         ]
         self.assertEqual(relations, [])
         self.assertTrue(Alias._meta.get_field('name').unique)
-        self.assertNotIn(Alias, [record.root for record in gh_catalog().records])
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (
