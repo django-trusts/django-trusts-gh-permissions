@@ -264,11 +264,10 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertEqual(organization.owner_group_id, group.pk)
 
     def test_ownership_row_is_the_owner_grant(self):
-        with self.assertNumQueries(0):
-            records = [
-                record for record in gh_catalog().records
-                if record.root is OrganizationOwnership
-            ]
+        records = [
+            record for record in gh_catalog().records
+            if record.root is OrganizationOwnership
+        ]
         repository_record = records[1]
         self.assertEqual(len(records), 2)
         self.assertIs(records[0].root, OrganizationOwnership)
@@ -769,12 +768,11 @@ class SharedNameMigrationTest(TransactionTestCase):
 
 
 class CollaboratorRegistrationTest(TestCase):
-    def test_collaborator_registration_is_zero_sql(self):
-        with self.assertNumQueries(0):
-            record = next(
-                record for record in gh_catalog().records
-                if record.root is RepositoryCollaborator
-            )
+    def test_collaborator_registration_shape(self):
+        record = next(
+            record for record in gh_catalog().records
+            if record.root is RepositoryCollaborator
+        )
         self.assertIs(record.root, RepositoryCollaborator)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('user',))

@@ -90,6 +90,9 @@ def main() -> int:
     import gh_permissions.policy
     from django.apps import apps as django_apps
     from gh_permissions.apps import GhPermissionsConfig, gh_config
+    # After django.setup(): TrustsConfigMixin is imported with the installed
+    # GH app config. This script configures settings only in this function,
+    # so the import cannot run at module import time.
     from trusts.apps import TrustsConfigMixin
     from gh_permissions.models import (
         AllPersonalRepositoriesDelegation,
@@ -101,6 +104,8 @@ def main() -> int:
         IssuePermissions,
         TeamRepositoryPermission,
     )
+    # After django.setup(): the backend reads its catalog from the
+    # containing app config, which exists only once apps are ready.
     from gh_permissions.backends import GhAuthorizationBackend
 
     gh_file = Path(gh_permissions.__file__).resolve()

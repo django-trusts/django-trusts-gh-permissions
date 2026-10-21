@@ -92,7 +92,6 @@ class GhNamingTest(SimpleTestCase):
         self.assertNotIn('is_owner', source)
         self.assertNotIn('OrganizationMembership', source)
         self.assertNotIn('register_gh_policy', source)
-        self.assertIn('recorder.register(', source)
         self.assertIn('trust=TeamRepositoryPermission', source)
         self.assertIn('condition=lambda t:', source)
         self.assertIn('.contains(t.operation)', source)

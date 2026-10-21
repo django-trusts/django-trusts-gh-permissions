@@ -1,7 +1,10 @@
 """Shared GH fixtures. Not authorization policy."""
 
+from io import StringIO
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.management import call_command
 
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
@@ -34,6 +37,13 @@ def permission_code(permission):
 def gh_catalog():
     """Catalog the ready-time sweep stored for the GH backend."""
     return GhAuthorizationBackend().get_catalog()
+
+
+def policy_sql_text():
+    """Canonical policy YAML from the public ``trusts_policy_sql`` command."""
+    buf = StringIO()
+    call_command('trusts_policy_sql', stdout=buf)
+    return buf.getvalue()
 
 
 class GhFixtureMixin(object):

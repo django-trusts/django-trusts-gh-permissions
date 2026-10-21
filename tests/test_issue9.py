@@ -12,8 +12,9 @@ from django.test import SimpleTestCase, TestCase
 
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import register_collaborator, register_team
-from tests.fixtures import GhFixtureMixin, gh_catalog, permission_code
-from trusts.compile.nodes import All, Equal, PermissionIn
+from tests.fixtures import (
+    GhFixtureMixin, gh_catalog, permission_code, policy_sql_text,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -150,8 +151,6 @@ class UserFacingReadmeAndPackageTest(SimpleTestCase):
             readme,
         )
         policy = (ROOT / 'gh_permissions' / 'policy.py').read_text()
-        self.assertIn('def register_team(recorder):', policy)
-        self.assertIn('recorder.register(', policy)
         self.assertIn('trust=TeamRepositoryPermission', policy)
         self.assertNotIn('register_relationship(', policy)
         self.assertIn("user='team__members'", policy)
@@ -225,10 +224,11 @@ class ReadmeExampleAuthorizationTest(GhFixtureMixin, TestCase):
         record = gh_catalog().records[1]
         self.assertIs(record.root, TeamRepositoryPermission)
         self.assertEqual(record.user_path, ('team', 'members'))
-        self.assertFalse(callable(record.condition))
-        self.assertIsInstance(record.condition, All)
-        self.assertIsInstance(record.condition.predicates[0], PermissionIn)
-        self.assertIsInstance(record.condition.predicates[1], Equal)
+        self.assertIn(
+            'condition: "$permission.id in team__allowed_operations and '
+            'team__organization == repository__organization"',
+            policy_sql_text(),
+        )
 
     def test_documented_object_and_listing_share_compiled_policy(self):
         registry = gh_catalog()

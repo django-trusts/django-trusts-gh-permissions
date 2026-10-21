@@ -11,7 +11,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
 from trusts.apps import TrustsConfigMixin
-from trusts.models import AuthorizedManager
+from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
 from gh_permissions.apps import GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
@@ -65,7 +65,6 @@ class KernelIdentityTest(SimpleTestCase):
 
     def test_repository_uses_stock_authorized_manager(self):
         import gh_permissions.models as gh_models
-        from trusts.models import AuthorizedQuerySet
 
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)

@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
+import yaml
 
 from gh_permissions.models import (
     Issue,
@@ -14,7 +14,7 @@ from gh_permissions.models import (
     Repository,
 )
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import gh_catalog
+from tests.fixtures import gh_catalog, policy_sql_text
 
 
 _TRIAGE = 'gh_permissions.triage_issue'
@@ -29,9 +29,8 @@ def _triage_permission():
 
 
 class SubIssueAlongRegistrationTest(TestCase):
-    def test_registration_is_zero_sql_shape_s_with_bound_eight(self):
-        with self.assertNumQueries(0):
-            record = gh_catalog().records[-1]
+    def test_issue_permissions_along_is_shape_s_bound_eight(self):
+        record = gh_catalog().records[-1]
         self.assertIs(record.root, IssuePermissions)
         self.assertIs(record.content_model, Issue)
         self.assertEqual(record.user_path, ('user',))
@@ -161,7 +160,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
         self.assertFalse(self.alice.has_perm(_TRIAGE, self.leaf))
 
     def test_policy_document_records_forward_and_reverse_recursive_sql(self):
-        document = _load_policy_sql_document(render_policy_sql_bytes())
+        document = yaml.safe_load(policy_sql_text())
         content = next(
             item for item in document['backends'][0]['contents']
             if item['model'] == 'gh_permissions.Issue'

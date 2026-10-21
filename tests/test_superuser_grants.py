@@ -31,10 +31,7 @@ from gh_permissions.services import (
     create_repository,
     create_user,
 )
-from trusts.decorators import (
-    _declared_authorization_guards,
-    authorization_required,
-)
+from trusts.decorators import authorization_required
 from tests.fixtures import gh_catalog
 
 
@@ -44,6 +41,13 @@ _MANAGE = 'gh_permissions.manage_organization'
 
 def _catalog():
     return gh_catalog()
+
+
+def _guard_ok(request, pk):
+    return 'ok'
+
+
+_manage_guard = authorization_required(Organization, _MANAGE)(_guard_ok)
 
 
 def _request(user):
@@ -130,6 +134,7 @@ class SuperuserGrantTests(TestCase):
             set(),
         )
         self.assertEqual(backend.get_user_permissions(stranger), set())
+        self.assertFalse(hasattr(backend, 'with_perm'))
         self.assertFalse(hasattr(Repository.objects, 'with_perm'))
         self.assertFalse(hasattr(Repository, 'with_perm'))
         # Stock PermissionsMixin. Object checks on this backend do not.
@@ -266,20 +271,9 @@ class SuperuserGrantTests(TestCase):
         self.assertIn(self.superuser.personal_organization, visible)
 
     def test_authorization_required_denies_an_ungranted_superuser(self):
-        guarded = authorization_required(Organization, _MANAGE)(
-            lambda request, pk: 'ok',
+        with self.assertRaises(PermissionDenied):
+            _manage_guard(_request(self.superuser), pk=self.organization.pk)
+        self.assertEqual(
+            _manage_guard(_request(self.owner), pk=self.organization.pk),
+            'ok',
         )
-        try:
-            with self.assertRaises(PermissionDenied):
-                guarded(_request(self.superuser), pk=self.organization.pk)
-            self.assertEqual(
-                guarded(_request(self.owner), pk=self.organization.pk),
-                'ok',
-            )
-        finally:
-            try:
-                _declared_authorization_guards.remove(
-                    (Organization, _MANAGE, ()),
-                )
-            except ValueError:
-                pass

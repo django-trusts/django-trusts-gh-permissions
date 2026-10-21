@@ -6,14 +6,18 @@ from django.test import SimpleTestCase, TestCase
 from trusts.errors import TrustsConfigurationError
 
 from gh_permissions import policy as gh_policy
+from gh_permissions.apps import gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
+    Alias,
     Organization,
     OrganizationOwnership,
     RepositoryCollaborator,
     IssuePermissions,
+    Team,
     TeamRepositoryPermission,
 )
+from gh_permissions.policy import register_collaborator
 from tests.fixtures import GhFixtureMixin, gh_catalog, permission_code
 
 
@@ -39,6 +43,18 @@ class UnsupportedGhBehaviorTest(SimpleTestCase):
 
 
 class GhFailClosedTest(GhFixtureMixin, TestCase):
+    def test_late_registration_after_freeze_raises(self):
+        with self.assertRaises(TrustsConfigurationError):
+            register_collaborator(gh_config().recorder)
+
+    def test_unregistered_resource_fails_closed(self):
+        backend = GhAuthorizationBackend()
+        team = Team.objects.create(organization=self.org_a, name='unplanned')
+        alias = Alias.objects.create(name='unplanned-alias')
+        code = permission_code(self.read)
+        self.assertFalse(backend.has_perm(self.member, code, team))
+        self.assertFalse(backend.has_perm(self.member, code, alias))
+
     def test_repository_read_does_not_grant_the_organization(self):
         backend = GhAuthorizationBackend()
         self.assertFalse(

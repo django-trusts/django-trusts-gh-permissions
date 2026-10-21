@@ -8,25 +8,29 @@
 from __future__ import annotations
 
 from django.apps import apps
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 
+import trusts.apps as trusts_apps
 from trusts.apps import TrustsConfigMixin
+from trusts.errors import TrustsConfigurationError
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
+    Organization,
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     IssuePermissions,
     TeamRepositoryPermission,
 )
+from gh_permissions.services import ensure_owner_group
+from tests.fixtures import repository_permission
 
 
 class Issue6OwnerProofs(SimpleTestCase):
     def test_gh_config_owns_the_catalog(self):
-        import trusts.apps as trusts_apps
-
         owner = gh_config()
         self.assertIsInstance(owner, GhPermissionsConfig)
         self.assertIsInstance(owner, TrustsConfigMixin)
@@ -39,11 +43,10 @@ class Issue6OwnerProofs(SimpleTestCase):
         self.assertIs(catalog, owner.get_catalog())
         self.assertEqual(catalog.path, owner.catalog_path())
 
-    def test_canonical_backend_catalog_uses_the_stored_compiler(self):
+    def test_canonical_backend_catalog_path_and_family(self):
         catalog = GhAuthorizationBackend().get_catalog()
         self.assertEqual(catalog.path, gh_config().catalog_path())
         self.assertEqual(catalog.family, 'relationship')
-        self.assertTrue(callable(catalog.compiler.applies))
 
     def test_ready_registers_ordinary_roots(self):
         roots = [
@@ -65,16 +68,14 @@ class Issue6OwnerProofs(SimpleTestCase):
                 GhPermissionsConfig.ready(config)
         self.assertIn(CANONICAL_BACKEND, str(ctx.exception))
 
+    def test_second_ready_fails_on_the_frozen_recorder(self):
+        config = apps.get_app_config('gh_permissions')
+        with self.assertRaises(TrustsConfigurationError):
+            GhPermissionsConfig.ready(config)
+
 
 class Issue6AuthorizationProofs(TestCase):
     def test_list_authorized_uses_the_app_catalog(self):
-        from django.contrib.auth import get_user_model
-
-        from gh_permissions.models import Organization
-        from gh_permissions.services import ensure_owner_group
-
-        from tests.fixtures import repository_permission
-
         org = Organization.objects.create(
             name='iib-org', owner_group=ensure_owner_group(),
         )

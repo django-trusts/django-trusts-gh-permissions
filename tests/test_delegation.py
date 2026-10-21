@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from trusts.inspect.snapshot import _load_policy_sql_document, render_policy_sql_bytes
+import yaml
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
@@ -18,7 +18,7 @@ from gh_permissions.models import (
     TeamRepositoryPermission,
 )
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import repository_permission
+from tests.fixtures import policy_sql_text, repository_permission
 
 
 _READ = 'gh_permissions.read_repository'
@@ -388,7 +388,7 @@ class RepositoryDelegationTest(TestCase):
         self._assert_all_projections(False)
 
     def test_policy_lock_shows_left_requirements_and_ordinary_inner_union(self):
-        document = _load_policy_sql_document(render_policy_sql_bytes())
+        document = yaml.safe_load(policy_sql_text())
         repository = next(
             content
             for content in document['backends'][0]['contents']
@@ -489,4 +489,4 @@ class RepositoryDelegationTest(TestCase):
                 self.assertIn('sponsor_ownership_id', sql)
 
         with open(settings.TRUSTS_POLICY_LOCKFILE, 'rb') as lockfile:
-            self.assertEqual(lockfile.read(), render_policy_sql_bytes())
+            self.assertEqual(lockfile.read(), policy_sql_text().encode())
