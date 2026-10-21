@@ -1,11 +1,11 @@
 """Consumer proof for bounded GitHub-style sub-issue triage (#46)."""
 
+import yaml
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
 from django.test import TestCase
-
-import yaml
 
 from gh_permissions.models import (
     Issue,

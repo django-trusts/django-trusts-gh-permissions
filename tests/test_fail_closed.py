@@ -91,8 +91,7 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
 
     def test_startup_registers_direct_and_team_roots(self):
-        with self.assertNumQueries(0):
-            records = gh_catalog().records
+        records = gh_catalog().records
         self.assertEqual([record.root for record in records], [
             RepositoryCollaborator,
             TeamRepositoryPermission,

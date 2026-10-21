@@ -46,6 +46,11 @@ def policy_sql_text():
     return buf.getvalue()
 
 
+def guard_ok(request, pk):
+    """Trivial view body. Tests wrap it with ``authorization_required``."""
+    return 'ok'
+
+
 class GhFixtureMixin(object):
     """Two orgs, team + direct paths, and the partial-path counters."""
 

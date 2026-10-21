@@ -32,7 +32,7 @@ from gh_permissions.services import (
     create_user,
 )
 from trusts.decorators import authorization_required
-from tests.fixtures import gh_catalog
+from tests.fixtures import gh_catalog, guard_ok
 
 
 _READ = 'gh_permissions.read_repository'
@@ -43,11 +43,7 @@ def _catalog():
     return gh_catalog()
 
 
-def _guard_ok(request, pk):
-    return 'ok'
-
-
-_manage_guard = authorization_required(Organization, _MANAGE)(_guard_ok)
+_manage_guard = authorization_required(Organization, _MANAGE)(guard_ok)
 
 
 def _request(user):

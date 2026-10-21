@@ -17,8 +17,6 @@ from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
-from trusts.inspect.snapshot import render_policy_sql_bytes
-
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -42,7 +40,9 @@ from gh_permissions.services import (
     rename_organization,
     rename_user,
 )
-from tests.fixtures import gh_catalog, permission_code, repository_permission
+from tests.fixtures import (
+    gh_catalog, permission_code, policy_sql_text, repository_permission,
+)
 from tests.test_migration_0002 import _ALIAS, _wipe
 
 
@@ -401,7 +401,7 @@ class OwnershipAndCollaborationTest(TestCase):
             'OrganizationOwnership',
             'IssuePermissions',
         ])
-        rendered = render_policy_sql_bytes(alias='default').decode('utf-8')
+        rendered = policy_sql_text()
         self.assertIn('schema_version: 1', rendered)
         self.assertIn('RepositoryCollaborator', rendered)
         self.assertIn('IssuePermissions', rendered)

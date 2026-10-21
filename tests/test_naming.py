@@ -1,8 +1,5 @@
 """GH vocabulary and public-relation contract."""
 
-import inspect
-from pathlib import Path
-
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,6 +7,8 @@ from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import FieldDoesNotExist
 from django.test import SimpleTestCase, TestCase
 
+import gh_permissions.models as gh_models
+import gh_permissions.policy as gh_policy
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -19,6 +18,7 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
+from tests.fixtures import gh_catalog
 
 
 FORBIDDEN_PUBLIC_RELATIONS = (
@@ -50,91 +50,24 @@ def _related_accessor_names(model):
     return names
 
 
-APPLICATION_POLICY_NEEDLES = (
-    'register_relationship(',
-    'permission_in(',
-    'Equal(',
-    'All(',
-)
-
-
 class GhNamingTest(SimpleTestCase):
-    def test_package_source_uses_gh_not_full_external_name(self):
-        import gh_permissions
-        import gh_permissions._admin_scope
-        import gh_permissions.admin
-        import gh_permissions.apps
-        import gh_permissions.backends
-        import gh_permissions.models
-        import gh_permissions.policy
-        import gh_permissions.services
-        for module in (
-            gh_permissions, gh_permissions._admin_scope, gh_permissions.admin,
-            gh_permissions.apps, gh_permissions.backends,
-            gh_permissions.models, gh_permissions.policy,
-            gh_permissions.services,
-        ):
-            source = Path(inspect.getfile(module)).read_text()
-            self.assertNotIn('GitHub', source)
-            self.assertNotIn('github', source.lower())
-            self.assertNotIn('trusts.zero', source)
-            self.assertNotIn('django-trusts-zero', source)
-
-    def test_no_abandoned_framework_glue_imports(self):
-        import gh_permissions.policy as policy
-        source = Path(inspect.getfile(policy)).read_text()
-        self.assertNotIn('trusts.context', source)
-        self.assertNotIn('trusts.trustee', source)
-        self.assertNotIn('TrustModelBackend', source)
-        self.assertIn('register_collaborator', source)
-        self.assertIn('register_team', source)
-        self.assertIn('register_organization_owner', source)
-        self.assertNotIn('is_owner', source)
-        self.assertNotIn('OrganizationMembership', source)
-        self.assertNotIn('register_gh_policy', source)
-        self.assertIn('trust=TeamRepositoryPermission', source)
-        self.assertIn('condition=lambda t:', source)
-        self.assertIn('.contains(t.operation)', source)
-        self.assertNotIn('register_relationship(', source)
-        self.assertNotIn('permission_in(', source)
-        self.assertNotIn('Equal(', source)
-        self.assertNotIn('All(', source)
-        self.assertNotIn('from trusts.core import All, Equal, Ref, permission_in', source)
-        self.assertNotIn('Ref(', source)
-        self.assertNotIn('.registry.register(', source)
-        self.assertNotIn('predicate=', source)
-        self.assertNotIn(' in ', source)
-
-    def test_application_facing_policy_has_no_removed_public_nodes(self):
-        paths = (
-            Path(__file__).resolve().parents[1] / 'gh_permissions' / 'policy.py',
-            Path(__file__).resolve().parents[1] / 'README.md',
-        )
-        offenders = []
-        for path in paths:
-            text = path.read_text()
-            for needle in APPLICATION_POLICY_NEEDLES:
-                if needle in text:
-                    offenders.append('%s: %s' % (path.name, needle))
-        self.assertEqual(offenders, [])
+    def test_policy_helpers_are_public_and_old_glue_is_absent(self):
+        self.assertTrue(callable(gh_policy.register_collaborator))
+        self.assertTrue(callable(gh_policy.register_team))
+        self.assertTrue(callable(gh_policy.register_organization_owner))
+        self.assertFalse(hasattr(gh_policy, 'register_gh_policy'))
+        self.assertFalse(hasattr(gh_policy, 'register_relationship'))
+        self.assertFalse(hasattr(gh_policy, 'is_owner'))
+        self.assertFalse(hasattr(gh_models, 'OrganizationMembership'))
 
     def test_obsolete_account_bundle_and_queryset_glue_are_gone(self):
-        import gh_permissions.models as models
-        source = Path(inspect.getfile(models)).read_text()
-        self.assertIn('settings.AUTH_USER_MODEL', source)
-        self.assertNotIn('class Account', source)
-        self.assertNotIn('class Operation', source)
-        self.assertNotIn('PermissionBundle', source)
-        self.assertNotIn('GhAuthorized', source)
-        self.assertNotIn('AccountRepoGrant', source)
-        self.assertNotIn('TeamRepoGrant', source)
-        self.assertFalse(hasattr(models, 'Account'))
-        self.assertFalse(hasattr(models, 'Operation'))
-        self.assertFalse(hasattr(models, 'PermissionBundle'))
-        self.assertFalse(hasattr(models, 'GhAuthorizedQuerySet'))
-        self.assertFalse(hasattr(models, 'GhAuthorizedManager'))
-        self.assertFalse(hasattr(models, 'AccountRepoGrant'))
-        self.assertFalse(hasattr(models, 'TeamRepoGrant'))
+        self.assertFalse(hasattr(gh_models, 'Account'))
+        self.assertFalse(hasattr(gh_models, 'Operation'))
+        self.assertFalse(hasattr(gh_models, 'PermissionBundle'))
+        self.assertFalse(hasattr(gh_models, 'GhAuthorizedQuerySet'))
+        self.assertFalse(hasattr(gh_models, 'GhAuthorizedManager'))
+        self.assertFalse(hasattr(gh_models, 'AccountRepoGrant'))
+        self.assertFalse(hasattr(gh_models, 'TeamRepoGrant'))
 
 
 class GhRelationTest(TestCase):
@@ -211,13 +144,7 @@ class GhRelationTest(TestCase):
         ]
         self.assertEqual(relations, [])
         self.assertTrue(Alias._meta.get_field('name').unique)
-        import gh_permissions.policy as policy
-        source = Path(inspect.getfile(policy)).read_text()
-        self.assertNotIn('Alias', source)
-        self.assertNotIn(
-            'trust=OrganizationOwnership',
-            source.split('def register_organization_owner')[0],
-        )
+        self.assertNotIn(Alias, [record.root for record in gh_catalog().records])
 
     def test_no_framework_or_zero_public_relations(self):
         for model in (

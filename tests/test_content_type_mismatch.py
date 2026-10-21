@@ -8,20 +8,32 @@ own content identity. The crossed pairs are denials, not exceptions.
 stay the ordinary no-plan denial.
 """
 
+import yaml
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest
 from django.test import TestCase
 
-import yaml
-
 from trusts.decorators import authorization_required
 
-from gh_permissions.models import Alias, Organization, Repository, Team
+from gh_permissions.models import (
+    Alias,
+    Organization,
+    OrganizationOwnership,
+    Repository,
+    RepositoryCollaborator,
+    Team,
+    TeamRepositoryPermission,
+)
 from gh_permissions.services import create_organization, create_user
 from tests.fixtures import (
-    gh_catalog, permission_code, policy_sql_text, repository_permission,
+    gh_catalog,
+    guard_ok,
+    permission_code,
+    policy_sql_text,
+    repository_permission,
 )
 
 
@@ -34,14 +46,10 @@ _REPO_CODES = {
 }
 
 
-def _guard_ok(request, pk):
-    return 'ok'
-
-
-_org_manage = authorization_required(Organization, _MANAGE)(_guard_ok)
-_org_read = authorization_required(Organization, _READ)(_guard_ok)
-_repo_read = authorization_required(Repository, _READ)(_guard_ok)
-_repo_manage = authorization_required(Repository, _MANAGE)(_guard_ok)
+_org_manage = authorization_required(Organization, _MANAGE)(guard_ok)
+_org_read = authorization_required(Organization, _READ)(guard_ok)
+_repo_read = authorization_required(Repository, _READ)(guard_ok)
+_repo_manage = authorization_required(Repository, _MANAGE)(guard_ok)
 
 
 def _startup():
@@ -71,7 +79,6 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.bystander = create_user('bystander')
         self.organization = create_organization('acme')
         self.foreign = create_organization('foreign')
-        from gh_permissions.models import OrganizationOwnership
         OrganizationOwnership.objects.create(
             user=self.owner, organization=self.organization,
         )
@@ -280,12 +287,6 @@ class StoredManagePermissionOnRepositoryTest(TestCase):
     """A repository grant that stores an organization permission does not grant it."""
 
     def test_collaborator_and_team_rows_deny_manage_organization_on_repository(self):
-        from gh_permissions.models import (
-            OrganizationOwnership,
-            RepositoryCollaborator,
-            TeamRepositoryPermission,
-        )
-
         owner = create_user('owner')
         collaborator = create_user('collaborator')
         member = create_user('member')

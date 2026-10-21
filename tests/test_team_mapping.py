@@ -61,6 +61,11 @@ class TeamCeilingAndOrganizationTest(GhFixtureMixin, TestCase):
         read = permission_code(self.read)
         write = permission_code(self.write)
         self.assertTrue(backend.has_perm(self.member, read, self.repo_a))
+        # A write row exists. Denial has to come from the team ceiling,
+        # not from a missing TeamRepositoryPermission.
+        TeamRepositoryPermission.objects.create(
+            team=self.writers, repository=self.repo_a, operation=self.write,
+        )
         self.assertFalse(backend.has_perm(self.member, write, self.repo_a))
         TeamRepositoryPermission.objects.create(
             team=self.writers, repository=self.repo_other, operation=self.read,

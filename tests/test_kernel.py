@@ -1,5 +1,6 @@
 """GH kernel topology: one app-owned catalog, no Core app, no Zero."""
 
+import importlib.util
 import sys
 from importlib import import_module
 
@@ -10,9 +11,13 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
+import trusts.apps as trusts_apps
+import trusts.backends as core_backends
 from trusts.apps import TrustsConfigMixin
+from trusts.backends import TrustModelBackendMixin
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
+import gh_permissions.models as gh_models
 from gh_permissions.apps import GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
@@ -31,8 +36,6 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts.zero', names)
 
     def test_core_ships_no_installed_app(self):
-        import trusts.apps as trusts_apps
-
         self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         self.assertNotIn('trusts_core', apps.app_configs)
         names = [config.name for config in apps.get_app_configs()]
@@ -56,16 +59,13 @@ class KernelIdentityTest(SimpleTestCase):
                 'django.contrib.auth.backends.ModelBackend',
             ),
         )
-        import trusts.backends as core_backends
-        from trusts.backends import TrustModelBackendMixin
         self.assertTrue(issubclass(GhAuthorizationBackend, TrustModelBackendMixin))
         self.assertFalse(hasattr(core_backends, 'TrustModelBackend'))
         with self.assertRaises(ImportError):
+            # TrustModelBackend was removed. This import has to fail here.
             from trusts.backends import TrustModelBackend  # noqa: F401
 
     def test_repository_uses_stock_authorized_manager(self):
-        import gh_permissions.models as gh_models
-
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
         self.assertFalse(hasattr(gh_models, 'GhAuthorizedQuerySet'))
@@ -117,12 +117,11 @@ class ModelsShimTest(SimpleTestCase):
         self.assertNotIn('Content', module.__dict__)
 
     def test_legacy_trust_import_does_not_load_zero(self):
-        import importlib.util
-
         if importlib.util.find_spec('trusts.zero') is not None:
             self.skipTest('Zero is present on this interpreter; CI pair is GH-only')
         self.assertNotIn('trusts.zero', sys.modules)
         with self.assertRaises(ImportError):
+            # Trust was removed from trusts.models. This import has to fail here.
             from trusts.models import Trust  # noqa: F401
         self.assertNotIn('trusts.zero', sys.modules)
 

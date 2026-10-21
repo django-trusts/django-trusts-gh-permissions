@@ -1,10 +1,10 @@
 """Concrete GH proof of one-level correlated delegation (#43)."""
 
+import yaml
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-
-import yaml
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
