@@ -1,8 +1,12 @@
 """Shared GH fixtures. Not authorization policy."""
 
+from io import StringIO
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.management import call_command
 
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
     Repository,
@@ -22,17 +26,29 @@ def repository_permission(codename):
     )
 
 
-def isolated_handle(registry=None):
-    """Wrap an unfrozen registry in a ``BackendHandle`` for isolated tests."""
-    from trusts.core import BackendHandle, PlanQueryCompiler, TrustsRegistry
-
-    if registry is None:
-        registry = TrustsRegistry()
-    return BackendHandle(
-        path='tests.isolated',
-        registry=registry,
-        compiler=PlanQueryCompiler(),
+def permission_code(permission):
+    """``app_label.codename`` for one saved ``auth.Permission``."""
+    return '%s.%s' % (
+        permission.content_type.app_label,
+        permission.codename,
     )
+
+
+def gh_catalog():
+    """Catalog the ready-time sweep stored for the GH backend."""
+    return GhAuthorizationBackend().get_catalog()
+
+
+def policy_sql_text():
+    """Canonical policy YAML from the public ``trusts_policy_sql`` command."""
+    buf = StringIO()
+    call_command('trusts_policy_sql', stdout=buf)
+    return buf.getvalue()
+
+
+def guard_ok(request, pk):
+    """Trivial view body. Tests wrap it with ``authorization_required``."""
+    return 'ok'
 
 
 class GhFixtureMixin(object):

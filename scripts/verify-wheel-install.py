@@ -89,7 +89,11 @@ def main() -> int:
     import gh_permissions.models
     import gh_permissions.policy
     from django.apps import apps as django_apps
-    from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig
+    from gh_permissions.apps import GhPermissionsConfig, gh_config
+    # After django.setup(): TrustsConfigMixin is imported with the installed
+    # GH app config. This script configures settings only in this function,
+    # so the import cannot run at module import time.
+    from trusts.apps import TrustsConfigMixin
     from gh_permissions.models import (
         AllPersonalRepositoriesDelegation,
         OrganizationOwnership,
@@ -100,8 +104,9 @@ def main() -> int:
         IssuePermissions,
         TeamRepositoryPermission,
     )
-    import trusts.apps as trusts_apps
-    from trusts.apps import implementation_configs
+    # After django.setup(): the backend reads its catalog from the
+    # containing app config, which exists only once apps are ready.
+    from gh_permissions.backends import GhAuthorizationBackend
 
     gh_file = Path(gh_permissions.__file__).resolve()
     if checkout == gh_file or checkout in gh_file.parents:
@@ -117,25 +122,24 @@ def main() -> int:
     if 'trusts.zero' in _sys.modules:
         raise SystemExit('GH wheel populate imported trusts.zero')
 
-    if hasattr(trusts_apps, 'kernel_config') or hasattr(trusts_apps, 'AppConfig'):
-        raise SystemExit('final core still exports kernel_config or AppConfig')
-    try:
-        from trusts.apps import kernel_config  # noqa: F401
-    except ImportError:
-        pass
-    else:
-        raise SystemExit('kernel_config is still importable')
     if 'trusts_core' in django_apps.app_configs:
         raise SystemExit('core AppConfig is installed')
-    if 'trusts' in {config.name for config in django_apps.get_app_configs()}:
+    names = {config.name for config in django_apps.get_app_configs()}
+    if 'trusts' in names or 'trusts.apps' in names:
         raise SystemExit('a trusts Django app is installed')
 
-    owners = implementation_configs()
-    if len(owners) != 1 or not isinstance(owners[0], GhPermissionsConfig):
-        raise SystemExit('expected one GhPermissionsConfig owner, got %r' % (owners,))
+    owner = gh_config()
+    if not isinstance(owner, GhPermissionsConfig):
+        raise SystemExit('gh_permissions is not GhPermissionsConfig')
+    if not isinstance(owner, TrustsConfigMixin):
+        raise SystemExit('GhPermissionsConfig does not own a Trusts catalog')
 
-    registry = owners[0].configured_backend(CANONICAL_BACKEND).registry
-    roots = [record.root for record in registry.records]
+    catalog = GhAuthorizationBackend().get_catalog()
+    if catalog is not owner.get_catalog() or catalog.path != owner.catalog_path():
+        raise SystemExit(
+            'GH catalog was not built for %s' % owner.catalog_path()
+        )
+    roots = [record.root for record in catalog.records]
     if roots != [
         RepositoryCollaborator,
         TeamRepositoryPermission,
@@ -147,7 +151,7 @@ def main() -> int:
             'GH-only populate must register collaborator, team, owner, '
             'and issue-triage roots: %r' % roots
         )
-    delegation_roots = [record.root for record in registry.delegations]
+    delegation_roots = [record.root for record in catalog.delegations]
     if delegation_roots != [
         PersonalRepositoryDelegation,
         AllPersonalRepositoriesDelegation,
@@ -163,7 +167,7 @@ def main() -> int:
     print('gh_permissions.__file__', gh_file)
     print('RepositoryCollaborator', RepositoryCollaborator)
     print('Repository', Repository)
-    print('owner', type(owners[0]).__name__, owners[0].label)
+    print('catalog', catalog.path, catalog.family)
     print('startup roots', [root.__name__ for root in roots])
     print(
         'delegation roots',

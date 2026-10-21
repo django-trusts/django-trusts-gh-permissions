@@ -17,7 +17,6 @@ from django.test import RequestFactory, TestCase
 
 from gh_permissions import admin as admin_module
 from gh_permissions.admin import OrganizationAdmin, OrganizationOwnershipAdmin
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
@@ -32,21 +31,19 @@ from gh_permissions.services import (
     create_repository,
     create_user,
 )
-from trusts.apps import implementation_for_path
-from trusts.decorators import (
-    _declared_authorization_guards,
-    authorization_required,
-)
+from trusts.decorators import authorization_required
+from tests.fixtures import gh_catalog, guard_ok
 
 
 _READ = 'gh_permissions.read_repository'
 _MANAGE = 'gh_permissions.manage_organization'
 
 
-def _backend():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    )
+def _catalog():
+    return gh_catalog()
+
+
+_manage_guard = authorization_required(Organization, _MANAGE)(guard_ok)
 
 
 def _request(user):
@@ -81,8 +78,7 @@ class SuperuserGrantTests(TestCase):
         )
 
     def test_no_user_override_is_registered(self):
-        registry = _backend().registry
-        self.assertIsNone(registry._user_override)
+        self.assertIsNone(_catalog().user_override)
         package = Path(admin_module.__file__).resolve().parent
         for path in package.rglob('*.py'):
             text = path.read_text()
@@ -129,12 +125,12 @@ class SuperuserGrantTests(TestCase):
                     self.repository, _READ,
                 )),
             )
-        self.assertFalse(hasattr(backend, 'with_perm'))
         self.assertEqual(
             backend.get_user_permissions(self.superuser, self.repository),
             set(),
         )
         self.assertEqual(backend.get_user_permissions(stranger), set())
+        self.assertFalse(hasattr(backend, 'with_perm'))
         self.assertFalse(hasattr(Repository.objects, 'with_perm'))
         self.assertFalse(hasattr(Repository, 'with_perm'))
         # Stock PermissionsMixin. Object checks on this backend do not.
@@ -271,20 +267,9 @@ class SuperuserGrantTests(TestCase):
         self.assertIn(self.superuser.personal_organization, visible)
 
     def test_authorization_required_denies_an_ungranted_superuser(self):
-        guarded = authorization_required(Organization, _MANAGE)(
-            lambda request, pk: 'ok',
+        with self.assertRaises(PermissionDenied):
+            _manage_guard(_request(self.superuser), pk=self.organization.pk)
+        self.assertEqual(
+            _manage_guard(_request(self.owner), pk=self.organization.pk),
+            'ok',
         )
-        try:
-            with self.assertRaises(PermissionDenied):
-                guarded(_request(self.superuser), pk=self.organization.pk)
-            self.assertEqual(
-                guarded(_request(self.owner), pk=self.organization.pk),
-                'ok',
-            )
-        finally:
-            try:
-                _declared_authorization_guards.remove(
-                    (Organization, _MANAGE, ()),
-                )
-            except ValueError:
-                pass

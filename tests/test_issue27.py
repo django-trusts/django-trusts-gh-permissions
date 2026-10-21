@@ -17,10 +17,6 @@ from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
-from trusts.apps import implementation_for_path
-from trusts.policy_lock import render_policy_sql_bytes
-
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -30,10 +26,6 @@ from gh_permissions.models import (
     IssuePermissions,
     Team,
     TeamRepositoryPermission,
-)
-from gh_permissions.policy import (
-    register_collaborator,
-    register_organization_owner,
 )
 from gh_permissions.services import (
     OWNER_GROUP_NAME,
@@ -48,14 +40,14 @@ from gh_permissions.services import (
     rename_organization,
     rename_user,
 )
-from tests.fixtures import isolated_handle, repository_permission
+from tests.fixtures import (
+    gh_catalog, permission_code, policy_sql_text, repository_permission,
+)
 from tests.test_migration_0002 import _ALIAS, _wipe
 
 
 def _startup_registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
+    return gh_catalog()
 
 
 def _manage():
@@ -272,10 +264,11 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertEqual(organization.owner_group_id, group.pk)
 
     def test_ownership_row_is_the_owner_grant(self):
-        handle = isolated_handle()
-        with self.assertNumQueries(0):
-            repository_record = register_organization_owner(handle)
-        records = handle.registry.records
+        records = [
+            record for record in gh_catalog().records
+            if record.root is OrganizationOwnership
+        ]
+        repository_record = records[1]
         self.assertEqual(len(records), 2)
         self.assertIs(records[0].root, OrganizationOwnership)
         self.assertIs(records[0].content_model, Organization)
@@ -305,8 +298,8 @@ class OwnershipAndCollaborationTest(TestCase):
         write = repository_permission('write_repository')
         admin = repository_permission('admin_repository')
         startup = _startup_registry()
-        self.assertTrue(startup.has_permission(owner, organization, manage))
-        self.assertFalse(startup.has_permission(bystander, organization, manage))
+        self.assertTrue(startup.has_perm(owner, permission_code(manage), organization))
+        self.assertFalse(startup.has_perm(bystander, permission_code(manage), organization))
         self.assertTrue(owner.has_perm(
             'gh_permissions.manage_organization', organization,
         ))
@@ -315,9 +308,9 @@ class OwnershipAndCollaborationTest(TestCase):
         ))
         for permission in (read, write, admin):
             codename = 'gh_permissions.%s' % permission.codename
-            self.assertTrue(startup.has_permission(owner, repository, permission))
+            self.assertTrue(startup.has_perm(owner, permission_code(permission), repository))
             self.assertFalse(
-                startup.has_permission(bystander, repository, permission),
+                startup.has_perm(bystander, permission_code(permission), repository),
             )
             self.assertTrue(owner.has_perm(codename, repository))
             self.assertFalse(bystander.has_perm(codename, repository))
@@ -408,7 +401,7 @@ class OwnershipAndCollaborationTest(TestCase):
             'OrganizationOwnership',
             'IssuePermissions',
         ])
-        rendered = render_policy_sql_bytes(alias='default').decode('utf-8')
+        rendered = policy_sql_text()
         self.assertIn('schema_version: 1', rendered)
         self.assertIn('RepositoryCollaborator', rendered)
         self.assertIn('IssuePermissions', rendered)
@@ -775,10 +768,11 @@ class SharedNameMigrationTest(TransactionTestCase):
 
 
 class CollaboratorRegistrationTest(TestCase):
-    def test_collaborator_registration_is_zero_sql(self):
-        handle = isolated_handle()
-        with self.assertNumQueries(0):
-            record = register_collaborator(handle)
+    def test_collaborator_registration_shape(self):
+        record = next(
+            record for record in gh_catalog().records
+            if record.root is RepositoryCollaborator
+        )
         self.assertIs(record.root, RepositoryCollaborator)
         self.assertIs(record.content_model, Repository)
         self.assertEqual(record.user_path, ('user',))

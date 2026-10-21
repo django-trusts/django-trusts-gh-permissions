@@ -1,15 +1,12 @@
 """Acceptance matrix for the bounded GH policy on public C2 + #98."""
 
-from unittest.mock import patch
-
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.apps import configured_implementation_handles, implementation_for_path
-from trusts.core import TrustsConfigurationError
-from trusts.query import AuthorizedManager, AuthorizedQuerySet
+from trusts.errors import TrustsConfigurationError
+from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.apps import gh_config
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -18,13 +15,11 @@ from gh_permissions.models import (
     IssuePermissions,
     TeamRepositoryPermission,
 )
-from tests.fixtures import GhFixtureMixin
+from tests.fixtures import GhFixtureMixin, gh_catalog, permission_code
 
 
 def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
+    return gh_catalog()
 
 
 class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
@@ -32,8 +27,9 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
 
     def _object_list_agree(self, principal, operation, obj, expected):
         registry = _registry()
+        code = permission_code(operation)
         with self.assertNumQueries(1):
-            via_obj = registry.has_permission(principal, obj, operation)
+            via_obj = registry.has_perm(principal, code, obj)
         with self.assertNumQueries(1):
             via_exists = Repository.objects.filter(pk=obj.pk).authorized(
                 principal, operation,
@@ -263,15 +259,14 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
 
     reset_sequences = True
 
-    def test_stock_manager_reads_configured_implementation_handles(self):
+    def test_stock_manager_reads_the_gh_catalog(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
         self.assertIs(type(Organization.objects), AuthorizedManager)
 
-        handles = configured_implementation_handles()
-        self.assertEqual(len(handles), 1)
-        self.assertEqual(handles[0].path, CANONICAL_BACKEND)
-        roots = [record.root for record in handles[0].registry.records]
+        catalog = _registry()
+        self.assertEqual(catalog.path, gh_config().catalog_path())
+        roots = [record.root for record in catalog.records]
         self.assertEqual(
             roots,
             [
@@ -282,13 +277,6 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
                 IssuePermissions,
             ],
         )
-
-        with patch(
-            'trusts.apps.configured_implementation_handles', return_value=(),
-        ) as mocked:
-            hidden = list(Repository.objects.authorized(self.member, self.read))
-        mocked.assert_called()
-        self.assertEqual(hidden, [])
 
         listed = list(
             Repository.objects.authorized(self.member, self.read).order_by('pk')

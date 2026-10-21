@@ -28,7 +28,6 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
-from gh_permissions.policy import register_organization_owner
 from gh_permissions.services import (
     CrossOrganizationRelationship,
     DuplicateRelationshipTarget,
@@ -58,7 +57,7 @@ from gh_permissions.services import (
     update_repository_collaborator,
     update_team_repository_permission,
 )
-from tests.fixtures import isolated_handle, repository_permission
+from tests.fixtures import gh_catalog, repository_permission
 
 
 _READ = 'gh_permissions.read_repository'
@@ -1684,10 +1683,12 @@ class OwnershipRetentionTests(TestCase):
         return caught.exception
 
     def test_raw_writes_and_register_condition_do_not_keep_an_owner(self):
-        handle = isolated_handle()
-        register_organization_owner(handle)
-        self.assertGreaterEqual(len(handle.registry.records), 1)
-        for record in handle.registry.records:
+        records = [
+            record for record in gh_catalog().records
+            if record.root is OrganizationOwnership
+        ]
+        self.assertGreaterEqual(len(records), 1)
+        for record in records:
             self.assertIsNone(record.condition)
 
         self.org.owners.remove(self.owner)

@@ -1,5 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts dev merge of #314 (checked-user rules, #312).
-# Includes the #310 source=value lockfile params. gh-permissions registers
-# no user override. Never pin django-trusts-zero. Do not float past this commit.
-ref=a599bc7dc9bad8401a9733eaced4e3689ae9de00
+# Paired with django-trusts cursor/catalog-pullup-f275 (draft #330)
+# at 873154c. The app config owns the recorder and catalog.
+# gh-permissions registers no user override. Never pin django-trusts-zero.
+# Do not float past this commit.
+ref=873154c86c786098c54a7885b8b5f46be291745b

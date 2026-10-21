@@ -2,7 +2,7 @@ schema_version: 1
 database:
   engine: "django.db.backends.mysql"
 backends:
-  - path: "gh_permissions.backends.GhAuthorizationBackend"
+  - path: "gh_permissions.apps.GhPermissionsConfig"
     contents:
       - model: "gh_permissions.Repository"
         trusts:
