@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts registry-at-models (draft #338)
-# at 154dd32. Relations use get_registry().
+# Paired with django-trusts entries-exact-sql (draft #344)
+# at 780eedfe. Request-time caller input fails closed.
 # gh-permissions registers no user override. Never pin django-trusts-zero.
 # Do not float past this commit.
-ref=154dd32da822147fcada3782d0a0f92213e14705
+ref=780eedfe05083063a1129e278d3de5e292e493bd
