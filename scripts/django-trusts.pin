@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
 # Paired with django-trusts registry-at-models (draft #338)
-# at 44ac585. Relations use get_registry().
+# at 154dd32. Relations use get_registry().
 # gh-permissions registers no user override. Never pin django-trusts-zero.
 # Do not float past this commit.
-ref=44ac585779627055e1b25548a2dbdf73f60d462b
+ref=154dd32da822147fcada3782d0a0f92213e14705
