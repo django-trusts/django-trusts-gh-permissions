@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts cursor/public-companion-api-506a (draft #334)
-# at 57da116. Tests and scripts call the public Core API.
+# Paired with django-trusts registry-at-models (draft #338)
+# at 44ac585. Relations use get_registry().
 # gh-permissions registers no user override. Never pin django-trusts-zero.
 # Do not float past this commit.
-ref=57da11607859e43987258a312a388f247a906571
+ref=44ac585779627055e1b25548a2dbdf73f60d462b

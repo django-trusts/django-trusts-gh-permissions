@@ -1,9 +1,10 @@
 """GH implementation owner.
 
-``ready`` records relations on ``self.recorder``. ``TrustsConfigMixin.ready``
-then freezes that recorder and builds this app's catalog. The backend
-reads the catalog from the app registry. Core is a library, not an
-installed app.
+Relations are registered at the end of ``models.py`` through
+``GhAuthorizationBackend().get_registry()``. ``ready`` checks the
+canonical backend and connects the owner-group seed. The catalog is
+built on the first policy check or permission question. Core is a
+library, not an installed app.
 """
 
 from django.apps import apps as django_apps
@@ -36,11 +37,10 @@ def gh_config(apps_registry=None):
 
 
 class GhPermissionsConfig(TrustsConfigMixin):
-    """GH implementation. Owns the recorder and the catalog built from it.
+    """GH implementation. The catalog is built from ``models.py``.
 
     ``ready()`` refuses to start when ``CANONICAL_BACKEND`` is not listed
-    in ``AUTHENTICATION_BACKENDS``. A second call records again, and the
-    frozen recorder raises ``TrustsConfigurationError``.
+    in ``AUTHENTICATION_BACKENDS``.
     """
 
     name = 'gh_permissions'
@@ -56,17 +56,8 @@ class GhPermissionsConfig(TrustsConfigMixin):
                 % CANONICAL_BACKEND
             )
 
-        # policy and services import model modules. This AppConfig module
-        # is imported while the app registry is still populating.
-        from gh_permissions.policy import (
-            register_all_personal_repositories_delegation,
-            register_collaborator,
-            register_delegation,
-            register_issue_permissions,
-            register_organization_owner,
-            register_personal_delegation,
-            register_team,
-        )
+        # services imports model modules. This AppConfig module is
+        # imported while the app registry is still populating.
         from gh_permissions.services import seed_owner_group_on_migrate
 
         post_migrate.connect(
@@ -74,11 +65,4 @@ class GhPermissionsConfig(TrustsConfigMixin):
             sender=self,
             dispatch_uid='gh_permissions.seed_owner_group',
         )
-        register_collaborator(self.recorder)
-        register_team(self.recorder)
-        register_organization_owner(self.recorder)
-        register_personal_delegation(self.recorder)
-        register_all_personal_repositories_delegation(self.recorder)
-        register_delegation(self.recorder)
-        register_issue_permissions(self.recorder)
         super().ready()

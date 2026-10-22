@@ -1,8 +1,8 @@
 """GH startup proofs on the app-owned policy.
 
-* ``GhPermissionsConfig`` records relations and publishes the policy
+* ``models.py`` records relations and the backend publishes the policy
 * a missing canonical backend path fails at ``ready()``
-* a second ``ready()`` fails closed
+* a registration after the catalog is built fails closed
 * the listed backend authorizes from that policy
 """
 
@@ -59,7 +59,7 @@ class Issue6OwnerProofs(SimpleTestCase):
             settings.DATABASES['default']['ENGINE'],
         )
 
-    def test_ready_registers_ordinary_roots(self):
+    def test_import_registers_ordinary_roots(self):
         roots = [trust['root'] for _model, trust in gh_trusts()]
         self.assertEqual(roots, [
             RepositoryCollaborator._meta.label,
@@ -76,10 +76,20 @@ class Issue6OwnerProofs(SimpleTestCase):
                 GhPermissionsConfig.ready(config)
         self.assertIn(CANONICAL_BACKEND, str(ctx.exception))
 
-    def test_second_ready_fails_on_the_frozen_recorder(self):
+    def test_register_after_the_catalog_is_built_raises(self):
+        before = GhAuthorizationBackend().policy_document()
         config = apps.get_app_config('gh_permissions')
-        with self.assertRaises(TrustsConfigurationError):
-            GhPermissionsConfig.ready(config)
+        GhPermissionsConfig.ready(config)
+        self.assertEqual(GhAuthorizationBackend().policy_document(), before)
+        with self.assertRaises(TrustsConfigurationError) as caught:
+            GhAuthorizationBackend().get_registry().register(
+                trust=RepositoryCollaborator,
+                user='user',
+                permission='permissions',
+                content='repository',
+            )
+        self.assertIn('frozen', str(caught.exception))
+        self.assertEqual(GhAuthorizationBackend().policy_document(), before)
 
 
 class Issue6AuthorizationProofs(TestCase):

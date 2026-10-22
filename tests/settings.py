@@ -18,7 +18,8 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 ALLOWED_HOSTS = ['testserver', 'localhost']
 
-# GhPermissionsConfig owns the recorder and catalog. Core is a library.
+# Relations are registered at the end of gh_permissions/models.py.
+# GhPermissionsConfig owns the catalog. Core is a library.
 # Do not list 'trusts'. example.User is the test project only.
 # The library does not require it.
 # Sessions, messages, static files, and admin are the harness for real
