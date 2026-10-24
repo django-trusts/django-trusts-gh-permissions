@@ -1,4 +1,4 @@
-"""Accepted team mapping is expressible through ``recorder.register``.
+"""Accepted team mapping is expressible through ``get_registry().register``.
 
 django-trusts#54 r7 / issue #3 accepted team registration, flattened
 ceiling after #12, public Django ``__`` paths after #131, the
@@ -11,6 +11,7 @@ lockfile text. Django 6.1 defines ``assertNumQueries`` on
 
 from django.test import TestCase
 
+from trusts.errors import TrustsConfigurationError
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository, TeamRepositoryPermission
 from gh_permissions.policy import (
@@ -45,13 +46,15 @@ class TeamMappingRegistrationTest(TestCase):
             'team__organization == repository__organization',
         )
 
-    def test_helpers_require_a_recorder(self):
-        with self.assertRaises(TypeError):
-            register_team(object())
-        with self.assertRaises(TypeError):
-            register_collaborator(object())
-        with self.assertRaises(TypeError):
-            register_organization_owner(object())
+    def test_helpers_refuse_registration_after_the_catalog_is_built(self):
+        gh_trusts()
+        registry = GhAuthorizationBackend().get_registry()
+        with self.assertRaises(TrustsConfigurationError):
+            register_team(registry)
+        with self.assertRaises(TrustsConfigurationError):
+            register_collaborator(registry)
+        with self.assertRaises(TrustsConfigurationError):
+            register_organization_owner(registry)
 
 
 class TeamCeilingAndOrganizationTest(GhFixtureMixin, TestCase):
