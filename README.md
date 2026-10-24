@@ -88,12 +88,13 @@ the cross-repository sub-issues supported by GitHub. GitHub limits those
 cross-repository relationships to repositories with the same owner. This
 bounded example does not reproduce that separate write-time owner check.
 
-Startup registers the triage assignment as:
+`models.py` registers the triage assignment as:
 
 ```python
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import IssuePermissions
 
-backend.register(
+GhAuthorizationBackend().get_registry().register(
     trust=IssuePermissions,
     user="user",
     permission="permissions",
@@ -253,12 +254,13 @@ use `settings.AUTH_USER_MODEL` and do not import `example`. A project
 that keeps stock `auth.User` still uses `repository.get_permitted_users`.
 
 `GhPermissionsConfig` owns the implementation. The accepted team
-registration (contributed at startup) is:
+registration, called from the end of `models.py`, is:
 
 ```python
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import TeamRepositoryPermission
 
-backend.register(
+GhAuthorizationBackend().get_registry().register(
     trust=TeamRepositoryPermission,
     user="team__members",
     permission="operation",
@@ -275,9 +277,10 @@ registered beside that team path. `permission` is the terminal
 many-to-many to `auth.Permission`:
 
 ```python
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import RepositoryCollaborator
 
-backend.register(
+GhAuthorizationBackend().get_registry().register(
     trust=RepositoryCollaborator,
     user="user",
     permission="permissions",
@@ -299,14 +302,12 @@ the Django permission string as the alias.
 
 ```python
 from example.models import User
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
-from trusts.apps import implementation_for_path
 
-registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-    CANONICAL_BACKEND,
-).registry
-registry.has_permission(user, repository, operation)
+GhAuthorizationBackend().has_perm(
+    user, 'gh_permissions.read_repository', repository,
+)
 Repository.objects.authorized(user, operation)
 user.has_perm('gh_permissions.read_repository', repository)
 User.objects.permitted(repository, 'gh_permissions.read_repository')
@@ -335,7 +336,7 @@ Requires **Python 3.12–3.14** and **Django 6.1**.
 ## Organization-owner admin
 
 Organization administration was `OrganizationOwnerPermission`. That
-model is gone. Ownership is an `OrganizationOwnership` row. Startup
+model is gone. Ownership is an `OrganizationOwnership` row. `models.py`
 registers that row twice, with no condition: once for the organization
 and once for that organization's repositories. A non-owner has no
 ownership row. `Team` does not grant this bundle.

@@ -3,7 +3,6 @@
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.errors import TrustsConfigurationError
 from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
 from gh_permissions.backends import GhAuthorizationBackend
@@ -236,10 +235,12 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
             ),
         )
 
-    def test_string_permission_is_rejected_with_zero_sql(self):
+    def test_string_permission_fails_closed_with_zero_sql(self):
         with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                list(Repository.objects.authorized(self.collaborator, 'write'))
+            listed = list(
+                Repository.objects.authorized(self.collaborator, 'write'),
+            )
+        self.assertEqual(listed, [])
 
 
 class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):

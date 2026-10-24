@@ -13,9 +13,9 @@ permissions:
   contents: read
 
 env:
-  # Core registration log, draft django-trusts#338
-  # (registry-at-models, stacked on #334).
-  COMPANION_KERNEL_SHA: 154dd32da822147fcada3782d0a0f92213e14705
+  # Core catalog question entries, draft django-trusts#344
+  # (entries-exact-sql).
+  COMPANION_KERNEL_SHA: d38a4991b46948c860b1c4f7c4e4e518a93eabca
 
 jobs:
   tests:
@@ -58,7 +58,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert '154dd32da822147fcada3782d0a0f92213e14705' in pin, pin
+        assert 'd38a4991b46948c860b1c4f7c4e4e518a93eabca' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -108,8 +108,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "154dd32da822147fcada3782d0a0f92213e14705"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "154dd32da822147fcada3782d0a0f92213e14705"
+          test "${COMPANION_KERNEL_SHA}" = "d38a4991b46948c860b1c4f7c4e4e518a93eabca"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "d38a4991b46948c860b1c4f7c4e4e518a93eabca"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage

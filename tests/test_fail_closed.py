@@ -3,8 +3,6 @@
 from django.core.checks import run_checks
 from django.test import SimpleTestCase, TestCase
 
-from trusts.errors import TrustsConfigurationError
-
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Alias,
@@ -67,10 +65,11 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
                 self.repo_a, permission_code(self.write), self.repo_b,
             ),
         )
-        with self.assertRaises(TrustsConfigurationError):
+        self.assertFalse(
             backend.has_perm(
                 self.member.pk, permission_code(self.read), self.repo_a,
-            )
+            ),
+        )
 
     def test_system_checks_are_clean_for_complete_gh_install(self):
         with self.assertNumQueries(0):
