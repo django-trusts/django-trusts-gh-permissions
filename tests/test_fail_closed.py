@@ -5,7 +5,6 @@ from django.test import SimpleTestCase, TestCase
 
 from trusts.errors import TrustsConfigurationError
 
-from gh_permissions.apps import gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Alias,
@@ -16,8 +15,7 @@ from gh_permissions.models import (
     Team,
     TeamRepositoryPermission,
 )
-from gh_permissions.policy import register_collaborator
-from tests.fixtures import GhFixtureMixin, gh_catalog, permission_code
+from tests.fixtures import GhFixtureMixin, gh_trusts, permission_code
 
 
 # Intentionally unsupported GH behaviors (not defects of this consumer):
@@ -42,10 +40,6 @@ class UnsupportedGhBehaviorTest(SimpleTestCase):
 
 
 class GhFailClosedTest(GhFixtureMixin, TestCase):
-    def test_late_registration_after_freeze_raises(self):
-        with self.assertRaises(TrustsConfigurationError):
-            register_collaborator(gh_config().recorder)
-
     def test_unregistered_resource_fails_closed(self):
         backend = GhAuthorizationBackend()
         team = Team.objects.create(organization=self.org_a, name='unplanned')
@@ -87,13 +81,21 @@ class GhFailClosedTest(GhFixtureMixin, TestCase):
         self.assertEqual(messages, [])
 
     def test_startup_registers_direct_and_team_roots(self):
-        records = gh_catalog().records
-        self.assertEqual([record.root for record in records], [
-            RepositoryCollaborator,
-            TeamRepositoryPermission,
-            OrganizationOwnership,
-            OrganizationOwnership,
-            IssuePermissions,
+        trusts = gh_trusts()
+        self.assertEqual([trust['root'] for _model, trust in trusts], [
+            RepositoryCollaborator._meta.label,
+            TeamRepositoryPermission._meta.label,
+            OrganizationOwnership._meta.label,
+            OrganizationOwnership._meta.label,
+            IssuePermissions._meta.label,
         ])
-        self.assertIs(records[1].root, TeamRepositoryPermission)
-        self.assertIsNone(records[3].condition)
+        self.assertEqual(
+            trusts[1][1]['root'], TeamRepositoryPermission._meta.label,
+        )
+        ownerships = [
+            trust for _model, trust in trusts
+            if trust['root'] == OrganizationOwnership._meta.label
+        ]
+        self.assertEqual(len(ownerships), 2)
+        for trust in ownerships:
+            self.assertNotIn('condition', trust)

@@ -16,7 +16,9 @@ from django.test import TestCase
 import yaml
 
 from trusts.decorators import authorization_required
+from trusts.models import AuthorizedQuerySet
 
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -28,7 +30,6 @@ from gh_permissions.models import (
 )
 from gh_permissions.services import create_organization, create_user
 from tests.fixtures import (
-    gh_catalog,
     guard_ok,
     permission_code,
     policy_sql_text,
@@ -49,10 +50,6 @@ _org_manage = authorization_required(Organization, _MANAGE)(guard_ok)
 _org_read = authorization_required(Organization, _READ)(guard_ok)
 _repo_read = authorization_required(Repository, _READ)(guard_ok)
 _repo_manage = authorization_required(Repository, _MANAGE)(guard_ok)
-
-
-def _startup():
-    return gh_catalog()
 
 
 def _permission(model, codename):
@@ -90,7 +87,7 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.alias = Alias.objects.get(name='acme')
         self.manage = _permission('organization', 'manage_organization')
         self.read = repository_permission('read_repository')
-        self.registry = _startup()
+        self.backend = GhAuthorizationBackend()
 
     def test_same_model_grants_and_crossed_pairs_deny(self):
         cases = (
@@ -106,7 +103,7 @@ class OwnerContentTypeMatrixTest(TestCase):
                 with self.assertNumQueries(queries):
                     self.assertIs(self.owner.has_perm(code, obj), expected)
                 self.assertIs(
-                    self.registry.has_perm(self.owner, permission_code(permission), obj),
+                    self.backend.has_perm(self.owner, permission_code(permission), obj),
                     expected,
                 )
                 self.assertIs(self.bystander.has_perm(code, obj), False)
@@ -160,13 +157,13 @@ class OwnerContentTypeMatrixTest(TestCase):
             [],
         )
         self.assertEqual(
-            list(self.registry.filter_authorized(
+            list(AuthorizedQuerySet.authorized(
                 Team.objects.all(), self.owner, self.manage,
             )),
             [],
         )
         self.assertEqual(
-            list(self.registry.filter_authorized(
+            list(AuthorizedQuerySet.authorized(
                 Alias.objects.all(), self.owner, self.read,
             )),
             [],

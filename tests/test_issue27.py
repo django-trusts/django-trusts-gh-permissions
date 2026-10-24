@@ -17,6 +17,7 @@ from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -41,13 +42,13 @@ from gh_permissions.services import (
     rename_user,
 )
 from tests.fixtures import (
-    gh_catalog, permission_code, policy_sql_text, repository_permission,
+    gh_trusts, permission_code, policy_sql_text, repository_permission,
 )
 from tests.test_migration_0002 import _ALIAS, _wipe
 
 
-def _startup_registry():
-    return gh_catalog()
+def _backend():
+    return GhAuthorizationBackend()
 
 
 def _manage():
@@ -264,25 +265,28 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertEqual(organization.owner_group_id, group.pk)
 
     def test_ownership_row_is_the_owner_grant(self):
-        records = [
-            record for record in gh_catalog().records
-            if record.root is OrganizationOwnership
-        ]
-        repository_record = records[1]
-        self.assertEqual(len(records), 2)
-        self.assertIs(records[0].root, OrganizationOwnership)
-        self.assertIs(records[0].content_model, Organization)
-        self.assertIs(repository_record.root, OrganizationOwnership)
-        self.assertIs(repository_record.content_model, Repository)
-        self.assertIsNone(records[0].condition)
-        self.assertIsNone(repository_record.condition)
-        self.assertFalse(records[0].via_group)
-        self.assertFalse(repository_record.via_group)
+        ownerships = {
+            model: trust for model, trust in gh_trusts()
+            if trust['root'] == OrganizationOwnership._meta.label
+        }
+        self.assertEqual(set(ownerships), {
+            Organization._meta.label,
+            Repository._meta.label,
+        })
+        organization_trust = ownerships[Organization._meta.label]
+        repository_trust = ownerships[Repository._meta.label]
+        for trust in (organization_trust, repository_trust):
+            self.assertNotIn('condition', trust)
+            self.assertNotIn('group', trust)
+            self.assertEqual(
+                trust['permission']['path'],
+                'organization__owner_group__permissions',
+            )
+            self.assertEqual(trust['permission']['model'], Permission._meta.label)
+        self.assertEqual(organization_trust['content']['path'], 'organization')
         self.assertEqual(
-            records[0].permission_path,
-            ('organization', 'owner_group', 'permissions'),
+            repository_trust['content']['path'], 'organization__repositories',
         )
-        self.assertIs(records[0].permission_model, Permission)
 
         owner = create_user('owner')
         bystander = create_user('bystander')
@@ -297,9 +301,9 @@ class OwnershipAndCollaborationTest(TestCase):
         read = repository_permission('read_repository')
         write = repository_permission('write_repository')
         admin = repository_permission('admin_repository')
-        startup = _startup_registry()
-        self.assertTrue(startup.has_perm(owner, permission_code(manage), organization))
-        self.assertFalse(startup.has_perm(bystander, permission_code(manage), organization))
+        backend = _backend()
+        self.assertTrue(backend.has_perm(owner, permission_code(manage), organization))
+        self.assertFalse(backend.has_perm(bystander, permission_code(manage), organization))
         self.assertTrue(owner.has_perm(
             'gh_permissions.manage_organization', organization,
         ))
@@ -308,9 +312,9 @@ class OwnershipAndCollaborationTest(TestCase):
         ))
         for permission in (read, write, admin):
             codename = 'gh_permissions.%s' % permission.codename
-            self.assertTrue(startup.has_perm(owner, permission_code(permission), repository))
+            self.assertTrue(backend.has_perm(owner, permission_code(permission), repository))
             self.assertFalse(
-                startup.has_perm(bystander, permission_code(permission), repository),
+                backend.has_perm(bystander, permission_code(permission), repository),
             )
             self.assertTrue(owner.has_perm(codename, repository))
             self.assertFalse(bystander.has_perm(codename, repository))
@@ -336,9 +340,10 @@ class OwnershipAndCollaborationTest(TestCase):
         self.assertFalse(bystander.has_perm(
             'gh_permissions.manage_organization', organization,
         ))
-        self.assertNotIn(manage.pk, {
-            row.pk for row in startup.permissions_for(bystander, organization)
-        })
+        self.assertNotIn(
+            permission_code(manage),
+            backend.get_all_permissions(bystander, organization),
+        )
 
     def test_collaborators_receive_only_selected_repository_permissions(self):
         organization = create_organization('acme')
@@ -369,15 +374,15 @@ class OwnershipAndCollaborationTest(TestCase):
             {'gh_permissions.read_repository'},
         )
         self.assertEqual(outsider.get_group_permissions(repository), set())
-        record = _startup_registry().records[0]
-        self.assertIs(record.root, RepositoryCollaborator)
-        self.assertFalse(record.via_group)
-        self.assertEqual(record.permission_path, ('permissions',))
-        self.assertNotIn(write.pk, {
-            row.pk for row in _startup_registry().permissions_for(
-                outsider, repository,
-            )
-        })
+        _model, trust = gh_trusts()[0]
+        self.assertEqual(trust['root'], RepositoryCollaborator._meta.label)
+        self.assertEqual(_model, Repository._meta.label)
+        self.assertNotIn('group', trust)
+        self.assertEqual(trust['permission']['path'], 'permissions')
+        self.assertNotIn(
+            permission_code(write),
+            _backend().get_all_permissions(outsider, repository),
+        )
 
     def test_repository_names_are_unique_per_organization_only(self):
         first = create_organization('alpha')
@@ -389,11 +394,7 @@ class OwnershipAndCollaborationTest(TestCase):
                 Repository.objects.create(organization=first, name='app')
 
     def test_deleted_owner_permission_has_no_policy_path(self):
-        import gh_permissions.models as models
-        self.assertFalse(hasattr(models, 'OrganizationOwnerPermission'))
-        self.assertFalse(hasattr(models, 'UserRepositoryPermission'))
-        self.assertFalse(hasattr(models, 'OrganizationMembership'))
-        names = [record.root.__name__ for record in _startup_registry().records]
+        names = [trust['root'].rsplit('.', 1)[-1] for _model, trust in gh_trusts()]
         self.assertEqual(names, [
             'RepositoryCollaborator',
             'TeamRepositoryPermission',
@@ -769,13 +770,14 @@ class SharedNameMigrationTest(TransactionTestCase):
 
 class CollaboratorRegistrationTest(TestCase):
     def test_collaborator_registration_shape(self):
-        record = next(
-            record for record in gh_catalog().records
-            if record.root is RepositoryCollaborator
-        )
-        self.assertIs(record.root, RepositoryCollaborator)
-        self.assertIs(record.content_model, Repository)
-        self.assertEqual(record.user_path, ('user',))
-        self.assertEqual(record.permission_path, ('permissions',))
-        self.assertFalse(record.via_group)
-        self.assertIsNone(record.condition)
+        matches = [
+            (model, trust) for model, trust in gh_trusts()
+            if trust['root'] == RepositoryCollaborator._meta.label
+        ]
+        self.assertEqual(len(matches), 1)
+        model, trust = matches[0]
+        self.assertEqual(model, Repository._meta.label)
+        self.assertEqual(trust['user']['path'], 'user')
+        self.assertEqual(trust['permission']['path'], 'permissions')
+        self.assertNotIn('group', trust)
+        self.assertNotIn('condition', trust)

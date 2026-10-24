@@ -23,8 +23,6 @@ FORBIDDEN_LONG_DESC = (
     'pair pin',
     'baton',
     'code-budget',
-    'kernel_config',
-    'trusts.core_backends',
     '1.0.0.dev2',
     '1.0.0.dev3',
     '39f1f961',

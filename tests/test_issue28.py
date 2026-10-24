@@ -57,7 +57,7 @@ from gh_permissions.services import (
     update_repository_collaborator,
     update_team_repository_permission,
 )
-from tests.fixtures import gh_catalog, repository_permission
+from tests.fixtures import gh_trusts, repository_permission
 
 
 _READ = 'gh_permissions.read_repository'
@@ -1683,13 +1683,13 @@ class OwnershipRetentionTests(TestCase):
         return caught.exception
 
     def test_raw_writes_and_register_condition_do_not_keep_an_owner(self):
-        records = [
-            record for record in gh_catalog().records
-            if record.root is OrganizationOwnership
+        ownerships = [
+            trust for _model, trust in gh_trusts()
+            if trust['root'] == OrganizationOwnership._meta.label
         ]
-        self.assertGreaterEqual(len(records), 1)
-        for record in records:
-            self.assertIsNone(record.condition)
+        self.assertGreaterEqual(len(ownerships), 1)
+        for trust in ownerships:
+            self.assertNotIn('condition', trust)
 
         self.org.owners.remove(self.owner)
         self.assertFalse(self.org.ownerships.exists())

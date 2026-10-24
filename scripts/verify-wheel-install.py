@@ -134,29 +134,47 @@ def main() -> int:
     if not isinstance(owner, TrustsConfigMixin):
         raise SystemExit('GhPermissionsConfig does not own a Trusts catalog')
 
-    catalog = GhAuthorizationBackend().get_catalog()
-    if catalog is not owner.get_catalog() or catalog.path != owner.catalog_path():
+    document = GhAuthorizationBackend().policy_document()
+    if document.get('schema_version') != 1:
         raise SystemExit(
-            'GH catalog was not built for %s' % owner.catalog_path()
+            'GH policy document schema is %r' % document.get('schema_version')
         )
-    roots = [record.root for record in catalog.records]
-    if roots != [
-        RepositoryCollaborator,
-        TeamRepositoryPermission,
-        OrganizationOwnership,
-        OrganizationOwnership,
-        IssuePermissions,
-    ]:
+    backends = document['backends']
+    paths = [row['path'] for row in backends]
+    if paths != ['gh_permissions.apps.GhPermissionsConfig']:
+        raise SystemExit('GH policy document backends are %r' % paths)
+    contents = backends[0]['contents']
+
+    def _roots(key):
+        found = []
+        for content in contents:
+            for row in content.get(key, ()):
+                found.append(row['root'])
+        return found
+
+    def _label(model):
+        return model._meta.label
+
+    roots = _roots('trusts')
+    expected_roots = [
+        _label(RepositoryCollaborator),
+        _label(TeamRepositoryPermission),
+        _label(OrganizationOwnership),
+        _label(OrganizationOwnership),
+        _label(IssuePermissions),
+    ]
+    if roots != expected_roots:
         raise SystemExit(
             'GH-only populate must register collaborator, team, owner, '
             'and issue-triage roots: %r' % roots
         )
-    delegation_roots = [record.root for record in catalog.delegations]
-    if delegation_roots != [
-        PersonalRepositoryDelegation,
-        AllPersonalRepositoriesDelegation,
-        RepositoryDelegation,
-    ]:
+    delegation_roots = _roots('delegations')
+    expected_delegations = [
+        _label(PersonalRepositoryDelegation),
+        _label(AllPersonalRepositoriesDelegation),
+        _label(RepositoryDelegation),
+    ]
+    if delegation_roots != expected_delegations:
         raise SystemExit(
             'GH-only populate must register personal and organization '
             'delegation roots: %r' % delegation_roots
@@ -167,12 +185,9 @@ def main() -> int:
     print('gh_permissions.__file__', gh_file)
     print('RepositoryCollaborator', RepositoryCollaborator)
     print('Repository', Repository)
-    print('catalog', catalog.path, catalog.family)
-    print('startup roots', [root.__name__ for root in roots])
-    print(
-        'delegation roots',
-        [root.__name__ for root in delegation_roots],
-    )
+    print('policy', paths[0])
+    print('startup roots', roots)
+    print('delegation roots', delegation_roots)
     print('absent zero modules', ' '.join(ABSENT_ZERO_MODULES))
     return 0
 
