@@ -13,8 +13,9 @@ permissions:
   contents: read
 
 env:
-  # Exact Core merge of #314 on dev (checked-user rules, no GH override).
-  COMPANION_KERNEL_SHA: a599bc7dc9bad8401a9733eaced4e3689ae9de00
+  # Core catalog question entries, draft django-trusts#344
+  # (entries-exact-sql).
+  COMPANION_KERNEL_SHA: d38a4991b46948c860b1c4f7c4e4e518a93eabca
 
 jobs:
   tests:
@@ -57,7 +58,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert 'a599bc7dc9bad8401a9733eaced4e3689ae9de00' in pin, pin
+        assert 'd38a4991b46948c860b1c4f7c4e4e518a93eabca' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -107,8 +108,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "a599bc7dc9bad8401a9733eaced4e3689ae9de00"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "a599bc7dc9bad8401a9733eaced4e3689ae9de00"
+          test "${COMPANION_KERNEL_SHA}" = "d38a4991b46948c860b1c4f7c4e4e518a93eabca"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "d38a4991b46948c860b1c4f7c4e4e518a93eabca"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage
@@ -247,40 +248,43 @@ jobs:
     - name: Choose the Core ref
       run: |
         set -euo pipefail
-        REMOTE=https://github.com/django-trusts/django-trusts
-        if [ -n "${GITHUB_HEAD_REF:-}" ]; then
-          BRANCH="${GITHUB_HEAD_REF}"
-        else
-          BRANCH="${GITHUB_REF_NAME:?GITHUB_REF_NAME is empty}"
+        url="https://github.com/django-trusts/django-trusts.git"
+        branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+        if [ -z "${branch}" ]; then
+          echo "GH branch name is empty" >&2
+          exit 1
         fi
-        has_branch() {
-          local status
-          set +e
-          git ls-remote --exit-code --heads "$REMOTE" "refs/heads/$1" >/dev/null
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            return 0
-          fi
-          if [ "$status" -eq 2 ]; then
-            return 1
-          fi
-          echo "Could not list Core branches (git ls-remote exited ${status})" >&2
-          exit "$status"
+        pin="${COMPANION_KERNEL_SHA:?COMPANION_KERNEL_SHA is empty}"
+        echo "GH branch: ${branch}"
+
+        # 1. A Core branch with this GH branch's name.
+        # 2. The pinned SHA, when that commit is not in Core dev yet.
+        # 3. Core dev.
+        heads="$(git ls-remote --heads "${url}")"
+        branch_exists() {
+          printf '%s\n' "${heads}" | awk -v ref="refs/heads/${1}" '$2 == ref { found = 1 } END { exit (found ? 0 : 1) }'
         }
-        if has_branch "$BRANCH"; then
-          CORE_REF="$BRANCH"
-        elif has_branch dev; then
-          CORE_REF=dev
+        if branch_exists "${branch}"; then
+          ref="${branch}"
+          rule="Core has a branch with this name"
         else
-          CORE_REF="$(git ls-remote --symref https://github.com/django-trusts/django-trusts HEAD | sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')"
-          if [ -z "${CORE_REF}" ]; then
-            echo "Could not read Core's GitHub default branch" >&2
-            exit 1
+          # Full history. A shallow fetch makes --is-ancestor wrong.
+          repo="$(mktemp -d)"
+          git init -q "${repo}"
+          git -C "${repo}" remote add origin "${url}"
+          git -C "${repo}" fetch --no-tags origin "${pin}"
+          git -C "${repo}" fetch --no-tags origin "+refs/heads/dev:refs/heads/dev"
+          if git -C "${repo}" merge-base --is-ancestor "${pin}" refs/heads/dev; then
+            ref="dev"
+            rule="pinned SHA is in Core dev"
+          else
+            ref="${pin}"
+            rule="pinned SHA is not in Core dev"
           fi
         fi
-        echo "Core ref: ${CORE_REF}"
-        echo "CORE_REF=${CORE_REF}" >> "$GITHUB_ENV"
+        echo "Rule: ${rule}"
+        echo "Core ref: ${ref}"
+        echo "CORE_REF=${ref}" >> "${GITHUB_ENV}"
     - name: Install requirements, then current Core
       run: |
         set -euo pipefail

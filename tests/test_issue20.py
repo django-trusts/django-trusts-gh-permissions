@@ -1,20 +1,18 @@
 """Permission-string enumeration follows the mixin once the terminal is real.
 
 ``GhAuthorizationBackend`` does not override ``get_all_permissions`` or
-``get_group_permissions``. ``_perm_codes`` reads ``auth.Permission``
-``content_type__app_label`` and ``codename``.
+``get_group_permissions``. Enumeration returns ``app_label.codename``
+strings for real ``auth.Permission`` rows.
 """
 
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase, override_settings
 
-from trusts.apps import implementation_for_path
 from trusts.backends import TrustModelBackendMixin
 
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
-from tests.fixtures import GhFixtureMixin
+from tests.fixtures import GhFixtureMixin, permission_code
 
 
 _OTHER_ALL = {'other.view_repository'}
@@ -32,14 +30,8 @@ class StringContributingBackend(object):
         return set(_OTHER_GROUP)
 
 
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
-
-
 class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
-    def test_backend_enumeration_uses_the_mixin_perm_codes(self):
+    def test_backend_enumeration_uses_the_mixin(self):
         self.assertIs(
             GhAuthorizationBackend.get_all_permissions,
             TrustModelBackendMixin.get_all_permissions,
@@ -136,15 +128,11 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
             set(),
         )
 
-    def test_supported_registry_paths_still_authorize(self):
-        registry = _registry()
+    def test_supported_paths_still_authorize(self):
+        backend = GhAuthorizationBackend()
         self.assertTrue(
-            registry.has_permission(self.member, self.repo_a, self.read),
+            backend.has_perm(self.member, permission_code(self.read), self.repo_a),
         )
-        enumerated = {
-            row.pk for row in registry.permissions_for(self.member, self.repo_a)
-        }
-        self.assertIn(self.read.pk, enumerated)
         self.assertEqual(
             list(
                 Repository.objects.authorized(self.member, self.read)
@@ -152,11 +140,7 @@ class GhPermissionStringEnumerationTest(GhFixtureMixin, TestCase):
             ),
             [self.repo_a],
         )
-        backend = GhAuthorizationBackend()
         self.assertEqual(
             backend.get_all_permissions(self.member, self.repo_a),
             {_READ},
-        )
-        self.assertTrue(
-            registry.has_permission(self.member, self.repo_a, self.read),
         )

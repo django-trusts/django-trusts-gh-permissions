@@ -18,8 +18,10 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 ALLOWED_HOSTS = ['testserver', 'localhost']
 
-# IIb: core is a library, not an installed app. Zero stays absent.
-# example.User is the test project only. The library does not require it.
+# Relations are registered at the end of gh_permissions/models.py.
+# GhPermissionsConfig owns the catalog. Core is a library.
+# Do not list 'trusts'. example.User is the test project only.
+# The library does not require it.
 # Sessions, messages, static files, and admin are the harness for real
 # organization-owner admin requests. They are not authorization.
 INSTALLED_APPS = (

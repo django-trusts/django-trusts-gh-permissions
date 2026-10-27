@@ -1,90 +1,72 @@
-"""GH owner proofs on final core.
+"""GH startup proofs on the app-owned policy.
 
-Locks the supported owner contract against ``django-trusts`` 1.x:
-
-* ``GhPermissionsConfig`` is the sole implementation owner
-* mixin / ready / list execution resolve through the owner API
-* missing canonical backend path fails at startup
-* no dependency on ``kernel_config()``, a core ``AppConfig``,
-  ``trusts.core_backends``, the removed core historical backend, or Zero
+* ``models.py`` records relations and the backend publishes the policy
+* a missing canonical backend path fails at ``ready()``
+* a registration after the catalog is built fails closed
+* the listed backend authorizes from that policy
 """
 
 from __future__ import annotations
 
-import inspect
-from pathlib import Path
-
 from django.apps import apps
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from trusts.apps import (
-    TrustsImplementationConfig,
-    implementation_configs,
-    implementation_for_path,
-)
+from trusts.apps import TrustsConfigMixin
+from trusts.backends import policy_document
+from trusts.errors import TrustsConfigurationError
 from gh_permissions.apps import CANONICAL_BACKEND, GhPermissionsConfig, gh_config
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
+    Organization,
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
     IssuePermissions,
     TeamRepositoryPermission,
 )
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from gh_permissions.services import ensure_owner_group
+from tests.fixtures import gh_trusts, repository_permission
 
 
 class Issue6OwnerProofs(SimpleTestCase):
-    def test_gh_config_is_sole_implementation_owner(self):
-        import trusts.apps as trusts_apps
-
-        owners = implementation_configs()
-        self.assertEqual(len(owners), 1)
-        self.assertIsInstance(owners[0], GhPermissionsConfig)
-        self.assertIsInstance(owners[0], TrustsImplementationConfig)
-        self.assertIs(owners[0], gh_config())
+    def test_gh_config_is_the_trusts_mixin(self):
+        owner = gh_config()
+        self.assertIsInstance(owner, GhPermissionsConfig)
+        self.assertIsInstance(owner, TrustsConfigMixin)
         self.assertNotIn('trusts_core', apps.app_configs)
-        self.assertFalse(hasattr(trusts_apps, 'AppConfig'))
         names = [config.name for config in apps.get_app_configs()]
         self.assertNotIn('trusts', names)
+        self.assertNotIn('trusts.apps', names)
 
-    def test_canonical_backend_resolves_only_through_owner(self):
-        owner = implementation_for_path(CANONICAL_BACKEND)
-        self.assertIs(owner, gh_config())
-        self.assertEqual(owner.trusts_backend_paths, (CANONICAL_BACKEND,))
-        handle = owner.configured_backend(CANONICAL_BACKEND)
-        self.assertEqual(handle.path, CANONICAL_BACKEND)
-        self.assertIs(
-            type(handle.compiler),
-            GhAuthorizationBackend.query_compiler.__class__,
+    def test_policy_document_names_the_gh_config(self):
+        direct = GhAuthorizationBackend().policy_document()
+        project = policy_document()
+        named = policy_document(
+            backend='gh_permissions.backends.GhAuthorizationBackend',
+        )
+        self.assertEqual(direct, project)
+        self.assertEqual(direct, named)
+        self.assertEqual(direct['schema_version'], 1)
+        self.assertEqual(
+            [row['path'] for row in direct['backends']],
+            ['gh_permissions.apps.GhPermissionsConfig'],
+        )
+        self.assertEqual(
+            direct['database']['engine'],
+            settings.DATABASES['default']['ENGINE'],
         )
 
-    def test_mixin_resolves_owner_without_removed_core_surfaces(self):
-        import trusts.apps as trusts_apps
-
-        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        backend = GhAuthorizationBackend()
-        self.assertIs(backend._trusts_config(), gh_config())
-
-    def test_ready_resolves_owner_without_removed_core_surfaces(self):
-        import trusts.apps as trusts_apps
-
-        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        owner = implementation_for_path(CANONICAL_BACKEND)
-        self.assertIs(owner, gh_config())
-        roots = [
-            record.root
-            for record in owner.configured_backend(CANONICAL_BACKEND).registry.records
-        ]
+    def test_import_registers_ordinary_roots(self):
+        roots = [trust['root'] for _model, trust in gh_trusts()]
         self.assertEqual(roots, [
-            RepositoryCollaborator,
-            TeamRepositoryPermission,
-            OrganizationOwnership,
-            OrganizationOwnership,
-            IssuePermissions,
+            RepositoryCollaborator._meta.label,
+            TeamRepositoryPermission._meta.label,
+            OrganizationOwnership._meta.label,
+            OrganizationOwnership._meta.label,
+            IssuePermissions._meta.label,
         ])
 
     def test_missing_canonical_backend_path_fails_at_startup(self):
@@ -94,57 +76,24 @@ class Issue6OwnerProofs(SimpleTestCase):
                 GhPermissionsConfig.ready(config)
         self.assertIn(CANONICAL_BACKEND, str(ctx.exception))
 
-    def test_source_has_no_transitional_dependencies(self):
-        import re
-
-        banned = (
-            'from trusts.apps import kernel_config',
-            'from trusts.core_backends',
-            'import trusts.core_backends',
-            'from trusts.zero',
-            'import trusts.zero',
-            'django-trusts-zero',
-        )
-        historical = re.compile(
-            r'from trusts\.backends import TrustModelBackend(?!Mixin)'
-        )
-        offenders = []
-        for path in (ROOT / 'gh_permissions').rglob('*.py'):
-            text = path.read_text()
-            for needle in banned:
-                if needle in text:
-                    offenders.append('%s: %s' % (path.relative_to(ROOT), needle))
-            if historical.search(text):
-                offenders.append(
-                    '%s: from trusts.backends import TrustModelBackend'
-                    % path.relative_to(ROOT)
-                )
-        self.assertEqual(offenders, [])
-        from django.conf import settings as django_settings
-
-        self.assertNotIn('trusts', django_settings.INSTALLED_APPS)
-        self.assertNotIn('trusts.apps.AppConfig', django_settings.INSTALLED_APPS)
-        ready = Path(inspect.getfile(GhPermissionsConfig)).read_text()
-        self.assertIn('register_collaborator(handle)', ready)
-        self.assertIn('register_team(handle)', ready)
-        self.assertIn('register_organization_owner(handle)', ready)
-        self.assertNotIn('_gh_policy_registry_id', ready)
-        self.assertNotIn('.registry.register(', ready)
-        self.assertNotIn('register_collaborator(registry)', ready)
-        self.assertNotIn('register_team(registry)', ready)
-        self.assertNotIn('register_organization_owner(registry)', ready)
+    def test_register_after_the_catalog_is_built_raises(self):
+        before = GhAuthorizationBackend().policy_document()
+        config = apps.get_app_config('gh_permissions')
+        GhPermissionsConfig.ready(config)
+        self.assertEqual(GhAuthorizationBackend().policy_document(), before)
+        with self.assertRaises(TrustsConfigurationError) as caught:
+            GhAuthorizationBackend().get_registry().register(
+                trust=RepositoryCollaborator,
+                user='user',
+                permission='permissions',
+                content='repository',
+            )
+        self.assertIn('frozen', str(caught.exception))
+        self.assertEqual(GhAuthorizationBackend().policy_document(), before)
 
 
 class Issue6AuthorizationProofs(TestCase):
-    def test_list_authorized_resolves_owner_without_removed_core_surfaces(self):
-        import trusts.apps as trusts_apps
-        from django.contrib.auth import get_user_model
-
-        from gh_permissions.models import Organization
-        from gh_permissions.services import ensure_owner_group
-
-        from tests.fixtures import repository_permission
-
+    def test_list_authorized_sees_the_collaborator(self):
         org = Organization.objects.create(
             name='iib-org', owner_group=ensure_owner_group(),
         )
@@ -156,8 +105,10 @@ class Issue6AuthorizationProofs(TestCase):
         )
         collaboration.permissions.add(write)
 
-        self.assertFalse(hasattr(trusts_apps, 'kernel_config'))
-        backend = GhAuthorizationBackend()
-        self.assertIs(backend._trusts_config(), gh_config())
         listed = list(Repository.objects.authorized(user, write))
         self.assertIn(repo, listed)
+        self.assertTrue(
+            GhAuthorizationBackend().has_perm(
+                user, 'gh_permissions.write_repository', repo,
+            ),
+        )

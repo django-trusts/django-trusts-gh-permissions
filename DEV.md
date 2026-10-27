@@ -39,7 +39,7 @@ adds `Alias`, personal versus conventional organizations,
 `UserRepositoryPermission` and `OrganizationOwnerPermission`. Team,
 `Team.allowed_operations`, and `TeamRepositoryPermission` are unchanged.
 `OrganizationOwnership` is owners only. The row is the grant, so
-startup registers it with no condition, once for the organization and
+`models.py` registers it with no condition, once for the organization and
 once for `organization__repositories`. A permission in the shared
 owner `Group` grants only when `Permission.content_type` matches the
 object: `manage_organization` on the organization, and
@@ -193,9 +193,8 @@ The previous top-level README described pairing against Step I
 `LookupError` helper, and inventoried CI against that Step I SHA.
 Those statements are false after the final core cut. Final core
 deleted `kernel_config()`, the core `AppConfig`, and
-`trusts.backends.TrustModelBackend`. Supported GH startup still uses
-`implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`
-and never installs `'trusts'`.
+`trusts.backends.TrustModelBackend`. Supported GH startup never
+installs `'trusts'`.
 
 ## Bounded policy (still true)
 
@@ -226,8 +225,8 @@ as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct repository access is `register_collaborator`. Both take the
-configured `BackendHandle` and call `handle.register` with `trust=`
-plus Django `__` path strings.
+registry from `GhAuthorizationBackend().get_registry()` and call
+`register` with `trust=` plus Django `__` path strings.
 Team adds a one-argument symbolic `condition=` using `.contains`, `==`,
 and `&`. Literal Python `in` is unsupported. There is no aggregate
 `register_gh_policy()`.
@@ -278,15 +277,11 @@ not an organization grant.
 ## Following current Core
 
 Core lands first. The `latest-core` job follows that Core: a
-django-trusts branch with the same name as this branch, then `dev`,
-then Core's stable branch.
+django-trusts branch with the same name as this branch, then the
+pinned SHA when that commit is not in Core `dev`, then Core `dev`.
 
 The same-name branch is `GITHUB_HEAD_REF` on a pull request, and
-otherwise `GITHUB_REF_NAME`. The stable branch is Core's GitHub
-default branch. CI reads it with `git ls-remote --symref https://github.com/django-trusts/django-trusts HEAD`.
-CI relies on each repository's GitHub default branch being its stable
-branch (`master` or `main`). Admins must not set the default branch
-to `dev`.
+otherwise `GITHUB_REF_NAME`.
 
 The pinned jobs and deploys keep the exact pin in `requirements.txt`,
 `scripts/django-trusts.pin`, and `COMPANION_KERNEL_SHA`. Those builds
@@ -341,9 +336,9 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 |---|---|---|
 | Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, Issue, and IssuePermissions. Permission rows are `auth.Permission`, including `manage_organization` and `triage_issue`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
-| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded sub-issue `handle.register` calls. No aggregate helper |
+| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded sub-issue `register` calls. No aggregate helper. `models.py` calls them on `get_registry()` |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | Registers ordinary, delegation, and sub-issue relations, then owner-group seed on `post_migrate` |
+| Ready contribution | `apps.py` | Checks the canonical backend, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

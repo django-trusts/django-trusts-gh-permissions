@@ -1,23 +1,18 @@
+"""GH implementation owner.
+
+Relations are registered at the end of ``models.py`` through
+``GhAuthorizationBackend().get_registry()``. ``ready`` checks the
+canonical backend and connects the owner-group seed. The catalog is
+built on the first policy check or permission question. Core is a
+library, not an installed app.
+"""
+
+from django.apps import apps as django_apps
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.db.models.signals import post_migrate
 
-CORE_REQUIREMENT = 'django-trusts>=1.0.0.dev3,<2'
-FLOOR_MESSAGE = (
-    'django-trusts-gh-permissions 0.1.0.dev0 requires '
-    '%s (TrustsImplementationConfig). '
-    'Upgrade django-trusts; do not rely on a missing import.'
-    % CORE_REQUIREMENT
-)
-
-
-def _load_implementation_config():
-    try:
-        from trusts.apps import TrustsImplementationConfig as imported
-    except ImportError:
-        raise ImproperlyConfigured(FLOOR_MESSAGE)
-    return imported
-
-
-TrustsImplementationConfig = _load_implementation_config()
+from trusts.apps import TrustsConfigMixin
 
 
 CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
@@ -25,8 +20,6 @@ CANONICAL_BACKEND = 'gh_permissions.backends.GhAuthorizationBackend'
 
 def gh_config(apps_registry=None):
     """Return the installed ``GhPermissionsConfig`` by class identity."""
-    from django.apps import apps as django_apps
-
     registry = django_apps if apps_registry is None else apps_registry
     matches = [
         config for config in registry.get_app_configs()
@@ -43,12 +36,11 @@ def gh_config(apps_registry=None):
     )
 
 
-class GhPermissionsConfig(TrustsImplementationConfig):
-    """GH implementation owner. Core is a library, not an installed app.
+class GhPermissionsConfig(TrustsConfigMixin):
+    """GH implementation. The catalog is built from ``models.py``.
 
-    Owns the exact path ``gh_permissions.backends.GhAuthorizationBackend``.
-    ``ready()`` donates through ``implementation_for_path`` and never
-    calls ``kernel_config()`` or silently skips.
+    ``ready()`` refuses to start when ``CANONICAL_BACKEND`` is not listed
+    in ``AUTHENTICATION_BACKENDS``.
     """
 
     name = 'gh_permissions'
@@ -56,39 +48,21 @@ class GhPermissionsConfig(TrustsImplementationConfig):
     verbose_name = 'GH permissions'
     default_auto_field = 'django.db.models.AutoField'
     default = True
-    trusts_backend_paths = (CANONICAL_BACKEND,)
 
     def ready(self):
-        from trusts.apps import implementation_for_path
+        if CANONICAL_BACKEND not in tuple(settings.AUTHENTICATION_BACKENDS or ()):
+            raise ImproperlyConfigured(
+                'AUTHENTICATION_BACKENDS must include %s.'
+                % CANONICAL_BACKEND
+            )
 
-        from django.db.models.signals import post_migrate
-
-        from gh_permissions.policy import (
-            register_all_personal_repositories_delegation,
-            register_collaborator,
-            register_delegation,
-            register_organization_owner,
-            register_personal_delegation,
-            register_issue_permissions,
-            register_team,
-        )
+        # services imports model modules. This AppConfig module is
+        # imported while the app registry is still populating.
         from gh_permissions.services import seed_owner_group_on_migrate
 
-        super(GhPermissionsConfig, self).ready()
         post_migrate.connect(
             seed_owner_group_on_migrate,
             sender=self,
             dispatch_uid='gh_permissions.seed_owner_group',
         )
-
-        owner = implementation_for_path(
-            CANONICAL_BACKEND, apps_registry=getattr(self, 'apps', None),
-        )
-        handle = owner.configured_backend(CANONICAL_BACKEND)
-        register_collaborator(handle)
-        register_team(handle)
-        register_organization_owner(handle)
-        register_personal_delegation(handle)
-        register_all_personal_repositories_delegation(handle)
-        register_delegation(handle)
-        register_issue_permissions(handle)
+        super().ready()

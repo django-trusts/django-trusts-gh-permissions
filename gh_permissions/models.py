@@ -1,4 +1,4 @@
-"""GH-shaped domain models. Authorization paths are registered in policy.
+"""GH-shaped domain models. Authorization paths are registered below.
 
 Public relations used to authorize:
 
@@ -24,7 +24,7 @@ from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from trusts.query import AuthorizedManager, PermittedUsersMixin
+from trusts.models import AuthorizedManager, PermittedUsersMixin
 
 
 class Alias(models.Model):
@@ -454,3 +454,25 @@ class TeamRepositoryPermission(models.Model):
                 raise ValidationError(
                     'Repository grants must stay inside one organization.'
                 )
+
+
+from gh_permissions.backends import GhAuthorizationBackend
+from gh_permissions.policy import (
+    register_all_personal_repositories_delegation,
+    register_collaborator,
+    register_delegation,
+    register_issue_permissions,
+    register_organization_owner,
+    register_personal_delegation,
+    register_team,
+)
+
+_registry = GhAuthorizationBackend().get_registry()
+register_collaborator(_registry)
+register_team(_registry)
+register_organization_owner(_registry)
+register_personal_delegation(_registry)
+register_all_personal_repositories_delegation(_registry)
+register_delegation(_registry)
+register_issue_permissions(_registry)
+del _registry

@@ -5,19 +5,14 @@ from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from trusts.apps import implementation_for_path
-from trusts.policy_lock import _load_policy_sql_document, render_policy_sql_bytes
-
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Issue,
     IssuePermissions,
     Organization,
     Repository,
 )
-from gh_permissions.policy import register_issue_permissions
 from gh_permissions.services import ensure_owner_group
-from tests.fixtures import isolated_handle
+from tests.fixtures import gh_policy_document, gh_trusts
 
 
 _TRIAGE = 'gh_permissions.triage_issue'
@@ -32,18 +27,17 @@ def _triage_permission():
 
 
 class SubIssueAlongRegistrationTest(TestCase):
-    def test_registration_is_zero_sql_shape_s_with_bound_eight(self):
-        handle = isolated_handle()
-        with self.assertNumQueries(0):
-            record = register_issue_permissions(handle)
-        self.assertIs(record.root, IssuePermissions)
-        self.assertIs(record.content_model, Issue)
-        self.assertEqual(record.user_path, ('user',))
-        self.assertEqual(record.permission_path, ('permissions',))
-        self.assertEqual(record.content_path, ('issue',))
-        self.assertEqual(record.along.path, ('issue', 'parent'))
-        self.assertEqual(record.along.shape, 'S')
-        self.assertEqual(record.along.bound, 8)
+    def test_issue_permissions_along_is_shape_s_bound_eight(self):
+        model, trust = gh_trusts()[-1]
+        self.assertEqual(trust['root'], IssuePermissions._meta.label)
+        self.assertEqual(model, Issue._meta.label)
+        self.assertEqual(trust['user']['path'], 'user')
+        self.assertEqual(trust['permission']['path'], 'permissions')
+        self.assertEqual(trust['content']['path'], 'issue')
+        self.assertEqual(
+            trust['along'],
+            {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
+        )
 
 
 class SubIssueAlongAuthorizationTest(TestCase):
@@ -165,7 +159,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
         self.assertFalse(self.alice.has_perm(_TRIAGE, self.leaf))
 
     def test_policy_document_records_forward_and_reverse_recursive_sql(self):
-        document = _load_policy_sql_document(render_policy_sql_bytes())
+        document = gh_policy_document()
         content = next(
             item for item in document['backends'][0]['contents']
             if item['model'] == 'gh_permissions.Issue'
@@ -218,9 +212,10 @@ class SubIssueShapeTest(TestCase):
 
 class SubIssueStartupTest(TestCase):
     def test_issue_registration_is_the_last_ordinary_record(self):
-        registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-            CANONICAL_BACKEND,
-        ).registry
-        record = registry.records[-1]
-        self.assertIs(record.root, IssuePermissions)
-        self.assertEqual(record.along.path, ('issue', 'parent'))
+        model, trust = gh_trusts()[-1]
+        self.assertEqual(model, Issue._meta.label)
+        self.assertEqual(trust['root'], IssuePermissions._meta.label)
+        self.assertEqual(
+            trust['along'],
+            {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
+        )

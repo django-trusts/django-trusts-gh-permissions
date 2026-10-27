@@ -1,15 +1,11 @@
 """Acceptance matrix for the bounded GH policy on public C2 + #98."""
 
-from unittest.mock import patch
-
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.apps import configured_implementation_handles, implementation_for_path
-from trusts.core import TrustsConfigurationError
-from trusts.query import AuthorizedManager, AuthorizedQuerySet
+from trusts.models import AuthorizedManager, AuthorizedQuerySet
 
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -18,49 +14,35 @@ from gh_permissions.models import (
     IssuePermissions,
     TeamRepositoryPermission,
 )
-from tests.fixtures import GhFixtureMixin
-
-
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
+from tests.fixtures import GhFixtureMixin, gh_trusts, permission_code
 
 
 class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
     reset_sequences = True
 
     def _object_list_agree(self, principal, operation, obj, expected):
-        registry = _registry()
+        backend = GhAuthorizationBackend()
+        code = permission_code(operation)
         with self.assertNumQueries(1):
-            via_obj = registry.has_permission(principal, obj, operation)
+            via_obj = backend.has_perm(principal, code, obj)
         with self.assertNumQueries(1):
             via_exists = Repository.objects.filter(pk=obj.pk).authorized(
                 principal, operation,
             ).exists()
         with self.assertNumQueries(1):
             via_list = obj in list(
-                registry.filter_authorized(
-                    Repository.objects.filter(pk=obj.pk), principal, operation,
-                )
-            )
-        with self.assertNumQueries(1):
-            via_manager = obj in list(
                 Repository.objects.filter(pk=obj.pk).authorized(
                     principal, operation,
                 )
             )
-        enumerated = {
-            row.pk for row in registry.permissions_for(principal, obj)
-        }
+        enumerated = backend.get_all_permissions(principal, obj)
         self.assertEqual(via_obj, expected)
         self.assertEqual(via_exists, expected)
         self.assertEqual(via_list, expected)
-        self.assertEqual(via_manager, expected)
         if expected:
-            self.assertIn(operation.pk, enumerated)
+            self.assertIn(code, enumerated)
         else:
-            self.assertNotIn(operation.pk, enumerated)
+            self.assertNotIn(code, enumerated)
 
     def test_direct_user_can_perform_granted_operation(self):
         self._object_list_agree(
@@ -232,30 +214,33 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
         self.assertIn('teamrepositorypermission', combined)
 
     def test_query_construction_is_lazy_and_filters_before_pagination(self):
-        registry = _registry()
         with self.assertNumQueries(0):
-            qs = registry.filter_authorized(
-                Repository.objects.all(), self.member, self.read,
-            )
-            enumerated = registry.permissions_for(self.member, self.repo_a)
+            qs = Repository.objects.all().authorized(self.member, self.read)
         self.assertIsInstance(qs, QuerySet)
-        self.assertIsInstance(enumerated, QuerySet)
         self.assertIsNone(qs._result_cache)
         with self.assertNumQueries(1):
             self.assertEqual(
                 list(qs.order_by('pk').values_list('pk', flat=True)),
                 [self.repo_a.pk],
             )
-        page = registry.filter_authorized(
-            Repository.objects.order_by('pk'), self.member, self.read,
+        page = Repository.objects.order_by('pk').authorized(
+            self.member, self.read,
         )[:1]
         with self.assertNumQueries(1):
             self.assertEqual(list(page), [self.repo_a])
+        self.assertIn(
+            permission_code(self.read),
+            GhAuthorizationBackend().get_all_permissions(
+                self.member, self.repo_a,
+            ),
+        )
 
-    def test_string_permission_is_rejected_with_zero_sql(self):
+    def test_string_permission_fails_closed_with_zero_sql(self):
         with self.assertNumQueries(0):
-            with self.assertRaises(TrustsConfigurationError):
-                list(Repository.objects.authorized(self.collaborator, 'write'))
+            listed = list(
+                Repository.objects.authorized(self.collaborator, 'write'),
+            )
+        self.assertEqual(listed, [])
 
 
 class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
@@ -263,32 +248,22 @@ class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
 
     reset_sequences = True
 
-    def test_stock_manager_reads_configured_implementation_handles(self):
+    def test_stock_manager_reads_the_gh_policy(self):
         self.assertIs(type(Repository.objects), AuthorizedManager)
         self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
         self.assertIs(type(Organization.objects), AuthorizedManager)
 
-        handles = configured_implementation_handles()
-        self.assertEqual(len(handles), 1)
-        self.assertEqual(handles[0].path, CANONICAL_BACKEND)
-        roots = [record.root for record in handles[0].registry.records]
+        roots = [trust['root'] for _model, trust in gh_trusts()]
         self.assertEqual(
             roots,
             [
-                RepositoryCollaborator,
-                TeamRepositoryPermission,
-                OrganizationOwnership,
-                OrganizationOwnership,
-                IssuePermissions,
+                RepositoryCollaborator._meta.label,
+                TeamRepositoryPermission._meta.label,
+                OrganizationOwnership._meta.label,
+                OrganizationOwnership._meta.label,
+                IssuePermissions._meta.label,
             ],
         )
-
-        with patch(
-            'trusts.apps.configured_implementation_handles', return_value=(),
-        ) as mocked:
-            hidden = list(Repository.objects.authorized(self.member, self.read))
-        mocked.assert_called()
-        self.assertEqual(hidden, [])
 
         listed = list(
             Repository.objects.authorized(self.member, self.read).order_by('pk')

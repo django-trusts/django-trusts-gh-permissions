@@ -1,5 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts dev merge of #314 (checked-user rules, #312).
-# Includes the #310 source=value lockfile params. gh-permissions registers
-# no user override. Never pin django-trusts-zero. Do not float past this commit.
-ref=a599bc7dc9bad8401a9733eaced4e3689ae9de00
+# Paired with django-trusts entries-exact-sql (draft #344)
+# at d38a4991. Request-time caller input fails closed.
+# gh-permissions registers no user override. Never pin django-trusts-zero.
+# Do not float past this commit.
+ref=d38a4991b46948c860b1c4f7c4e4e518a93eabca

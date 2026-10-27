@@ -1,9 +1,11 @@
-"""GH policy registrations on public ``BackendHandle.register``.
+"""GH policy registrations.
 
-Collaborators are one user/repository row. ``permission`` is the
-terminal many-to-many ``permissions``. Team keeps the accepted mapping:
-terminal membership step, operation ceiling, and organization alignment.
-An owner is one ``OrganizationOwnership`` row. That row reads
+``models.py`` contributes each helper as a separate call on
+``GhAuthorizationBackend().get_registry()``. Collaborators are one
+user/repository row. ``permission`` is the terminal many-to-many
+``permissions``. Team keeps the accepted mapping: terminal membership
+step, operation ceiling, and organization alignment. An owner is one
+``OrganizationOwnership`` row. That row reads
 ``organization__owner_group__permissions`` for the organization and
 for ``organization__repositories``, with no condition. A permission in
 that group grants only when its ``content_type`` is the object's own
@@ -15,12 +17,8 @@ Issue triage assignments use bounded ``along=`` reachability: one grant at an
 issue applies to that issue and its sub-issues through at most eight parent
 edges. This relative query bound is separate from the modeled service's
 absolute eight-level validity rule.
-``GhPermissionsConfig.ready`` contributes each helper as a separate call.
-Helpers require a ``BackendHandle``; a bare registry is ``TypeError``.
 ``permission=`` does not feed ``get_group_permissions``.
 """
-
-from trusts.core import BackendHandle
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
@@ -33,19 +31,9 @@ from gh_permissions.models import (
 )
 
 
-def _require_handle(handle):
-    if not isinstance(handle, BackendHandle):
-        raise TypeError(
-            'GH relation helpers require a BackendHandle, not %r.'
-            % (type(handle).__name__,)
-        )
-    return handle
-
-
-def register_collaborator(handle):
+def register_collaborator(registry):
     """Register direct repository collaboration."""
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=RepositoryCollaborator,
         user='user',
         permission='permissions',
@@ -53,10 +41,9 @@ def register_collaborator(handle):
     )
 
 
-def register_issue_permissions(handle):
+def register_issue_permissions(registry):
     """Register a bounded permission bundle over one issue subtree."""
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=IssuePermissions,
         user='user',
         permission='permissions',
@@ -65,15 +52,14 @@ def register_issue_permissions(handle):
     )
 
 
-def register_delegation(handle):
+def register_delegation(registry):
     """Register one-level repository delegation through an exact sponsor.
 
     Selection, organization approval, repository alignment, and the
     delegation ceiling are the left side. Core correlates that row with
     the sponsor's live ordinary GH grants on the right side.
     """
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=RepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor_ownership__user',
@@ -92,10 +78,9 @@ def register_delegation(handle):
     )
 
 
-def register_personal_delegation(handle):
+def register_personal_delegation(registry):
     """Register personal-repository delegation without company approval."""
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=PersonalRepositoryDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -110,10 +95,9 @@ def register_personal_delegation(handle):
     )
 
 
-def register_all_personal_repositories_delegation(handle):
+def register_all_personal_repositories_delegation(registry):
     """Register delegation over all of one sponsor's personal repositories."""
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=AllPersonalRepositoriesDelegation,
         delegate='delegate',
         sponsor='sponsor',
@@ -124,10 +108,9 @@ def register_all_personal_repositories_delegation(handle):
     )
 
 
-def register_team(handle):
+def register_team(registry):
     """Register the accepted team mapping (membership, ceiling, alignment)."""
-    handle = _require_handle(handle)
-    return handle.register(
+    registry.register(
         trust=TeamRepositoryPermission,
         user='team__members',
         permission='operation',
@@ -139,19 +122,18 @@ def register_team(handle):
     )
 
 
-def register_organization_owner(handle):
+def register_organization_owner(registry):
     """Register each ownership row for one organization and its repositories.
 
     The ownership row is the grant. No condition is applied.
     """
-    handle = _require_handle(handle)
-    handle.register(
+    registry.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
         content='organization',
     )
-    return handle.register(
+    registry.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',

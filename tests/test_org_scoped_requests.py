@@ -20,7 +20,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from gh_permissions.admin import OrgScopedAdmin
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
     Organization,
     OrganizationOwnership,
@@ -30,21 +30,14 @@ from gh_permissions.models import (
     TeamRepositoryPermission,
 )
 from gh_permissions.services import create_organization
-from tests.fixtures import repository_permission
+from tests.fixtures import permission_code, repository_permission
 from tests.test_migration_0002 import _ALIAS
-from trusts.apps import implementation_for_path
 
 
 # Users built in these tests have no password. force_login names
 # ModelBackend, which the runnable example settings already list.
 # This is not an AUTHENTICATION_BACKENDS override.
 MODEL_BACKEND = 'django.contrib.auth.backends.ModelBackend'
-
-
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
 
 
 class _SelectParser(HTMLParser):
@@ -461,10 +454,10 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertNotContains(foreign_index, 'alpha-writers')
 
     def test_direct_and_team_grants_create_update_and_revoke(self):
-        registry = _registry()
-        self.assertFalse(registry.has_permission(self.member, self.repo_a, self.read))
-        self.assertTrue(registry.has_permission(self.owner_a, self.repo_a, self.read))
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.read))
+        backend = GhAuthorizationBackend()
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
+        self.assertTrue(backend.has_perm(self.owner_a, permission_code(self.read), self.repo_a))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.read), self.repo_a))
 
         forged_direct = self.owner_client.post(
             reverse('admin:gh_permissions_repositorycollaborator_add'),
@@ -491,9 +484,9 @@ class OrgScopedAdminRequestTests(TestCase):
         direct = RepositoryCollaborator.objects.get()
         with self.assertNumQueries(1):
             self.assertTrue(
-                registry.has_permission(self.target, self.repo_a, self.read),
+                backend.has_perm(self.target, permission_code(self.read), self.repo_a),
             )
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.write))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.write), self.repo_a))
         updated = self.owner_client.post(
             reverse(
                 'admin:gh_permissions_repositorycollaborator_change',
@@ -511,8 +504,8 @@ class OrgScopedAdminRequestTests(TestCase):
             set(direct.permissions.values_list('pk', flat=True)),
             {self.write.pk},
         )
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.read))
-        self.assertTrue(registry.has_permission(self.target, self.repo_a, self.write))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.read), self.repo_a))
+        self.assertTrue(backend.has_perm(self.target, permission_code(self.write), self.repo_a))
         retarget = self.owner_client.post(
             reverse(
                 'admin:gh_permissions_repositorycollaborator_change',
@@ -537,7 +530,7 @@ class OrgScopedAdminRequestTests(TestCase):
         )
         self.assertEqual(removed.status_code, 302)
         self.assertEqual(RepositoryCollaborator.objects.count(), 0)
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.write))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.write), self.repo_a))
 
         foreign_team_grant = self.owner_client.post(
             reverse('admin:gh_permissions_teamrepositorypermission_add'),
@@ -583,7 +576,7 @@ class OrgScopedAdminRequestTests(TestCase):
             },
         )
         self.assertEqual(over_ceiling.status_code, 302)
-        self.assertFalse(registry.has_permission(self.member, self.repo_a, self.write))
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.write), self.repo_a))
         TeamRepositoryPermission.objects.all().delete()
 
         team_grant = self.owner_client.post(
@@ -598,8 +591,8 @@ class OrgScopedAdminRequestTests(TestCase):
         self.assertEqual(team_grant.status_code, 302)
         grant = TeamRepositoryPermission.objects.get()
         with self.assertNumQueries(1):
-            self.assertTrue(registry.has_permission(self.member, self.repo_a, self.read))
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.read))
+            self.assertTrue(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.read), self.repo_a))
         self.owner_client.post(
             reverse('admin:gh_permissions_repositorycollaborator_add'),
             {
@@ -609,10 +602,10 @@ class OrgScopedAdminRequestTests(TestCase):
                 '_save': 'Save',
             },
         )
-        self.assertTrue(registry.has_permission(self.member, self.repo_a, self.read))
-        self.assertTrue(registry.has_permission(self.member, self.repo_a, self.write))
-        self.assertFalse(registry.has_permission(
-            self.member, self.org_a, self.manage,
+        self.assertTrue(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
+        self.assertTrue(backend.has_perm(self.member, permission_code(self.write), self.repo_a))
+        self.assertFalse(backend.has_perm(
+            self.member, permission_code(self.manage), self.org_a,
         ))
         direct = RepositoryCollaborator.objects.get()
         self.owner_client.post(
@@ -622,8 +615,8 @@ class OrgScopedAdminRequestTests(TestCase):
             ),
             {'post': 'yes'},
         )
-        self.assertTrue(registry.has_permission(self.member, self.repo_a, self.read))
-        self.assertFalse(registry.has_permission(self.member, self.repo_a, self.write))
+        self.assertTrue(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.write), self.repo_a))
         self.owner_client.post(
             reverse(
                 'admin:gh_permissions_teamrepositorypermission_delete',
@@ -631,10 +624,10 @@ class OrgScopedAdminRequestTests(TestCase):
             ),
             {'post': 'yes'},
         )
-        self.assertFalse(registry.has_permission(self.member, self.repo_a, self.read))
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
         self.assertIn(self.member, self.team_a.members.all())
-        self.assertTrue(registry.has_permission(self.owner_a, self.repo_a, self.read))
-        self.assertFalse(registry.has_permission(self.target, self.repo_a, self.read))
+        self.assertTrue(backend.has_perm(self.owner_a, permission_code(self.read), self.repo_a))
+        self.assertFalse(backend.has_perm(self.target, permission_code(self.read), self.repo_a))
 
     def test_bulk_delete_selected_cannot_reach_another_organization(self):
         other_owned = Team.objects.create(organization=self.org_a, name='alpha-keepers')
@@ -921,14 +914,14 @@ class OrgScopedAdminRequestTests(TestCase):
             self.assertEqual(denied.status_code, 302)
             self.assertIn('/admin/login/', denied['Location'])
         self.assertTrue(Team.objects.filter(pk=self.team_a.pk).exists())
-        registry = _registry()
-        self.assertFalse(registry.has_permission(self.member, self.repo_a, self.read))
+        backend = GhAuthorizationBackend()
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
         TeamRepositoryPermission.objects.create(
             team=self.team_a, repository=self.repo_a, operation=self.read,
         )
-        self.assertTrue(registry.has_permission(self.member, self.repo_a, self.read))
-        self.assertTrue(registry.has_permission(self.owner_a, self.repo_a, self.read))
-        self.assertFalse(registry.has_permission(self.member, self.org_a, self.manage))
+        self.assertTrue(backend.has_perm(self.member, permission_code(self.read), self.repo_a))
+        self.assertTrue(backend.has_perm(self.owner_a, permission_code(self.read), self.repo_a))
+        self.assertFalse(backend.has_perm(self.member, permission_code(self.manage), self.org_a))
         self.assertEqual(
             self.owner_client.get(reverse('admin:auth_permission_changelist')).status_code,
             403,
@@ -1020,8 +1013,8 @@ class OrgScopedAdminRequestTests(TestCase):
         )
 
     def test_issue_assignments_do_not_supply_repository_admin_authority(self):
-        registry = _registry()
-        self.assertTrue(registry.has_permission(self.owner_a, self.repo_a, self.read))
+        backend = GhAuthorizationBackend()
+        self.assertTrue(backend.has_perm(self.owner_a, permission_code(self.read), self.repo_a))
         self.assertEqual(
             set(Repository.objects.authorized(self.owner_a, self.read)),
             {self.repo_a, self.repo_a2},
@@ -1036,10 +1029,10 @@ class OrgScopedAdminRequestTests(TestCase):
             team=self.team_a, repository=self.repo_a, operation=self.read,
         )
         self.assertTrue(
-            registry.has_permission(self.staff_empty, self.repo_a, self.read),
+            backend.has_perm(self.staff_empty, permission_code(self.read), self.repo_a),
         )
         self.assertFalse(
-            registry.has_permission(self.staff_empty, self.repo_a, self.write),
+            backend.has_perm(self.staff_empty, permission_code(self.write), self.repo_a),
         )
         self.assertEqual(
             list(Organization.objects.authorized(self.staff_empty, self.manage)),
