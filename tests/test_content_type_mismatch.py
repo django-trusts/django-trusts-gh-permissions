@@ -19,7 +19,7 @@ from trusts.decorators import (
     _declared_authorization_guards,
     authorization_required,
 )
-from trusts.policy_lock import (
+from trusts.inspect.snapshot import (
     _load_policy_sql_document,
     render_policy_sql_bytes,
 )
