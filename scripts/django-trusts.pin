@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts one locked queryset per inquiry
-# (#348, #349, #350) at d20e9254. Request-time caller input fails closed.
+# Paired with django-trusts policy settings and register labels (#281)
+# at 6b448413. Request-time caller input fails closed.
 # gh-permissions registers no user override. Never pin django-trusts-zero.
 # Do not float past this commit.
-ref=d20e925445821b4220c4bcf756abb05cddf7d89a
+ref=6b44841313fae5cf9e8117a45bea36f76ced3eee

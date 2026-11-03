@@ -1,18 +1,28 @@
 schema_version: 1
 database:
   engine: "django.db.backends.mysql"
+settings:
+  TRUSTS_SQL_BIND_ONCE: true
+  AUTH_USER_MODEL: "example.User"
+  AUTHENTICATION_BACKENDS:
+    - "gh_permissions.backends.GhAuthorizationBackend"
+    - "django.contrib.auth.backends.ModelBackend"
 backends:
   - path: "gh_permissions.apps.GhPermissionsConfig"
     contents:
       - model: "gh_permissions.Repository"
         trusts:
           - id: "gh_permissions__RepositoryCollaborator__repository"
+            name: "collaborator"
+            description: "A user holds the permissions on this row for one repository."
             root: "gh_permissions.RepositoryCollaborator"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "permissions", model: "auth.Permission", target: "id"}
             content: {path: "repository", model: "gh_permissions.Repository", target: "id"}
             or_group: true
           - id: "gh_permissions__TeamRepositoryPermission__repository__cond"
+            name: "team_repository"
+            description: "A team member may perform an operation on a repository in the team's organization when that operation is in the team's allowed set."
             root: "gh_permissions.TeamRepositoryPermission"
             user: {path: "team__members", model: "example.User", target: "id"}
             permission: {path: "operation", model: "auth.Permission", target: "id"}
@@ -20,6 +30,8 @@ backends:
             condition: "$permission.id in team__allowed_operations and team__organization == repository__organization"
             or_group: true
           - id: "gh_permissions__OrganizationOwnership__organization__repositories"
+            name: "organization_owner_repositories"
+            description: "An ownership row grants the organization owner group's permissions on that organization's repositories."
             root: "gh_permissions.OrganizationOwnership"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "organization__owner_group__permissions", model: "auth.Permission", target: "id"}
@@ -27,6 +39,8 @@ backends:
             or_group: true
         delegations:
           - id: "gh_permissions__PersonalRepositoryDelegation__repository__cond"
+            name: "personal_repository_delegation"
+            description: "A delegate may use the sponsor's grants on one personal repository when this row allows the permission and that repository's organization belongs to the sponsor."
             root: "gh_permissions.PersonalRepositoryDelegation"
             delegate: {path: "delegate", model: "example.User", target: "id"}
             sponsor: {path: "sponsor", model: "example.User", target: "id"}
@@ -34,6 +48,8 @@ backends:
             condition: "$permission.id in permissions and repository__organization__personal_user == sponsor"
             or_group: true
           - id: "gh_permissions__AllPersonalRepositoriesDelegation__sponsor__personal_organization__repositories__cond"
+            name: "all_personal_repositories"
+            description: "A delegate may use the sponsor's grants on every repository in the sponsor's personal organization when this row allows the permission."
             root: "gh_permissions.AllPersonalRepositoriesDelegation"
             delegate: {path: "delegate", model: "example.User", target: "id"}
             sponsor: {path: "sponsor", model: "example.User", target: "id"}
@@ -41,6 +57,8 @@ backends:
             condition: "$permission.id in permissions"
             or_group: true
           - id: "gh_permissions__RepositoryDelegation__repository__cond"
+            name: "repository_delegation"
+            description: "A delegate may use one sponsor's grants on a repository when this row allows the permission, the sponsor ownership is in that repository's organization, and the approved organization is that same organization."
             root: "gh_permissions.RepositoryDelegation"
             delegate: {path: "delegate", model: "example.User", target: "id"}
             sponsor: {path: "sponsor_ownership__user", model: "example.User", target: "id"}
@@ -1641,6 +1659,8 @@ backends:
       - model: "gh_permissions.Organization"
         trusts:
           - id: "gh_permissions__OrganizationOwnership__organization"
+            name: "organization_owner"
+            description: "An ownership row grants the organization owner group's permissions on that organization."
             root: "gh_permissions.OrganizationOwnership"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "organization__owner_group__permissions", model: "auth.Permission", target: "id"}
@@ -1825,6 +1845,8 @@ backends:
       - model: "gh_permissions.Issue"
         trusts:
           - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8"
+            name: "issue_subtree"
+            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges."
             root: "gh_permissions.IssuePermissions"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "permissions", model: "auth.Permission", target: "id"}

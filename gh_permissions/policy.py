@@ -38,6 +38,10 @@ def register_collaborator(registry):
         user='user',
         permission='permissions',
         content='repository',
+        name='collaborator',
+        description=(
+            'A user holds the permissions on this row for one repository.'
+        ),
     )
 
 
@@ -49,6 +53,11 @@ def register_issue_permissions(registry):
         permission='permissions',
         content='issue',
         along=('issue__parent', 8),
+        name='issue_subtree',
+        description=(
+            'A user holds the permissions on this row for one issue and '
+            'its sub-issues, through at most eight parent edges.'
+        ),
     )
 
 
@@ -64,6 +73,13 @@ def register_delegation(registry):
         delegate='delegate',
         sponsor='sponsor_ownership__user',
         content='repository',
+        name='repository_delegation',
+        description=(
+            'A delegate may use one sponsor\'s grants on a repository '
+            'when this row allows the permission, the sponsor ownership '
+            'is in that repository\'s organization, and the approved '
+            'organization is that same organization.'
+        ),
         condition=lambda delegation, permission: (
             delegation.permissions.contains(permission)
             & (
@@ -85,6 +101,12 @@ def register_personal_delegation(registry):
         delegate='delegate',
         sponsor='sponsor',
         content='repository',
+        name='personal_repository_delegation',
+        description=(
+            'A delegate may use the sponsor\'s grants on one personal '
+            'repository when this row allows the permission and that '
+            'repository\'s organization belongs to the sponsor.'
+        ),
         condition=lambda delegation, permission: (
             delegation.permissions.contains(permission)
             & (
@@ -102,6 +124,12 @@ def register_all_personal_repositories_delegation(registry):
         delegate='delegate',
         sponsor='sponsor',
         content='sponsor__personal_organization__repositories',
+        name='all_personal_repositories',
+        description=(
+            'A delegate may use the sponsor\'s grants on every repository '
+            'in the sponsor\'s personal organization when this row allows '
+            'the permission.'
+        ),
         condition=lambda delegation, permission: (
             delegation.permissions.contains(permission)
         ),
@@ -115,6 +143,12 @@ def register_team(registry):
         user='team__members',
         permission='operation',
         content='repository',
+        name='team_repository',
+        description=(
+            'A team member may perform an operation on a repository in '
+            'the team\'s organization when that operation is in the '
+            'team\'s allowed set.'
+        ),
         condition=lambda t: (
             t.team.allowed_operations.contains(t.operation)
             & (t.team.organization == t.repository.organization)
@@ -132,10 +166,20 @@ def register_organization_owner(registry):
         user='user',
         permission='organization__owner_group__permissions',
         content='organization',
+        name='organization_owner',
+        description=(
+            'An ownership row grants the organization owner group\'s '
+            'permissions on that organization.'
+        ),
     )
     registry.register(
         trust=OrganizationOwnership,
         user='user',
         permission='organization__owner_group__permissions',
         content='organization__repositories',
+        name='organization_owner_repositories',
+        description=(
+            'An ownership row grants the organization owner group\'s '
+            'permissions on that organization\'s repositories.'
+        ),
     )
