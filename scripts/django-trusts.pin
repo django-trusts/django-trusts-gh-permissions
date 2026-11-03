@@ -1,6 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
 # Paired with django-trusts policy settings and register labels (#281)
-# at e3042e3e. Request-time caller input fails closed.
+# at c899aeff. Request-time caller input fails closed.
 # gh-permissions registers no user override. Never pin django-trusts-zero.
 # Do not float past this commit.
-ref=e3042e3e136b47669f869464d33572582cfeeb6e
+ref=c899aeff7b3bcb7507a99e35028b9f5448d34c5b
