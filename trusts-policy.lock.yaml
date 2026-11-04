@@ -1844,9 +1844,9 @@ backends:
               ) )
       - model: "gh_permissions.Issue"
         trusts:
-          - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8"
+          - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8__reset_reset_inheritance"
             name: "issue_subtree"
-            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges."
+            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges. reset_inheritance true cuts grants inherited from ancestors; a grant on that issue still applies and continues. Null and false inherit."
             root: "gh_permissions.IssuePermissions"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "permissions", model: "auth.Permission", target: "id"}
@@ -1855,10 +1855,11 @@ backends:
               path: "issue__parent"
               shape: "S"
               bound: 8
+              reset: "reset_inheritance"
         permitted:
           params: ["$user.id", "user.is_active=True", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "$permission.codename"]
           sql: |-
-            SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`
+            SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`, `gh_permissions_issue`.`reset_inheritance`
             FROM `gh_permissions_issue`
             CROSS JOIN (
               SELECT %s AS `user_id`, %s AS `is_active`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
@@ -1904,6 +1905,7 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                    AND `child`.`reset_inheritance` IS NOT TRUE
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -1961,6 +1963,7 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                    AND `child`.`reset_inheritance` IS NOT TRUE
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -2020,6 +2023,7 @@ backends:
                           SELECT `child`.`id`, `g`.`depth` + 1
                           FROM `gen` AS `g`
                           JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                            AND `child`.`reset_inheritance` IS NOT TRUE
                           WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                             AND `child`.`id` IS NOT NULL
                         )
@@ -2074,6 +2078,7 @@ backends:
                       SELECT `cur`.`parent_id`, `g`.`depth` + 1
                       FROM `gen` AS `g`
                       JOIN `gh_permissions_issue` AS `cur` ON `cur`.`id` = `g`.`ident`
+                        AND `cur`.`reset_inheritance` IS NOT TRUE
                       WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                         AND `cur`.`parent_id` IS NOT NULL
                     )

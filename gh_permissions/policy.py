@@ -15,8 +15,8 @@ pairs are denials. A user with no ownership row is not an owner. Team
 does not carry this bundle.
 Issue triage assignments use bounded ``along=`` reachability: one grant at an
 issue applies to that issue and its sub-issues through at most eight parent
-edges. This relative query bound is separate from the modeled service's
-absolute eight-level validity rule.
+edges, subject to ``Issue.reset_inheritance``. This relative query bound is
+separate from the modeled service's absolute eight-level validity rule.
 ``permission=`` does not feed ``get_group_permissions``.
 """
 
@@ -52,11 +52,14 @@ def register_issue_permissions(registry):
         user='user',
         permission='permissions',
         content='issue',
-        along=('issue__parent', 8),
+        along=('issue__parent', 8, 'reset_inheritance'),
         name='issue_subtree',
         description=(
             'A user holds the permissions on this row for one issue and '
-            'its sub-issues, through at most eight parent edges.'
+            'its sub-issues, through at most eight parent edges. '
+            'reset_inheritance true cuts grants inherited from ancestors; '
+            'a grant on that issue still applies and continues. '
+            'Null and false inherit.'
         ),
     )
 

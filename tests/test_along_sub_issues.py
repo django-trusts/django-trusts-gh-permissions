@@ -36,7 +36,12 @@ class SubIssueAlongRegistrationTest(TestCase):
         self.assertEqual(trust['content']['path'], 'issue')
         self.assertEqual(
             trust['along'],
-            {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
+            {
+                'path': 'issue__parent',
+                'shape': 'S',
+                'bound': 8,
+                'reset': 'reset_inheritance',
+            },
         )
 
 
@@ -169,7 +174,12 @@ class SubIssueAlongAuthorizationTest(TestCase):
         self.assertEqual(trust['root'], 'gh_permissions.IssuePermissions')
         self.assertEqual(
             trust['along'],
-            {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
+            {
+                'path': 'issue__parent',
+                'shape': 'S',
+                'bound': 8,
+                'reset': 'reset_inheritance',
+            },
         )
         for inquiry in (
             'permitted', 'has_perm', 'get_all_permissions',
@@ -177,6 +187,7 @@ class SubIssueAlongAuthorizationTest(TestCase):
         ):
             rendered = content[inquiry]
             self.assertIn('WITH RECURSIVE', rendered['sql'].upper())
+            self.assertIn('IS NOT TRUE', rendered['sql'])
             self.assertIn('$along_bound=8', rendered['params'])
 
 
@@ -217,5 +228,105 @@ class SubIssueStartupTest(TestCase):
         self.assertEqual(trust['root'], IssuePermissions._meta.label)
         self.assertEqual(
             trust['along'],
-            {'path': 'issue__parent', 'shape': 'S', 'bound': 8},
+            {
+                'path': 'issue__parent',
+                'shape': 'S',
+                'bound': 8,
+                'reset': 'reset_inheritance',
+            },
+        )
+
+
+class SubIssueResetInheritanceTest(TestCase):
+    """A true ``reset_inheritance`` cuts ancestor grants only."""
+
+    def setUp(self):
+        super().setUp()
+        User = get_user_model()
+        owner_group = ensure_owner_group()
+        organization = Organization.objects.create(
+            name='reset-org', owner_group=owner_group,
+        )
+        repository = Repository.objects.create(
+            organization=organization, name='reset-repo',
+        )
+        self.ancestor = Issue.objects.create(
+            repository=repository, number=1, title='Ancestor',
+        )
+        self.mid = Issue.objects.create(
+            repository=repository,
+            parent=self.ancestor,
+            number=2,
+            title='Mid',
+        )
+        self.stop = Issue.objects.create(
+            repository=repository,
+            parent=self.mid,
+            number=3,
+            title='Stop',
+            reset_inheritance=True,
+        )
+        self.child = Issue.objects.create(
+            repository=repository,
+            parent=self.stop,
+            number=4,
+            title='Child',
+        )
+        self.grandchild = Issue.objects.create(
+            repository=repository,
+            parent=self.child,
+            number=5,
+            title='Grandchild',
+            reset_inheritance=False,
+        )
+        self.triage = _triage_permission()
+        self.above = User.objects.create_user('reset-above')
+        self.local = User.objects.create_user('reset-local')
+        above = IssuePermissions.objects.create(
+            user=self.above, issue=self.ancestor,
+        )
+        above.permissions.add(self.triage)
+        local = IssuePermissions.objects.create(
+            user=self.local, issue=self.stop,
+        )
+        local.permissions.add(self.triage)
+
+    def test_ancestor_grant_stops_and_null_still_inherits(self):
+        self.assertIsNone(self.ancestor.reset_inheritance)
+        self.assertIsNone(self.mid.reset_inheritance)
+        self.assertIsNone(self.child.reset_inheritance)
+        reached = {self.ancestor, self.mid}
+        cut = {self.stop, self.child, self.grandchild}
+        for issue in reached:
+            self.assertTrue(self.above.has_perm(_TRIAGE, issue))
+            self.assertIn(
+                self.above, issue.get_permitted_users(self.triage),
+            )
+        for issue in cut:
+            self.assertFalse(self.above.has_perm(_TRIAGE, issue))
+            self.assertNotIn(
+                self.above, issue.get_permitted_users(self.triage),
+            )
+        self.assertEqual(
+            set(Issue.objects.authorized(self.above, self.triage)),
+            reached,
+        )
+
+    def test_grant_on_the_stop_applies_and_flows_down(self):
+        self.assertTrue(self.stop.reset_inheritance)
+        self.assertFalse(self.grandchild.reset_inheritance)
+        reached = {self.stop, self.child, self.grandchild}
+        for issue in reached:
+            self.assertTrue(self.local.has_perm(_TRIAGE, issue))
+            self.assertIn(
+                self.local, issue.get_permitted_users(self.triage),
+            )
+        for issue in (self.ancestor, self.mid):
+            self.assertFalse(self.local.has_perm(_TRIAGE, issue))
+            self.assertNotIn(
+                self.local, issue.get_permitted_users(self.triage),
+            )
+        self.assertEqual(
+            set(Issue.objects.authorized(self.local, self.triage)),
+            reached,
         )
