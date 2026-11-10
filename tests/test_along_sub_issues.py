@@ -7,6 +7,7 @@ from django.test import TestCase
 
 from gh_permissions.models import (
     Issue,
+    IssueCloseGrant,
     IssuePermissions,
     Organization,
     Repository,
@@ -101,6 +102,24 @@ class SubIssueAlongAuthorizationTest(TestCase):
             user=self.inactive, issue=self.assigned,
         )
         inactive_grant.permissions.add(self.triage)
+
+    def test_draft_close_grant_has_directed_blockers_and_is_not_active(self):
+        self.assigned.blocked_by.add(self.leaf)
+        self.assertEqual(list(self.assigned.blocked_by.all()), [self.leaf])
+        self.assertFalse(self.leaf.blocked_by.exists())
+        self.assertFalse(self.leaf.is_closed)
+        permission = Permission.objects.get(
+            content_type__app_label='gh_permissions',
+            content_type__model='issue',
+            codename='close_issue',
+        )
+        IssueCloseGrant.objects.create(
+            user=self.alice, issue=self.assigned, permission=permission,
+        )
+        self.assertFalse(self.alice.has_perm(
+            'gh_permissions.close_issue', self.assigned,
+        ))
+        self.assertTrue(self.alice.has_perm(_TRIAGE, self.assigned))
 
     def test_parent_assignment_and_reverse_inquiry_agree(self):
         self.assertTrue(self.alice.has_perm(_TRIAGE, self.assigned))

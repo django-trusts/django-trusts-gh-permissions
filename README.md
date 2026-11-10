@@ -116,6 +116,13 @@ rule.
 false inherits. True cuts grants inherited from ancestors at that issue
 and below it. A grant on that issue still applies.
 
+The issue-closing example is separate from inherited triage. A direct
+`IssueCloseGrant` allows `close_issue` only if every issue in
+`Issue.blocked_by` is closed. An issue without blockers can be closed by
+someone with the grant. This is an example policy, not a claim about
+GitHub's native close behavior. The registration helper is not called
+by the default registry until Core supports `All()`.
+
 Forward authorization answers whether one user may triage one issue.
 Reverse inquiry answers who may triage a selected issue:
 

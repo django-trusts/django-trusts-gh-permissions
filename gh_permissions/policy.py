@@ -24,6 +24,7 @@ validity rule.
 
 from gh_permissions.models import (
     AllPersonalRepositoriesDelegation,
+    IssueCloseGrant,
     IssuePermissions,
     OrganizationOwnership,
     PersonalRepositoryDelegation,
@@ -43,6 +44,26 @@ def register_collaborator(registry):
         name='collaborator',
         description=(
             'A user holds the permissions on this row for one repository.'
+        ),
+    )
+
+
+def register_issue_close_grants(registry):
+    """Register the draft issue-closing policy on a quantifier-capable Core."""
+    from trusts.functions import All
+
+    registry.register(
+        trust=IssueCloseGrant,
+        user='user',
+        permission='permission',
+        content='issue',
+        name='issue_close',
+        description=(
+            'A direct close grant applies only when every blocker is closed.'
+        ),
+        condition=lambda grant: (
+            (grant.permission.codename == 'close_issue')
+            & All(grant.issue.blocked_by, lambda blocker: blocker.is_closed)
         ),
     )
 

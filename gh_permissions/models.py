@@ -211,12 +211,17 @@ class Issue(PermittedUsersMixin, models.Model):
     number = models.PositiveIntegerField()
     title = models.CharField(max_length=255)
     reset_inheritance = models.BooleanField(null=True)
+    is_closed = models.BooleanField(default=False)
+    blocked_by = models.ManyToManyField(
+        'self', symmetrical=False, related_name='blocking', blank=True,
+    )
 
     objects = AuthorizedManager()
 
     class Meta:
         permissions = (
             ('triage_issue', 'Can triage issue'),
+            ('close_issue', 'Can close issue'),
         )
         constraints = (
             models.UniqueConstraint(
@@ -227,6 +232,22 @@ class Issue(PermittedUsersMixin, models.Model):
 
     def __str__(self):
         return '#%s %s' % (self.number, self.title)
+
+
+class IssueCloseGrant(models.Model):
+    """A direct issue-closing grant, separate from inherited triage."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    issue = models.ForeignKey(Issue, on_delete=models.CASCADE)
+    permission = models.ForeignKey(Permission, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'issue'),
+                name='unique_issue_close_grant',
+            ),
+        )
 
 
 class IssuePermissions(models.Model):
