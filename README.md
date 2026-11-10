@@ -99,7 +99,10 @@ GhAuthorizationBackend().get_registry().register(
     user="user",
     permission="permissions",
     content="issue",
-    along=("issue__parent", 8, "reset_inheritance"),
+    along=(
+        lambda t: ~t.issue.reset_inheritance & t.issue.parent,
+        8,
+    ),
 )
 ```
 
@@ -109,9 +112,12 @@ absolute eight-level tree limit. Valid application writes remain responsible
 for the absolute level rule, rejecting cycles, and the separate same-owner
 rule.
 
-`Issue.reset_inheritance` true cuts grants inherited from ancestors at
-that issue and below it. A grant on that issue still applies and continues
-to its sub-issues. Null and false inherit.
+`Issue.reset_inheritance` defaults to false and is not nullable. The
+walk continues to an issue's parent unless that issue's flag is true, so
+true cuts grants inherited from ancestors at that issue and below it. A
+grant on that issue still applies and continues to its sub-issues. False
+inherits. A null condition would stop the walk, so existing nulls are
+stored as false.
 
 Forward authorization answers whether one user may triage one issue.
 Reverse inquiry answers who may triage a selected issue:

@@ -2,8 +2,9 @@
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 
 from gh_permissions.models import (
     Issue,
@@ -13,9 +14,17 @@ from gh_permissions.models import (
 )
 from gh_permissions.services import ensure_owner_group
 from tests.fixtures import gh_policy_document, gh_trusts
+from trusts.decorators import filter_by_permitted_content
+from trusts.models import PermittedQuerySet
 
 
 _TRIAGE = 'gh_permissions.triage_issue'
+_ALONG = {
+    'path': 'issue__parent',
+    'shape': 'S',
+    'bound': 8,
+    'condition': 'not reset_inheritance',
+}
 
 
 def _triage_permission():
@@ -34,15 +43,7 @@ class SubIssueAlongRegistrationTest(TestCase):
         self.assertEqual(trust['user']['path'], 'user')
         self.assertEqual(trust['permission']['path'], 'permissions')
         self.assertEqual(trust['content']['path'], 'issue')
-        self.assertEqual(
-            trust['along'],
-            {
-                'path': 'issue__parent',
-                'shape': 'S',
-                'bound': 8,
-                'reset': 'reset_inheritance',
-            },
-        )
+        self.assertEqual(trust['along'], _ALONG)
 
 
 class SubIssueAlongAuthorizationTest(TestCase):
@@ -172,22 +173,18 @@ class SubIssueAlongAuthorizationTest(TestCase):
         self.assertEqual(len(content['trusts']), 1)
         trust = content['trusts'][0]
         self.assertEqual(trust['root'], 'gh_permissions.IssuePermissions')
-        self.assertEqual(
-            trust['along'],
-            {
-                'path': 'issue__parent',
-                'shape': 'S',
-                'bound': 8,
-                'reset': 'reset_inheritance',
-            },
-        )
+        self.assertEqual(trust['along'], _ALONG)
+        self.assertNotIn('filter_by_permitted_content', content)
         for inquiry in (
             'permitted', 'has_perm', 'get_all_permissions',
             'get_permitted_users',
         ):
             rendered = content[inquiry]
-            self.assertIn('WITH RECURSIVE', rendered['sql'].upper())
-            self.assertIn('IS NOT TRUE', rendered['sql'])
+            sql = rendered['sql']
+            self.assertIn('WITH RECURSIVE', sql.upper())
+            self.assertIn('NOT (', sql)
+            self.assertIn('reset_inheritance', sql)
+            self.assertNotIn('IS NOT TRUE', sql)
             self.assertIn('$along_bound=8', rendered['params'])
 
 
@@ -226,19 +223,26 @@ class SubIssueStartupTest(TestCase):
         model, trust = gh_trusts()[-1]
         self.assertEqual(model, Issue._meta.label)
         self.assertEqual(trust['root'], IssuePermissions._meta.label)
-        self.assertEqual(
-            trust['along'],
-            {
-                'path': 'issue__parent',
-                'shape': 'S',
-                'bound': 8,
-                'reset': 'reset_inheritance',
-            },
-        )
+        self.assertEqual(trust['along'], _ALONG)
+
+
+def _reached_indexes(grant_index, flags):
+    """Indexes a grant reaches. The grant row is depth 0.
+
+    A later issue is included only while each step onto it sees
+    ``reset_inheritance`` false. True on the grant row does not cut
+    that grant or the steps below it.
+    """
+    reached = {grant_index}
+    for index in range(grant_index + 1, len(flags)):
+        if flags[index]:
+            break
+        reached.add(index)
+    return reached
 
 
 class SubIssueResetInheritanceTest(TestCase):
-    """A true ``reset_inheritance`` cuts ancestor grants only."""
+    """True stops an inherited step. False continues. The bound still caps."""
 
     def setUp(self):
         super().setUp()
@@ -247,86 +251,260 @@ class SubIssueResetInheritanceTest(TestCase):
         organization = Organization.objects.create(
             name='reset-org', owner_group=owner_group,
         )
-        repository = Repository.objects.create(
+        self.repository = Repository.objects.create(
             organization=organization, name='reset-repo',
         )
-        self.ancestor = Issue.objects.create(
-            repository=repository, number=1, title='Ancestor',
-        )
-        self.mid = Issue.objects.create(
-            repository=repository,
-            parent=self.ancestor,
-            number=2,
-            title='Mid',
-        )
-        self.stop = Issue.objects.create(
-            repository=repository,
-            parent=self.mid,
-            number=3,
-            title='Stop',
-            reset_inheritance=True,
-        )
-        self.child = Issue.objects.create(
-            repository=repository,
-            parent=self.stop,
-            number=4,
-            title='Child',
-        )
-        self.grandchild = Issue.objects.create(
-            repository=repository,
-            parent=self.child,
-            number=5,
-            title='Grandchild',
-            reset_inheritance=False,
-        )
+        self.chain = []
+        parent = None
+        for number in range(1, 5):
+            parent = Issue.objects.create(
+                repository=self.repository,
+                parent=parent,
+                number=number,
+                title='Level %d' % (number - 1),
+                reset_inheritance=False,
+            )
+            self.chain.append(parent)
         self.triage = _triage_permission()
-        self.above = User.objects.create_user('reset-above')
-        self.local = User.objects.create_user('reset-local')
-        above = IssuePermissions.objects.create(
-            user=self.above, issue=self.ancestor,
-        )
-        above.permissions.add(self.triage)
-        local = IssuePermissions.objects.create(
-            user=self.local, issue=self.stop,
-        )
-        local.permissions.add(self.triage)
+        self.user = User.objects.create_user('reset-user')
 
-    def test_ancestor_grant_stops_and_null_still_inherits(self):
-        self.assertIsNone(self.ancestor.reset_inheritance)
-        self.assertIsNone(self.mid.reset_inheritance)
-        self.assertIsNone(self.child.reset_inheritance)
-        reached = {self.ancestor, self.mid}
-        cut = {self.stop, self.child, self.grandchild}
-        for issue in reached:
-            self.assertTrue(self.above.has_perm(_TRIAGE, issue))
-            self.assertIn(
-                self.above, issue.get_permitted_users(self.triage),
-            )
-        for issue in cut:
-            self.assertFalse(self.above.has_perm(_TRIAGE, issue))
-            self.assertNotIn(
-                self.above, issue.get_permitted_users(self.triage),
-            )
+    def _set_flags(self, flags):
+        for issue, flag in zip(self.chain, flags):
+            issue.reset_inheritance = flag
+            issue.save(update_fields=('reset_inheritance',))
+
+    def _grant_at(self, index):
+        IssuePermissions.objects.all().delete()
+        grant = IssuePermissions.objects.create(
+            user=self.user, issue=self.chain[index],
+        )
+        grant.permissions.add(self.triage)
+
+    def _assert_reaches(self, indexes):
+        reached = {self.chain[index] for index in indexes}
+        permitted = set(
+            PermittedQuerySet(model=Issue).permitted(self.triage, self.user)
+        )
+        permitted_code = set(
+            PermittedQuerySet(model=Issue).permitted(_TRIAGE, self.user)
+        )
+        authorized = set(Issue.objects.authorized(self.user, self.triage))
+        self.assertEqual(permitted, reached)
+        self.assertEqual(permitted_code, reached)
+        self.assertEqual(authorized, reached)
+        # content='issue' has no proper prefix, so this inquiry cannot
+        # list the walked issues. It must stay empty for every flag.
         self.assertEqual(
-            set(Issue.objects.authorized(self.above, self.triage)),
+            set(filter_by_permitted_content(
+                Issue.objects.all(), self.user, self.triage, content=Issue,
+            )),
+            set(),
+        )
+        self.assertEqual(
+            set(filter_by_permitted_content(
+                Repository.objects.all(),
+                self.user,
+                self.triage,
+                content=Issue,
+            )),
+            set(),
+        )
+        for issue in Issue.objects.all():
+            holds = issue in reached
+            self.assertEqual(
+                self.user.has_perm(_TRIAGE, issue), holds, issue.number,
+            )
+            holders = set(issue.get_permitted_users(self.triage))
+            self.assertEqual(self.user in holders, holds, issue.number)
+            self.assertEqual(
+                set(get_user_model().objects.permitted(issue, self.triage)),
+                holders,
+                issue.number,
+            )
+
+    def test_field_defaults_to_false_and_rejects_null(self):
+        field = Issue._meta.get_field('reset_inheritance')
+        self.assertIs(field.null, False)
+        self.assertIs(field.default, False)
+        omitted = Issue.objects.create(
+            repository=self.repository, number=90, title='Default',
+        )
+        self.assertIs(omitted.reset_inheritance, False)
+        omitted.reset_inheritance = None
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                omitted.save(update_fields=('reset_inheritance',))
+        omitted.refresh_from_db()
+        self.assertIs(omitted.reset_inheritance, False)
+
+    def test_false_and_true_at_each_level_across_inquiries(self):
+        for level in range(len(self.chain)):
+            for flag in (False, True):
+                with self.subTest(level=level, flag=flag):
+                    flags = [False] * len(self.chain)
+                    flags[level] = flag
+                    self._set_flags(flags)
+                    self._grant_at(0)
+                    self._assert_reaches(_reached_indexes(0, flags))
+                    self._grant_at(level)
+                    self._assert_reaches(_reached_indexes(level, flags))
+
+    def test_each_true_cuts_until_a_grant_on_that_issue(self):
+        flags = [False, True, False, True]
+        self._set_flags(flags)
+        self._grant_at(0)
+        self._assert_reaches(_reached_indexes(0, flags))
+        self._grant_at(1)
+        self._assert_reaches(_reached_indexes(1, flags))
+        self._grant_at(3)
+        self._assert_reaches(_reached_indexes(3, flags))
+
+    def test_reset_stops_inside_the_bound(self):
+        parent = self.chain[-1]
+        nodes = list(self.chain)
+        for depth in range(len(self.chain), 10):
+            parent = Issue.objects.create(
+                repository=self.repository,
+                parent=parent,
+                number=depth + 1,
+                title='Level %d' % depth,
+                reset_inheritance=False,
+            )
+            nodes.append(parent)
+        nodes[4].reset_inheritance = True
+        nodes[4].save(update_fields=('reset_inheritance',))
+        self._grant_at(0)
+        reached = set(nodes[:4])
+        self.assertEqual(
+            set(PermittedQuerySet(model=Issue).permitted(
+                self.triage, self.user,
+            )),
             reached,
         )
+        self.assertTrue(self.user.has_perm(_TRIAGE, nodes[3]))
+        self.assertFalse(self.user.has_perm(_TRIAGE, nodes[4]))
+        self.assertFalse(self.user.has_perm(_TRIAGE, nodes[8]))
+        self.assertIn(self.user, nodes[3].get_permitted_users(self.triage))
+        self.assertNotIn(self.user, nodes[4].get_permitted_users(self.triage))
+        self.assertNotIn(self.user, nodes[8].get_permitted_users(self.triage))
 
-    def test_grant_on_the_stop_applies_and_flows_down(self):
-        self.assertTrue(self.stop.reset_inheritance)
-        self.assertFalse(self.grandchild.reset_inheritance)
-        reached = {self.stop, self.child, self.grandchild}
-        for issue in reached:
-            self.assertTrue(self.local.has_perm(_TRIAGE, issue))
-            self.assertIn(
-                self.local, issue.get_permitted_users(self.triage),
-            )
-        for issue in (self.ancestor, self.mid):
-            self.assertFalse(self.local.has_perm(_TRIAGE, issue))
-            self.assertNotIn(
-                self.local, issue.get_permitted_users(self.triage),
-            )
-        self.assertEqual(
-            set(Issue.objects.authorized(self.local, self.triage)),
-            reached,
+
+class ResetInheritanceBackfillTest(TransactionTestCase):
+    """NULL used to inherit. The migration stores it as false, which still does."""
+
+    def test_null_at_each_level_becomes_false_and_inherits(self):
+        User = get_user_model()
+        owner_group = ensure_owner_group()
+        organization = Organization.objects.create(
+            name='backfill-org', owner_group=owner_group,
         )
+        repository = Repository.objects.create(
+            organization=organization, name='backfill-repo',
+        )
+        user = User.objects.create_user('backfill-user')
+        triage = _triage_permission()
+        executor = MigrationExecutor(connection)
+        try:
+            executor.migrate([
+                ('gh_permissions', '0009_issue_reset_inheritance'),
+            ])
+            historical = executor.loader.project_state(
+                ('gh_permissions', '0009_issue_reset_inheritance'),
+            ).apps.get_model('gh_permissions', 'Issue')
+            parent_id = None
+            null_ids = []
+            for number in range(1, 5):
+                issue = historical.objects.create(
+                    repository_id=repository.pk,
+                    parent_id=parent_id,
+                    number=number,
+                    title='Null %d' % number,
+                    reset_inheritance=None,
+                )
+                null_ids.append(issue.pk)
+                parent_id = issue.pk
+            kept_false = historical.objects.create(
+                repository_id=repository.pk,
+                number=11,
+                title='Kept false',
+                reset_inheritance=False,
+            )
+            kept_true = historical.objects.create(
+                repository_id=repository.pk,
+                parent_id=kept_false.pk,
+                number=12,
+                title='Kept true',
+                reset_inheritance=True,
+            )
+            below_true = historical.objects.create(
+                repository_id=repository.pk,
+                parent_id=kept_true.pk,
+                number=13,
+                title='Was null below true',
+                reset_inheritance=None,
+            )
+            executor.loader.build_graph()
+            executor.migrate([
+                ('gh_permissions', '0010_reset_inheritance_non_null'),
+            ])
+            stored = {
+                issue.pk: issue.reset_inheritance
+                for issue in Issue.objects.filter(repository=repository)
+            }
+            for pk in null_ids:
+                self.assertIs(stored[pk], False)
+            self.assertIs(stored[below_true.pk], False)
+            self.assertIs(stored[kept_false.pk], False)
+            self.assertIs(stored[kept_true.pk], True)
+
+            grant = IssuePermissions.objects.create(
+                user=user, issue_id=null_ids[0],
+            )
+            grant.permissions.add(triage)
+            self.assertEqual(
+                set(PermittedQuerySet(model=Issue).permitted(
+                    triage, user,
+                ).values_list('pk', flat=True)),
+                set(null_ids),
+            )
+            for pk in null_ids:
+                issue = Issue.objects.get(pk=pk)
+                self.assertTrue(user.has_perm(_TRIAGE, issue))
+                self.assertIn(user, issue.get_permitted_users(triage))
+            self.assertEqual(
+                set(filter_by_permitted_content(
+                    Issue.objects.all(), user, triage, content=Issue,
+                )),
+                set(),
+            )
+
+            IssuePermissions.objects.all().delete()
+            local = IssuePermissions.objects.create(
+                user=user, issue_id=kept_true.pk,
+            )
+            local.permissions.add(triage)
+            reached = {kept_true.pk, below_true.pk}
+            self.assertEqual(
+                set(Issue.objects.authorized(
+                    user, triage,
+                ).values_list('pk', flat=True)),
+                reached,
+            )
+            self.assertFalse(user.has_perm(
+                _TRIAGE, Issue.objects.get(pk=kept_false.pk),
+            ))
+            self.assertTrue(user.has_perm(
+                _TRIAGE, Issue.objects.get(pk=below_true.pk),
+            ))
+            self.assertNotIn(
+                user,
+                Issue.objects.get(pk=kept_false.pk).get_permitted_users(triage),
+            )
+            self.assertIn(
+                user,
+                Issue.objects.get(pk=below_true.pk).get_permitted_users(triage),
+            )
+        finally:
+            MigrationExecutor(connection).migrate([
+                ('gh_permissions', '0010_reset_inheritance_non_null'),
+            ])

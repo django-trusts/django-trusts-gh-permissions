@@ -12,10 +12,10 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-[django-trusts#361](https://github.com/django-trusts/django-trusts/pull/361)
-head `8a41ed63fc9efbc363887b1f02af2854c678315a`. That commit
-includes the #310 lockfile param notation, the #312 checked-user
-rules, and the optional `along=` reset field. gh-permissions registers
+[django-trusts#371](https://github.com/django-trusts/django-trusts/pull/371)
+and [#372](https://github.com/django-trusts/django-trusts/pull/372),
+merged on dev at `a23d2adc22afaf12c423f2dc1ca43c43b586f50f`. That commit
+replaces the `along=` reset field with a path condition. gh-permissions registers
 no user override. An active superuser
 is included in a reverse permitted-user set only with a real grant,
 and does not skip `manage_organization` or the admin scope filter.
@@ -213,8 +213,9 @@ installs `'trusts'`.
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
 - `IssuePermissions` carries a terminal permission collection and uses
-  `along=("issue__parent", 8, "reset_inheritance")` to reach bounded
-  sub-issue descendants
+  `along=(lambda t: ~t.issue.reset_inheritance & t.issue.parent, 8)` to
+  reach bounded sub-issue descendants. False continues. True stops the
+  step onto that issue. The field is non-null and defaults to false.
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and

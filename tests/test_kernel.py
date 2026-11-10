@@ -69,6 +69,10 @@ class KernelMigrationLoaderTest(TestCase):
                     'gh_permissions',
                     '0009_issue_reset_inheritance',
                 ),
+                (
+                    'gh_permissions',
+                    '0010_reset_inheritance_non_null',
+                ),
             },
         )
 
