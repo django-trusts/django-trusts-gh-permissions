@@ -55,6 +55,10 @@ def register_issue_close_grants(registry):
         user='user',
         permission='permission',
         content='issue',
+        name='issue_close',
+        description=(
+            'A direct close grant applies only when every blocker is closed.'
+        ),
         condition=lambda grant: (
             (grant.permission.codename == 'close_issue')
             & All(grant.issue.blocked_by, lambda blocker: blocker.is_closed)
