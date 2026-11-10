@@ -763,7 +763,7 @@ class SharedNameMigrationTest(TransactionTestCase):
             MigrationExecutor(connection).migrate([
                 (
                     'gh_permissions',
-                    '0010_reset_inheritance_non_null',
+                    '0009_issue_reset_inheritance',
                 ),
             ])
 

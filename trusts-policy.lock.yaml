@@ -1994,7 +1994,7 @@ backends:
         trusts:
           - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8__along_cond"
             name: "issue_subtree"
-            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges. The walk continues to the parent unless that issue's reset_inheritance is true. A grant on the issue still applies. False continues."
+            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges. The walk continues to the parent when reset_inheritance is false or null. True cuts grants inherited from ancestors. A grant on the issue still applies."
             root: "gh_permissions.IssuePermissions"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "permissions", model: "auth.Permission", target: "id"}
@@ -2003,9 +2003,9 @@ backends:
               path: "issue__parent"
               shape: "S"
               bound: 8
-              condition: "not reset_inheritance"
+              condition: "reset_inheritance == False or reset_inheritance == None"
         permitted:
-          params: ["$user.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=True"]
+          params: ["$user.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False"]
           sql: |-
             SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`, `gh_permissions_issue`.`reset_inheritance`
             FROM `gh_permissions_issue`
@@ -2053,7 +2053,9 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
-                    AND (NOT ((`child`.`reset_inheritance` = %s)))
+                    AND (((`child`.`reset_inheritance` = %s))
+                      OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                  )
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -2063,7 +2065,7 @@ backends:
               ) = (`trusts_bind`.`along_match`)
             )
         has_perm:
-          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=True"]
+          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False"]
           sql: |-
             SELECT 1 AS `a`
             FROM `gh_permissions_issue`
@@ -2111,7 +2113,9 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
-                    AND (NOT ((`child`.`reset_inheritance` = %s)))
+                    AND (((`child`.`reset_inheritance` = %s))
+                      OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                  )
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -2122,7 +2126,7 @@ backends:
             )
             LIMIT 1
         get_all_permissions:
-          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "reset_inheritance=True"]
+          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "reset_inheritance=False"]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
@@ -2171,7 +2175,9 @@ backends:
                           SELECT `child`.`id`, `g`.`depth` + 1
                           FROM `gen` AS `g`
                           JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
-                            AND (NOT ((`child`.`reset_inheritance` = %s)))
+                            AND (((`child`.`reset_inheritance` = %s))
+                              OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                          )
                           WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                             AND `child`.`id` IS NOT NULL
                         )
@@ -2184,7 +2190,7 @@ backends:
                 ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: ["$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=True", "$along_match=True"]
+          params: ["$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False", "$along_match=True"]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
@@ -2226,7 +2232,9 @@ backends:
                       SELECT `cur`.`parent_id`, `g`.`depth` + 1
                       FROM `gen` AS `g`
                       JOIN `gh_permissions_issue` AS `cur` ON `cur`.`id` = `g`.`ident`
-                        AND (NOT ((`cur`.`reset_inheritance` = %s)))
+                        AND (((`cur`.`reset_inheritance` = %s))
+                          OR (CASE WHEN ((1=1)) THEN (`cur`.`reset_inheritance` IS NULL) ELSE NULL END)
+                      )
                       WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                         AND `cur`.`parent_id` IS NOT NULL
                     )
