@@ -212,10 +212,9 @@ installs `'trusts'`.
 - Revocation and malformed configuration fail closed
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
-- `IssuePermissions` carries a terminal permission collection and uses
-  `along=(lambda t: ~t.issue.reset_inheritance & t.issue.parent, 8)` to
-  reach bounded sub-issue descendants. False continues. True stops the
-  step onto that issue. The field is non-null and defaults to false.
+- `IssuePermissions` carries a terminal permission collection and reaches
+  bounded sub-issue descendants. The registration is in
+  [Bounded sub-issue triage](README.md#bounded-sub-issue-triage).
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and
