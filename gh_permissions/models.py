@@ -210,6 +210,7 @@ class Issue(PermittedUsersMixin, models.Model):
     )
     number = models.PositiveIntegerField()
     title = models.CharField(max_length=255)
+    reset_inheritance = models.BooleanField(null=True)
 
     objects = AuthorizedManager()
 

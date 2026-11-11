@@ -99,7 +99,10 @@ GhAuthorizationBackend().get_registry().register(
     user="user",
     permission="permissions",
     content="issue",
-    along=("issue__parent", 8),
+    along=(
+        lambda t: ((t.issue.reset_inheritance == False) | (t.issue.reset_inheritance == None)) & t.issue.parent,
+        8,
+    ),
 )
 ```
 
@@ -107,7 +110,13 @@ Depth zero is the assigned issue. Eight parent edges are included; a ninth is
 denied. That relative query-safety ceiling is not the same as GitHub's
 absolute eight-level tree limit. Valid application writes remain responsible
 for the absolute level rule, rejecting cycles, and the separate same-owner
-rule. Forward authorization answers whether one user may triage one issue.
+rule.
+
+`Issue.reset_inheritance` is nullable. NULL is unset and inherits, and
+false inherits. True cuts grants inherited from ancestors at that issue
+and below it. A grant on that issue still applies.
+
+Forward authorization answers whether one user may triage one issue.
 Reverse inquiry answers who may triage a selected issue:
 
 ```python

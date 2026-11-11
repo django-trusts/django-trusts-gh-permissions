@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  # Core policy settings and register labels (django-trusts#281).
-  COMPANION_KERNEL_SHA: c899aeff7b3bcb7507a99e35028b9f5448d34c5b
+  # Core path conditions (django-trusts dev a23d2adc, #371 and #372).
+  COMPANION_KERNEL_SHA: a23d2adc22afaf12c423f2dc1ca43c43b586f50f
 
 jobs:
   tests:
@@ -57,7 +57,7 @@ jobs:
           python - <<'PY'
         from pathlib import Path
         pin = Path('scripts/django-trusts.pin').read_text()
-        assert 'c899aeff7b3bcb7507a99e35028b9f5448d34c5b' in pin, pin
+        assert 'a23d2adc22afaf12c423f2dc1ca43c43b586f50f' in pin, pin
         PY
         fi
         python -c "import django; assert django.VERSION[:2] == (6, 1), django.VERSION"
@@ -107,8 +107,8 @@ jobs:
     - name: Exact companion checkout
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
-          test "${COMPANION_KERNEL_SHA}" = "c899aeff7b3bcb7507a99e35028b9f5448d34c5b"
-          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "c899aeff7b3bcb7507a99e35028b9f5448d34c5b"
+          test "${COMPANION_KERNEL_SHA}" = "a23d2adc22afaf12c423f2dc1ca43c43b586f50f"
+          test "$(git -C .deps/django-trusts rev-parse HEAD)" = "a23d2adc22afaf12c423f2dc1ca43c43b586f50f"
         fi
         python -m pip install --upgrade pip
         python -m pip install "Django>=6.1,<6.2" coverage

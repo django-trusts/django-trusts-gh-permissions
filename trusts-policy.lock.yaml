@@ -66,12 +66,12 @@ backends:
             condition: "$permission.id in permissions and sponsor_ownership__organization == repository__organization and approved_organization == repository__organization"
             or_group: true
         permitted:
-          params: ["$user.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename"]
+          params: ["$user.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "user.is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor_ownership__user__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename"]
           sql: |-
             SELECT DISTINCT `gh_permissions_repository`.`id`, `gh_permissions_repository`.`organization_id`, `gh_permissions_repository`.`name`
             FROM `gh_permissions_repository`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (
               EXISTS (
@@ -79,7 +79,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -116,7 +116,6 @@ backends:
                   INNER JOIN `gh_permissions_team` `V3` ON (`V0`.`team_id` = `V3`.`id`)
                   INNER JOIN `gh_permissions_team_members` `V4` ON (`V3`.`id` = `V4`.`team_id`)
                   INNER JOIN `gh_permissions_team_allowed_operations` `V6` ON (`V3`.`id` = `V6`.`team_id`)
-                  INNER JOIN `gh_permissions_repository` `V8` ON (`V0`.`repository_id` = `V8`.`id`)
                   WHERE (`V0`.`operation_id` = (
                       SELECT `U0`.`id` AS `pk`
                       FROM `auth_permission` `U0`
@@ -132,7 +131,12 @@ backends:
                       AND `V2`.`model` = (`trusts_bind`.`model`)
                       AND `V4`.`user_id` = (`trusts_bind`.`user_id`)
                       AND `V6`.`permission_id` = (`V0`.`operation_id`)
-                      AND `V3`.`organization_id` = (`V8`.`organization_id`)
+                      AND (`V3`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `V0`.`repository_id`
+                      )
+                    )
                       AND `V0`.`repository_id` = (`gh_permissions_repository`.`id`)
                   )
                   LIMIT 1
@@ -167,10 +171,7 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_personalrepositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_personalrepositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`personalrepositorydelegation_id`)
-                  INNER JOIN `example_user` `W5` ON (`W0`.`sponsor_id` = `W5`.`id`)
-                  INNER JOIN `gh_permissions_organization` `W6` ON (`W2`.`organization_id` = `W6`.`id`)
                   WHERE (`W0`.`delegate_id` = (`trusts_bind`.`user_id`)
                       AND `W0`.`repository_id` = (`gh_permissions_repository`.`id`)
                       AND `W3`.`permission_id` = (
@@ -184,9 +185,20 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`personal_user_id` = (`W0`.`sponsor_id`)
+                      AND ((
+                        SELECT `h1`.`personal_user_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        JOIN `gh_permissions_organization` AS `h1` ON `h1`.`id` = `h0`.`organization_id`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      ) = `W0`.`sponsor_id`
+                    )
                       AND ((%s)
-                        OR `W5`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W0`.`sponsor_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -217,7 +229,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -237,7 +248,12 @@ backends:
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -291,7 +307,7 @@ backends:
                       LIMIT 1
                     )
                       AND ((%s)
-                        OR `W2`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR (`W2`.`is_active` = %s)
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -322,7 +338,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -342,7 +357,12 @@ backends:
                             AND `V0`.`repository_id` = (`W4`.`id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -378,10 +398,8 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_repositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_repositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`repositorydelegation_id`)
-                  INNER JOIN `gh_permissions_organizationownership` `W6` ON (`W0`.`sponsor_ownership_id` = `W6`.`id`)
-                  INNER JOIN `example_user` `W9` ON (`W6`.`user_id` = `W9`.`id`)
+                  INNER JOIN `gh_permissions_organizationownership` `W5` ON (`W0`.`sponsor_ownership_id` = `W5`.`id`)
                   WHERE (`W0`.`delegate_id` = (`trusts_bind`.`user_id`)
                       AND `W0`.`repository_id` = (`gh_permissions_repository`.`id`)
                       AND `W3`.`permission_id` = (
@@ -395,10 +413,25 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`organization_id` = (`W2`.`organization_id`)
-                      AND `W0`.`approved_organization_id` = (`W2`.`organization_id`)
+                      AND (`W5`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
+                      AND (`W0`.`approved_organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
                       AND ((%s)
-                        OR `W9`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W5`.`user_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -420,7 +453,7 @@ backends:
                             AND `V3`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V3`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       )
@@ -429,7 +462,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -447,9 +479,14 @@ backends:
                             AND `V2`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V2`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V5`.`user_id` = (`W6`.`user_id`)
+                            AND `V5`.`user_id` = (`W5`.`user_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -476,19 +513,19 @@ backends:
                             AND `V5`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V5`.`model` = (`trusts_bind`.`model`)
                             AND `V6`.`id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       ) ) )
                   LIMIT 1
                 ) ) )
         has_perm:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename"]
+          params: ["$user.id", "$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "user.is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor_ownership__user__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename"]
           sql: |-
             SELECT 1 AS `a`
             FROM `gh_permissions_repository`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (`gh_permissions_repository`.`id` = (`trusts_bind`.`content_pk`)
               AND EXISTS (
@@ -496,7 +533,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -533,7 +570,6 @@ backends:
                   INNER JOIN `gh_permissions_team` `V3` ON (`V0`.`team_id` = `V3`.`id`)
                   INNER JOIN `gh_permissions_team_members` `V4` ON (`V3`.`id` = `V4`.`team_id`)
                   INNER JOIN `gh_permissions_team_allowed_operations` `V6` ON (`V3`.`id` = `V6`.`team_id`)
-                  INNER JOIN `gh_permissions_repository` `V8` ON (`V0`.`repository_id` = `V8`.`id`)
                   WHERE (`V0`.`operation_id` = (
                       SELECT `U0`.`id` AS `pk`
                       FROM `auth_permission` `U0`
@@ -549,7 +585,12 @@ backends:
                       AND `V2`.`model` = (`trusts_bind`.`model`)
                       AND `V4`.`user_id` = (`trusts_bind`.`user_id`)
                       AND `V6`.`permission_id` = (`V0`.`operation_id`)
-                      AND `V3`.`organization_id` = (`V8`.`organization_id`)
+                      AND (`V3`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `V0`.`repository_id`
+                      )
+                    )
                       AND `V0`.`repository_id` = (`gh_permissions_repository`.`id`)
                   )
                   LIMIT 1
@@ -584,10 +625,7 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_personalrepositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_personalrepositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`personalrepositorydelegation_id`)
-                  INNER JOIN `example_user` `W5` ON (`W0`.`sponsor_id` = `W5`.`id`)
-                  INNER JOIN `gh_permissions_organization` `W6` ON (`W2`.`organization_id` = `W6`.`id`)
                   WHERE (`W0`.`delegate_id` = (`trusts_bind`.`user_id`)
                       AND `W0`.`repository_id` = (`gh_permissions_repository`.`id`)
                       AND `W3`.`permission_id` = (
@@ -601,9 +639,20 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`personal_user_id` = (`W0`.`sponsor_id`)
+                      AND ((
+                        SELECT `h1`.`personal_user_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        JOIN `gh_permissions_organization` AS `h1` ON `h1`.`id` = `h0`.`organization_id`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      ) = `W0`.`sponsor_id`
+                    )
                       AND ((%s)
-                        OR `W5`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W0`.`sponsor_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -634,7 +683,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -654,7 +702,12 @@ backends:
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -708,7 +761,7 @@ backends:
                       LIMIT 1
                     )
                       AND ((%s)
-                        OR `W2`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR (`W2`.`is_active` = %s)
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -739,7 +792,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -759,7 +811,12 @@ backends:
                             AND `V0`.`repository_id` = (`W4`.`id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -795,10 +852,8 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_repositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_repositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`repositorydelegation_id`)
-                  INNER JOIN `gh_permissions_organizationownership` `W6` ON (`W0`.`sponsor_ownership_id` = `W6`.`id`)
-                  INNER JOIN `example_user` `W9` ON (`W6`.`user_id` = `W9`.`id`)
+                  INNER JOIN `gh_permissions_organizationownership` `W5` ON (`W0`.`sponsor_ownership_id` = `W5`.`id`)
                   WHERE (`W0`.`delegate_id` = (`trusts_bind`.`user_id`)
                       AND `W0`.`repository_id` = (`gh_permissions_repository`.`id`)
                       AND `W3`.`permission_id` = (
@@ -812,10 +867,25 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`organization_id` = (`W2`.`organization_id`)
-                      AND `W0`.`approved_organization_id` = (`W2`.`organization_id`)
+                      AND (`W5`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
+                      AND (`W0`.`approved_organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
                       AND ((%s)
-                        OR `W9`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W5`.`user_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -837,7 +907,7 @@ backends:
                             AND `V3`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V3`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       )
@@ -846,7 +916,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -864,9 +933,14 @@ backends:
                             AND `V2`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V2`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V5`.`user_id` = (`W6`.`user_id`)
+                            AND `V5`.`user_id` = (`W5`.`user_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -893,7 +967,7 @@ backends:
                             AND `V5`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V5`.`model` = (`trusts_bind`.`model`)
                             AND `V6`.`id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       ) ) )
@@ -901,12 +975,12 @@ backends:
                 ) ) )
             LIMIT 1
         get_all_permissions:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "skip_is_active=False", "skip_is_active=False", "skip_is_active=False"]
+          params: ["$user.id", "$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "user.is_active=True", "skip_is_active=False", "user.sponsor__is_active=True", "skip_is_active=False", "user.sponsor__is_active=True", "skip_is_active=False", "user.sponsor_ownership__user__is_active=True"]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
@@ -925,7 +999,7 @@ backends:
                         FROM `example_user` `U0`
                         WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                             AND ((%s)
-                              OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                              OR (`U0`.`is_active` = %s)
                           )
                         )
                         LIMIT 1
@@ -952,13 +1026,17 @@ backends:
                           INNER JOIN `gh_permissions_team` `U3` ON (`U0`.`team_id` = `U3`.`id`)
                           INNER JOIN `gh_permissions_team_members` `U4` ON (`U3`.`id` = `U4`.`team_id`)
                           INNER JOIN `gh_permissions_team_allowed_operations` `U6` ON (`U3`.`id` = `U6`.`team_id`)
-                          INNER JOIN `gh_permissions_repository` `U8` ON (`U0`.`repository_id` = `U8`.`id`)
                           WHERE (`U0`.`operation_id` = (`auth_permission`.`id`)
                               AND `U2`.`app_label` = (`trusts_bind`.`app_label`)
                               AND `U2`.`model` = (`trusts_bind`.`model`)
                               AND `U4`.`user_id` = (`trusts_bind`.`user_id`)
                               AND `U6`.`permission_id` = (`U0`.`operation_id`)
-                              AND `U3`.`organization_id` = (`U8`.`organization_id`)
+                              AND (`U3`.`organization_id` = (
+                                SELECT `h0`.`organization_id`
+                                FROM `gh_permissions_repository` AS `h0`
+                                WHERE `h0`.`id` = `U0`.`repository_id`
+                              )
+                            )
                               AND `U0`.`repository_id` = (`W0`.`id`)
                           )
                           LIMIT 1
@@ -983,16 +1061,24 @@ backends:
                         OR EXISTS (
                           SELECT 1 AS `a`
                           FROM `gh_permissions_personalrepositorydelegation` `V0`
-                          INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
                           INNER JOIN `gh_permissions_personalrepositorydelegation_permissions` `V3` ON (`V0`.`id` = `V3`.`personalrepositorydelegation_id`)
-                          INNER JOIN `example_user` `V5` ON (`V0`.`sponsor_id` = `V5`.`id`)
-                          INNER JOIN `gh_permissions_organization` `V6` ON (`V2`.`organization_id` = `V6`.`id`)
                           WHERE (`V0`.`delegate_id` = (`trusts_bind`.`user_id`)
                               AND `V0`.`repository_id` = (`W0`.`id`)
                               AND `V3`.`permission_id` = (`auth_permission`.`id`)
-                              AND `V6`.`personal_user_id` = (`V0`.`sponsor_id`)
+                              AND ((
+                                SELECT `h1`.`personal_user_id`
+                                FROM `gh_permissions_repository` AS `h0`
+                                JOIN `gh_permissions_organization` AS `h1` ON `h1`.`id` = `h0`.`organization_id`
+                                WHERE `h0`.`id` = `V0`.`repository_id`
+                              ) = `V0`.`sponsor_id`
+                            )
                               AND ((%s)
-                                OR `V5`.`is_active` = (`trusts_bind`.`is_active`)
+                                OR ((
+                                  SELECT `h0`.`is_active`
+                                  FROM `example_user` AS `h0`
+                                  WHERE `h0`.`id` = `V0`.`sponsor_id`
+                                ) = %s
+                              )
                             )
                               AND ( EXISTS (
                                 SELECT 1 AS `a`
@@ -1013,7 +1099,6 @@ backends:
                                 FROM `gh_permissions_teamrepositorypermission` `U0`
                                 INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
                                 INNER JOIN `django_content_type` `U2` ON (`U1`.`content_type_id` = `U2`.`id`)
-                                INNER JOIN `gh_permissions_repository` `U3` ON (`U0`.`repository_id` = `U3`.`id`)
                                 INNER JOIN `gh_permissions_team` `U4` ON (`U0`.`team_id` = `U4`.`id`)
                                 INNER JOIN `gh_permissions_team_members` `U5` ON (`U4`.`id` = `U5`.`team_id`)
                                 INNER JOIN `gh_permissions_team_allowed_operations` `U7` ON (`U4`.`id` = `U7`.`team_id`)
@@ -1023,7 +1108,12 @@ backends:
                                     AND `U0`.`repository_id` = (`V0`.`repository_id`)
                                     AND `U5`.`user_id` = (`V0`.`sponsor_id`)
                                     AND `U7`.`permission_id` = (`U0`.`operation_id`)
-                                    AND `U4`.`organization_id` = (`U3`.`organization_id`)
+                                    AND (`U4`.`organization_id` = (
+                                      SELECT `h0`.`organization_id`
+                                      FROM `gh_permissions_repository` AS `h0`
+                                      WHERE `h0`.`id` = `U0`.`repository_id`
+                                    )
+                                  )
                                 )
                                 LIMIT 1
                               )
@@ -1057,7 +1147,7 @@ backends:
                               AND `V4`.`id` = (`W0`.`id`)
                               AND `V5`.`permission_id` = (`auth_permission`.`id`)
                               AND ((%s)
-                                OR `V2`.`is_active` = (`trusts_bind`.`is_active`)
+                                OR (`V2`.`is_active` = %s)
                             )
                               AND ( EXISTS (
                                 SELECT 1 AS `a`
@@ -1078,7 +1168,6 @@ backends:
                                 FROM `gh_permissions_teamrepositorypermission` `U0`
                                 INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
                                 INNER JOIN `django_content_type` `U2` ON (`U1`.`content_type_id` = `U2`.`id`)
-                                INNER JOIN `gh_permissions_repository` `U3` ON (`U0`.`repository_id` = `U3`.`id`)
                                 INNER JOIN `gh_permissions_team` `U4` ON (`U0`.`team_id` = `U4`.`id`)
                                 INNER JOIN `gh_permissions_team_members` `U5` ON (`U4`.`id` = `U5`.`team_id`)
                                 INNER JOIN `gh_permissions_team_allowed_operations` `U7` ON (`U4`.`id` = `U7`.`team_id`)
@@ -1088,7 +1177,12 @@ backends:
                                     AND `U0`.`repository_id` = (`V4`.`id`)
                                     AND `U5`.`user_id` = (`V0`.`sponsor_id`)
                                     AND `U7`.`permission_id` = (`U0`.`operation_id`)
-                                    AND `U4`.`organization_id` = (`U3`.`organization_id`)
+                                    AND (`U4`.`organization_id` = (
+                                      SELECT `h0`.`organization_id`
+                                      FROM `gh_permissions_repository` AS `h0`
+                                      WHERE `h0`.`id` = `U0`.`repository_id`
+                                    )
+                                  )
                                 )
                                 LIMIT 1
                               )
@@ -1114,17 +1208,30 @@ backends:
                         OR EXISTS (
                           SELECT 1 AS `a`
                           FROM `gh_permissions_repositorydelegation` `V0`
-                          INNER JOIN `gh_permissions_repository` `V2` ON (`V0`.`repository_id` = `V2`.`id`)
                           INNER JOIN `gh_permissions_repositorydelegation_permissions` `V3` ON (`V0`.`id` = `V3`.`repositorydelegation_id`)
-                          INNER JOIN `gh_permissions_organizationownership` `V6` ON (`V0`.`sponsor_ownership_id` = `V6`.`id`)
-                          INNER JOIN `example_user` `V9` ON (`V6`.`user_id` = `V9`.`id`)
+                          INNER JOIN `gh_permissions_organizationownership` `V5` ON (`V0`.`sponsor_ownership_id` = `V5`.`id`)
                           WHERE (`V0`.`delegate_id` = (`trusts_bind`.`user_id`)
                               AND `V0`.`repository_id` = (`W0`.`id`)
                               AND `V3`.`permission_id` = (`auth_permission`.`id`)
-                              AND `V6`.`organization_id` = (`V2`.`organization_id`)
-                              AND `V0`.`approved_organization_id` = (`V2`.`organization_id`)
+                              AND (`V5`.`organization_id` = (
+                                SELECT `h0`.`organization_id`
+                                FROM `gh_permissions_repository` AS `h0`
+                                WHERE `h0`.`id` = `V0`.`repository_id`
+                              )
+                            )
+                              AND (`V0`.`approved_organization_id` = (
+                                SELECT `h0`.`organization_id`
+                                FROM `gh_permissions_repository` AS `h0`
+                                WHERE `h0`.`id` = `V0`.`repository_id`
+                              )
+                            )
                               AND ((%s)
-                                OR `V9`.`is_active` = (`trusts_bind`.`is_active`)
+                                OR ((
+                                  SELECT `h0`.`is_active`
+                                  FROM `example_user` AS `h0`
+                                  WHERE `h0`.`id` = `V5`.`user_id`
+                                ) = %s
+                              )
                             )
                               AND ( EXISTS (
                                 SELECT 1 AS `a`
@@ -1136,7 +1243,7 @@ backends:
                                     AND `U3`.`app_label` = (`trusts_bind`.`app_label`)
                                     AND `U3`.`model` = (`trusts_bind`.`model`)
                                     AND `U0`.`repository_id` = (`V0`.`repository_id`)
-                                    AND `U0`.`user_id` = (`V6`.`user_id`)
+                                    AND `U0`.`user_id` = (`V5`.`user_id`)
                                 )
                                 LIMIT 1
                               )
@@ -1145,7 +1252,6 @@ backends:
                                 FROM `gh_permissions_teamrepositorypermission` `U0`
                                 INNER JOIN `auth_permission` `U1` ON (`U0`.`operation_id` = `U1`.`id`)
                                 INNER JOIN `django_content_type` `U2` ON (`U1`.`content_type_id` = `U2`.`id`)
-                                INNER JOIN `gh_permissions_repository` `U3` ON (`U0`.`repository_id` = `U3`.`id`)
                                 INNER JOIN `gh_permissions_team` `U4` ON (`U0`.`team_id` = `U4`.`id`)
                                 INNER JOIN `gh_permissions_team_members` `U5` ON (`U4`.`id` = `U5`.`team_id`)
                                 INNER JOIN `gh_permissions_team_allowed_operations` `U7` ON (`U4`.`id` = `U7`.`team_id`)
@@ -1153,9 +1259,14 @@ backends:
                                     AND `U2`.`app_label` = (`trusts_bind`.`app_label`)
                                     AND `U2`.`model` = (`trusts_bind`.`model`)
                                     AND `U0`.`repository_id` = (`V0`.`repository_id`)
-                                    AND `U5`.`user_id` = (`V6`.`user_id`)
+                                    AND `U5`.`user_id` = (`V5`.`user_id`)
                                     AND `U7`.`permission_id` = (`U0`.`operation_id`)
-                                    AND `U4`.`organization_id` = (`U3`.`organization_id`)
+                                    AND (`U4`.`organization_id` = (
+                                      SELECT `h0`.`organization_id`
+                                      FROM `gh_permissions_repository` AS `h0`
+                                      WHERE `h0`.`id` = `U0`.`repository_id`
+                                    )
+                                  )
                                 )
                                 LIMIT 1
                               )
@@ -1172,7 +1283,7 @@ backends:
                                     AND `U5`.`app_label` = (`trusts_bind`.`app_label`)
                                     AND `U5`.`model` = (`trusts_bind`.`model`)
                                     AND `U6`.`id` = (`V0`.`repository_id`)
-                                    AND `U0`.`user_id` = (`V6`.`user_id`)
+                                    AND `U0`.`user_id` = (`V5`.`user_id`)
                                 )
                                 LIMIT 1
                               ) ) )
@@ -1182,15 +1293,15 @@ backends:
                 ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: ["$content.id", "$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "$permission.codename", "$permission.codename", "$permission.codename"]
+          params: ["$content.id", "$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "user.is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename", "$permission.codename", "skip_is_active=False", "user.sponsor_ownership__user__is_active=True", "$permission.codename", "$permission.codename", "$permission.codename"]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             CROSS JOIN (
-              SELECT %s AS `content_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `content_id`, %s AS `content_pk`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (((%s)
-                  OR `example_user`.`is_active` = (`trusts_bind`.`is_active`)
+                  OR (`example_user`.`is_active` = %s)
               )
                 AND ( EXISTS (
                   SELECT 1 AS `a`
@@ -1221,10 +1332,9 @@ backends:
                   FROM `gh_permissions_teamrepositorypermission` `V0`
                   INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                   INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                  INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                   INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                   INNER JOIN `gh_permissions_team_allowed_operations` `V5` ON (`V4`.`id` = `V5`.`team_id`)
-                  INNER JOIN `gh_permissions_team_members` `V9` ON (`V4`.`id` = `V9`.`team_id`)
+                  INNER JOIN `gh_permissions_team_members` `V7` ON (`V4`.`id` = `V7`.`team_id`)
                   WHERE (`V0`.`operation_id` = (
                       SELECT `U0`.`id` AS `pk`
                       FROM `auth_permission` `U0`
@@ -1240,8 +1350,13 @@ backends:
                       AND `V2`.`model` = (`trusts_bind`.`model`)
                       AND `V0`.`repository_id` = (`trusts_bind`.`content_id`)
                       AND `V5`.`permission_id` = (`V0`.`operation_id`)
-                      AND `V4`.`organization_id` = (`V3`.`organization_id`)
-                      AND `V9`.`user_id` = (`example_user`.`id`)
+                      AND (`V4`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `V0`.`repository_id`
+                      )
+                    )
+                      AND `V7`.`user_id` = (`example_user`.`id`)
                   )
                   LIMIT 1
                 )
@@ -1275,10 +1390,7 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_personalrepositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_personalrepositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`personalrepositorydelegation_id`)
-                  INNER JOIN `example_user` `W5` ON (`W0`.`sponsor_id` = `W5`.`id`)
-                  INNER JOIN `gh_permissions_organization` `W6` ON (`W2`.`organization_id` = `W6`.`id`)
                   WHERE (`W0`.`delegate_id` = (`example_user`.`id`)
                       AND `W0`.`repository_id` = (`trusts_bind`.`content_id`)
                       AND `W3`.`permission_id` = (
@@ -1292,9 +1404,20 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`personal_user_id` = (`W0`.`sponsor_id`)
+                      AND ((
+                        SELECT `h1`.`personal_user_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        JOIN `gh_permissions_organization` AS `h1` ON `h1`.`id` = `h0`.`organization_id`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      ) = `W0`.`sponsor_id`
+                    )
                       AND ((%s)
-                        OR `W5`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W0`.`sponsor_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -1325,7 +1448,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -1345,7 +1467,12 @@ backends:
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -1399,7 +1526,7 @@ backends:
                       LIMIT 1
                     )
                       AND ((%s)
-                        OR `W2`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR (`W2`.`is_active` = %s)
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -1430,7 +1557,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -1450,7 +1576,12 @@ backends:
                             AND `V0`.`repository_id` = (`W4`.`id`)
                             AND `V5`.`user_id` = (`W0`.`sponsor_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -1486,10 +1617,8 @@ backends:
                 OR EXISTS (
                   SELECT 1 AS `a`
                   FROM `gh_permissions_repositorydelegation` `W0`
-                  INNER JOIN `gh_permissions_repository` `W2` ON (`W0`.`repository_id` = `W2`.`id`)
                   INNER JOIN `gh_permissions_repositorydelegation_permissions` `W3` ON (`W0`.`id` = `W3`.`repositorydelegation_id`)
-                  INNER JOIN `gh_permissions_organizationownership` `W6` ON (`W0`.`sponsor_ownership_id` = `W6`.`id`)
-                  INNER JOIN `example_user` `W9` ON (`W6`.`user_id` = `W9`.`id`)
+                  INNER JOIN `gh_permissions_organizationownership` `W5` ON (`W0`.`sponsor_ownership_id` = `W5`.`id`)
                   WHERE (`W0`.`delegate_id` = (`example_user`.`id`)
                       AND `W0`.`repository_id` = (`trusts_bind`.`content_id`)
                       AND `W3`.`permission_id` = (
@@ -1503,10 +1632,25 @@ backends:
                       ORDER BY `U1`.`app_label` ASC, `U1`.`model` ASC, `U0`.`codename` ASC
                       LIMIT 1
                     )
-                      AND `W6`.`organization_id` = (`W2`.`organization_id`)
-                      AND `W0`.`approved_organization_id` = (`W2`.`organization_id`)
+                      AND (`W5`.`organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
+                      AND (`W0`.`approved_organization_id` = (
+                        SELECT `h0`.`organization_id`
+                        FROM `gh_permissions_repository` AS `h0`
+                        WHERE `h0`.`id` = `W0`.`repository_id`
+                      )
+                    )
                       AND ((%s)
-                        OR `W9`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR ((
+                          SELECT `h0`.`is_active`
+                          FROM `example_user` AS `h0`
+                          WHERE `h0`.`id` = `W5`.`user_id`
+                        ) = %s
+                      )
                     )
                       AND ( EXISTS (
                         SELECT 1 AS `a`
@@ -1528,7 +1672,7 @@ backends:
                             AND `V3`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V3`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       )
@@ -1537,7 +1681,6 @@ backends:
                         FROM `gh_permissions_teamrepositorypermission` `V0`
                         INNER JOIN `auth_permission` `V1` ON (`V0`.`operation_id` = `V1`.`id`)
                         INNER JOIN `django_content_type` `V2` ON (`V1`.`content_type_id` = `V2`.`id`)
-                        INNER JOIN `gh_permissions_repository` `V3` ON (`V0`.`repository_id` = `V3`.`id`)
                         INNER JOIN `gh_permissions_team` `V4` ON (`V0`.`team_id` = `V4`.`id`)
                         INNER JOIN `gh_permissions_team_members` `V5` ON (`V4`.`id` = `V5`.`team_id`)
                         INNER JOIN `gh_permissions_team_allowed_operations` `V7` ON (`V4`.`id` = `V7`.`team_id`)
@@ -1555,9 +1698,14 @@ backends:
                             AND `V2`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V2`.`model` = (`trusts_bind`.`model`)
                             AND `V0`.`repository_id` = (`W0`.`repository_id`)
-                            AND `V5`.`user_id` = (`W6`.`user_id`)
+                            AND `V5`.`user_id` = (`W5`.`user_id`)
                             AND `V7`.`permission_id` = (`V0`.`operation_id`)
-                            AND `V4`.`organization_id` = (`V3`.`organization_id`)
+                            AND (`V4`.`organization_id` = (
+                              SELECT `h0`.`organization_id`
+                              FROM `gh_permissions_repository` AS `h0`
+                              WHERE `h0`.`id` = `V0`.`repository_id`
+                            )
+                          )
                         )
                         LIMIT 1
                       )
@@ -1584,7 +1732,7 @@ backends:
                             AND `V5`.`app_label` = (`trusts_bind`.`app_label`)
                             AND `V5`.`model` = (`trusts_bind`.`model`)
                             AND `V6`.`id` = (`W0`.`repository_id`)
-                            AND `V0`.`user_id` = (`W6`.`user_id`)
+                            AND `V0`.`user_id` = (`W5`.`user_id`)
                         )
                         LIMIT 1
                       ) ) )
@@ -1592,12 +1740,12 @@ backends:
                 ) ) )
         filter_by_permitted_content:
           - model: "gh_permissions.Organization"
-            params: ["$user.id", "$permission.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "skip_is_active=False"]
+            params: ["$user.id", "$permission.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"repository\"", "skip_is_active=False", "user.is_active=True", "skip_is_active=False", "user.sponsor__is_active=True"]
             sql: |-
               SELECT DISTINCT `gh_permissions_organization`.`id`, `gh_permissions_organization`.`name`, `gh_permissions_organization`.`personal_user_id`, `gh_permissions_organization`.`owner_group_id`
               FROM `gh_permissions_organization`
               CROSS JOIN (
-                SELECT %s AS `user_id`, %s AS `permission_id`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+                SELECT %s AS `user_id`, %s AS `permission_id`, %s AS `app_label`, %s AS `model`
               ) `trusts_bind`
               WHERE (
                 EXISTS (
@@ -1605,7 +1753,7 @@ backends:
                   FROM `example_user` `U0`
                   WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                       AND ((%s)
-                        OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                        OR (`U0`.`is_active` = %s)
                     )
                   )
                   LIMIT 1
@@ -1636,7 +1784,7 @@ backends:
                         AND `V3`.`id` = (`gh_permissions_organization`.`id`)
                         AND `V4`.`permission_id` = (`trusts_bind`.`permission_id`)
                         AND ((%s)
-                          OR `V2`.`is_active` = (`trusts_bind`.`is_active`)
+                          OR (`V2`.`is_active` = %s)
                       )
                       AND EXISTS (
                         SELECT 1 AS `a`
@@ -1666,12 +1814,12 @@ backends:
             permission: {path: "organization__owner_group__permissions", model: "auth.Permission", target: "id"}
             content: {path: "organization", model: "gh_permissions.Organization", target: "id"}
         permitted:
-          params: ["$user.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "$permission.codename"]
+          params: ["$user.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "user.is_active=True", "$permission.codename"]
           sql: |-
             SELECT DISTINCT `gh_permissions_organization`.`id`, `gh_permissions_organization`.`name`, `gh_permissions_organization`.`personal_user_id`, `gh_permissions_organization`.`owner_group_id`
             FROM `gh_permissions_organization`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (
               EXISTS (
@@ -1679,7 +1827,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -1711,12 +1859,12 @@ backends:
                 LIMIT 1
               ) )
         has_perm:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "$permission.codename"]
+          params: ["$user.id", "$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "user.is_active=True", "$permission.codename"]
           sql: |-
             SELECT 1 AS `a`
             FROM `gh_permissions_organization`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (`gh_permissions_organization`.`id` = (`trusts_bind`.`content_pk`)
               AND EXISTS (
@@ -1724,7 +1872,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -1757,12 +1905,12 @@ backends:
               ) )
             LIMIT 1
         get_all_permissions:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False"]
+          params: ["$user.id", "$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "user.is_active=True"]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
@@ -1781,7 +1929,7 @@ backends:
                         FROM `example_user` `U0`
                         WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                             AND ((%s)
-                              OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                              OR (`U0`.`is_active` = %s)
                           )
                         )
                         LIMIT 1
@@ -1806,15 +1954,15 @@ backends:
                 ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: ["$content.id", "user.is_active=True", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "$permission.codename"]
+          params: ["$content.id", "$content.app_label=\"gh_permissions\"", "$content.model=\"organization\"", "skip_is_active=False", "user.is_active=True", "$permission.codename"]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             CROSS JOIN (
-              SELECT %s AS `content_id`, %s AS `is_active`, %s AS `app_label`, %s AS `model`
+              SELECT %s AS `content_id`, %s AS `app_label`, %s AS `model`
             ) `trusts_bind`
             WHERE (((%s)
-                  OR `example_user`.`is_active` = (`trusts_bind`.`is_active`)
+                  OR (`example_user`.`is_active` = %s)
               )
               AND EXISTS (
                 SELECT 1 AS `a`
@@ -1844,9 +1992,9 @@ backends:
               ) )
       - model: "gh_permissions.Issue"
         trusts:
-          - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8"
+          - id: "gh_permissions__IssuePermissions__issue__along_issue__parent_S_8__along_cond"
             name: "issue_subtree"
-            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges."
+            description: "A user holds the permissions on this row for one issue and its sub-issues, through at most eight parent edges. The walk continues to the parent when reset_inheritance is false or null. True cuts grants inherited from ancestors. A grant on the issue still applies."
             root: "gh_permissions.IssuePermissions"
             user: {path: "user", model: "example.User", target: "id"}
             permission: {path: "permissions", model: "auth.Permission", target: "id"}
@@ -1855,13 +2003,14 @@ backends:
               path: "issue__parent"
               shape: "S"
               bound: 8
+              condition: "reset_inheritance == False or reset_inheritance == None"
         permitted:
-          params: ["$user.id", "user.is_active=True", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "$permission.codename"]
+          params: ["$user.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False"]
           sql: |-
-            SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`
+            SELECT DISTINCT `gh_permissions_issue`.`id`, `gh_permissions_issue`.`repository_id`, `gh_permissions_issue`.`parent_id`, `gh_permissions_issue`.`number`, `gh_permissions_issue`.`title`, `gh_permissions_issue`.`reset_inheritance`
             FROM `gh_permissions_issue`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `is_active`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
+              SELECT %s AS `user_id`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
             ) `trusts_bind`
             WHERE (
               EXISTS (
@@ -1869,7 +2018,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -1904,6 +2053,9 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                    AND (((`child`.`reset_inheritance` = %s))
+                      OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                  )
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -1913,12 +2065,12 @@ backends:
               ) = (`trusts_bind`.`along_match`)
             )
         has_perm:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "$permission.codename"]
+          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False"]
           sql: |-
             SELECT 1 AS `a`
             FROM `gh_permissions_issue`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
             ) `trusts_bind`
             WHERE (`gh_permissions_issue`.`id` = (`trusts_bind`.`content_pk`)
               AND EXISTS (
@@ -1926,7 +2078,7 @@ backends:
                 FROM `example_user` `U0`
                 WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                     AND ((%s)
-                      OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                      OR (`U0`.`is_active` = %s)
                   )
                 )
                 LIMIT 1
@@ -1961,6 +2113,9 @@ backends:
                   SELECT `child`.`id`, `g`.`depth` + 1
                   FROM `gen` AS `g`
                   JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                    AND (((`child`.`reset_inheritance` = %s))
+                      OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                  )
                   WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                     AND `child`.`id` IS NOT NULL
                 )
@@ -1971,12 +2126,12 @@ backends:
             )
             LIMIT 1
         get_all_permissions:
-          params: ["$user.id", "$content.id", "user.is_active=True", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False"]
+          params: ["$user.id", "$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "reset_inheritance=False"]
           sql: |-
             SELECT DISTINCT `auth_permission`.`id`, `auth_permission`.`name`, `auth_permission`.`content_type_id`, `auth_permission`.`codename`, `django_content_type`.`app_label`, `django_content_type`.`model`
             FROM `auth_permission`
             CROSS JOIN (
-              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `is_active`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
+              SELECT %s AS `user_id`, %s AS `content_pk`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
             ) `trusts_bind`
             INNER JOIN `django_content_type` ON (`auth_permission`.`content_type_id` = `django_content_type`.`id`)
             WHERE (
@@ -1995,7 +2150,7 @@ backends:
                         FROM `example_user` `U0`
                         WHERE (`U0`.`id` = (`trusts_bind`.`user_id`)
                             AND ((%s)
-                              OR `U0`.`is_active` = (`trusts_bind`.`is_active`)
+                              OR (`U0`.`is_active` = %s)
                           )
                         )
                         LIMIT 1
@@ -2020,6 +2175,9 @@ backends:
                           SELECT `child`.`id`, `g`.`depth` + 1
                           FROM `gen` AS `g`
                           JOIN `gh_permissions_issue` AS `child` ON `child`.`parent_id` = `g`.`ident`
+                            AND (((`child`.`reset_inheritance` = %s))
+                              OR (CASE WHEN ((1=1)) THEN (`child`.`reset_inheritance` IS NULL) ELSE NULL END)
+                          )
                           WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                             AND `child`.`id` IS NOT NULL
                         )
@@ -2032,15 +2190,15 @@ backends:
                 ) ) )
             ORDER BY `django_content_type`.`app_label` ASC, `django_content_type`.`model` ASC, `auth_permission`.`codename` ASC
         get_permitted_users:
-          params: ["$content.id", "user.is_active=True", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "$permission.codename", "$along_match=True"]
+          params: ["$content.id", "$along_bound=8", "$content.app_label=\"gh_permissions\"", "$content.model=\"issue\"", "$along_match=True", "skip_is_active=False", "user.is_active=True", "$permission.codename", "reset_inheritance=False", "$along_match=True"]
           sql: |-
             SELECT DISTINCT `example_user`.`id`, `example_user`.`password`, `example_user`.`last_login`, `example_user`.`is_superuser`, `example_user`.`username`, `example_user`.`first_name`, `example_user`.`last_name`, `example_user`.`email`, `example_user`.`is_staff`, `example_user`.`is_active`, `example_user`.`date_joined`
             FROM `example_user`
             CROSS JOIN (
-              SELECT %s AS `content_id`, %s AS `is_active`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
+              SELECT %s AS `content_id`, %s AS `along_bound`, %s AS `app_label`, %s AS `model`, %s AS `along_match`
             ) `trusts_bind`
             WHERE (((%s)
-                  OR `example_user`.`is_active` = (`trusts_bind`.`is_active`)
+                  OR (`example_user`.`is_active` = %s)
               )
               AND EXISTS (
                 SELECT 1 AS `a`
@@ -2074,6 +2232,9 @@ backends:
                       SELECT `cur`.`parent_id`, `g`.`depth` + 1
                       FROM `gen` AS `g`
                       JOIN `gh_permissions_issue` AS `cur` ON `cur`.`id` = `g`.`ident`
+                        AND (((`cur`.`reset_inheritance` = %s))
+                          OR (CASE WHEN ((1=1)) THEN (`cur`.`reset_inheritance` IS NULL) ELSE NULL END)
+                      )
                       WHERE `g`.`depth` < `trusts_bind`.`along_bound`
                         AND `cur`.`parent_id` IS NOT NULL
                     )
