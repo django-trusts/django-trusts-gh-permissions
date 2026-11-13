@@ -117,18 +117,37 @@ class PermittedUsersAgreementTest(GhFixtureMixin, TestCase):
         )
         self.assertEqual(
             list(Repository.objects.authorized(self.member, self.read)),
-            [self.repo_a],
+            [],
         )
 
         superuser = User.objects.create_superuser(
             username='super', password='secret', email='super@example.com',
         )
+        # Django's User.has_perm still returns True for an active
+        # superuser. This package does not. Reverse sets follow grants.
         self.assertTrue(superuser.has_perm(_READ, self.repo_a))
-        self.assertIn(
+        self.assertNotIn(
             superuser,
             set(self.repo_a.get_permitted_users(_READ)),
         )
         self.assertNotIn(
+            superuser,
+            set(User.objects.permitted(self.repo_a, _READ)),
+        )
+        self.assertNotIn(
+            self.repo_a,
+            set(Repository.objects.authorized(superuser, self.read)),
+        )
+        from gh_permissions.models import RepositoryCollaborator
+        granted = RepositoryCollaborator.objects.create(
+            user=superuser, repository=self.repo_a,
+        )
+        granted.permissions.add(self.read)
+        self.assertIn(
+            superuser,
+            set(self.repo_a.get_permitted_users(_READ)),
+        )
+        self.assertIn(
             self.repo_a,
             set(Repository.objects.authorized(superuser, self.read)),
         )

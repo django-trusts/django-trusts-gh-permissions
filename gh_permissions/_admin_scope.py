@@ -50,10 +50,15 @@ class AuthorizedScopeAdminMixin:
 
     ``authorization_scope_paths`` is ``''``, one forward single-valued
     lookup, or a tuple of them. Every path must end on the authorized
-    queryset's concrete model in the same database.     ``scope_allows_add``, ``scope_allows_change``, and
-    ``scope_allows_delete`` are independent, including when no object
-    is passed. Creates consult the add flag; updates consult the change
-    flag. ``bypasses_scope`` skips the filter; the default is a superuser.
+    queryset's concrete model in the same database. ``scope_allows_add``,
+    ``scope_allows_change``, and
+    ``scope_allows_delete`` are independent. With no object, each flag
+    is the whole answer. An object delete still requires ``_in_scope``,
+    including when ``scope_allows_delete`` is false, so a parent
+    cascade can collect a related row this admin does not itself
+    delete. Creates consult the add flag; updates consult the change
+    flag. ``bypasses_scope`` skips the filter. The default skips
+    nobody, including a superuser.
     """
 
     authorization_scope_paths = None
@@ -65,8 +70,13 @@ class AuthorizedScopeAdminMixin:
         raise NotImplementedError
 
     def bypasses_scope(self, request):
-        user = getattr(request, 'user', None)
-        return bool(getattr(user, 'is_superuser', False))
+        """Return whether this request skips the authorized scope.
+
+        A superuser does not. Django's own model-permission checks
+        still run through ``super()`` before this mixin applies the
+        scope. This package does not add a second free pass.
+        """
+        return False
 
     def _paths(self):
         return _as_paths(self.authorization_scope_paths)
@@ -193,10 +203,8 @@ class AuthorizedScopeAdminMixin:
             return False
         if self.bypasses_scope(request):
             return True
-        if not self.scope_allows_delete:
-            return False
         if obj is None:
-            return True
+            return self.scope_allows_delete
         return self._in_scope(request, obj)
 
     def save_model(self, request, obj, form, change):
