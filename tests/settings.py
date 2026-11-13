@@ -16,7 +16,7 @@ else:
 SECRET_KEY = 'gh-permissions-tests-not-for-production'
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
-ALLOWED_HOSTS = ['testserver', 'localhost']
+ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
 
 # Relations are registered at the end of gh_permissions/models.py.
 # GhPermissionsConfig owns the catalog. Core is a library.
@@ -32,6 +32,8 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.admin',
+    # Example MCP authorization spike only. Not a gh_permissions dependency.
+    'oauth2_provider',
     'gh_permissions.apps.GhPermissionsConfig',
 )
 
@@ -96,12 +98,46 @@ if os.environ.get('TRUSTS_TEST_DATABASE') == 'mysql':
         'gh_permission_reset': _GH_PERMISSION_RESET,
     }
 else:
+    # File database so `manage.py migrate`, `seed_example`, and `runserver`
+    # share rows. The test runner still substitutes its own database.
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': ':memory:',
+            'NAME': BASE_DIR / 'db.sqlite3',
         },
         'gh_permission_reset': _GH_PERMISSION_RESET,
     }
 
 ROOT_URLCONF = 'tests.urls'
+
+# Stock Django login. The MCP authorize view sends an anonymous human here
+# and comes back through the ``next`` parameter. This is not admin login.
+LOGIN_URL = '/accounts/login/'
+
+# django-oauth-toolkit 3.4.1 is the authorization server for this example:
+# PKCE, the authorization-code grant, RFC 8414 and RFC 9728 metadata, and
+# the token endpoint. The access token lasts one hour and the validator
+# drops the refresh token. It is a test credential for /mcp only.
+OAUTH2_PROVIDER = {
+    'PKCE_REQUIRED': True,
+    # RFC 9700 §2.1.1. Server-wide: 3.4.1 has no per-application PKCE
+    # method. PKCE_REQUIRED may be a client_id callable, but that only
+    # requires some challenge. This gate rejects "plain" when the code
+    # is saved and drops it from authorization-server metadata.
+    'COMPLIANT_BCP_RFC9700_PKCE_METHOD': True,
+    'REQUEST_APPROVAL_PROMPT': 'force',
+    'ALLOWED_REDIRECT_URI_SCHEMES': ['http', 'https'],
+    'ALLOW_LOCALHOST_LOOPBACK': True,
+    'OAUTH2_VALIDATOR_CLASS': (
+        'example.mcp_authorization.ExampleAccessTokenValidator'
+    ),
+    'OAUTH2_GRANT_TYPES_SUPPORTED': ['authorization_code'],
+    'OAUTH2_RESPONSE_TYPES_SUPPORTED': ['code'],
+    'OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED': ['none'],
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    'OAUTH2_PROTECTED_RESOURCE_NAME': 'Example MCP',
+    'SCOPES': {
+        'read_repository': 'Read access to repository contents',
+        'write_repository': 'Read and write access to repository contents',
+    },
+}

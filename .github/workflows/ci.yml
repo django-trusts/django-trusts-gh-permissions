@@ -51,6 +51,7 @@ jobs:
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        python -m pip install "django-oauth-toolkit==3.4.1"
     - name: Pin guard
       run: |
         if [ "${TRUSTS_FOLLOW_CORE:-}" != "1" ]; then
@@ -114,6 +115,7 @@ jobs:
         python -m pip install "Django>=6.1,<6.2" coverage
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        python -m pip install "django-oauth-toolkit==3.4.1"
         mkdir -p .ci
         python -m django trusts_policy_sql --lock --settings=tests.settings
         coverage run -m tests.runtests
@@ -164,6 +166,7 @@ jobs:
         python -m pip install "Django>=6.1,<6.2" mysqlclient
         python -m pip install -e .deps/django-trusts --config-settings editable_mode=compat
         python -m pip install -e . --config-settings editable_mode=compat
+        python -m pip install "django-oauth-toolkit==3.4.1"
     - name: Render current MySQL policy
       id: mysql-policy-lock
       run: |

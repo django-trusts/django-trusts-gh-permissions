@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% if code %}Authorization code issued{% elif error %}Authorization cancelled{% else %}No access was granted{% endif %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; }
+    main { max-width: 36rem; margin: 4rem auto; background: #fff; padding: 1.5rem; border: 1px solid #d0d7de; }
+    pre.handshake { box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.8rem; min-height: 10rem; width: 100%; margin: 0; padding: 0.5rem 0.75rem; white-space: pre-wrap; overflow: auto; user-select: text; -webkit-user-select: text; cursor: text; pointer-events: auto; border: 1px solid #d0d7de; background: #f6f8fa; }
+    h2 { font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    {% if code %}
+      <h1>Authorization code issued</h1>
+      <p id="test-only-spike"><strong>Test-only spike.</strong> This page shows the authorization code, including in the raw handshake box, for development inspection. Do not keep this display in a non-development deployment.</p>
+      <p>This page does not exchange the code. The client posts it to the token endpoint.</p>
+      <p>The access token is only a test credential for this example endpoint.</p>
+    {% elif error %}
+      <h1>Authorization cancelled</h1>
+      <p>No access was granted.</p>
+    {% else %}
+      <h1>No access was granted</h1>
+    {% endif %}
+    {% if handshake_dump %}
+      <section id="raw-handshake">
+        <h2 id="raw-handshake-label">Raw handshake request</h2>
+        <pre id="raw-handshake-request" class="handshake" aria-labelledby="raw-handshake-label">{{ handshake_dump }}</pre>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>

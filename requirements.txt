@@ -3,3 +3,6 @@
 # published, install a path/git core first or use the companion wheel.
 Django>=6.1,<6.2
 django-trusts @ git+https://github.com/django-trusts/django-trusts.git@a23d2adc22afaf12c423f2dc1ca43c43b586f50f
+# Example MCP authorization spike only (issue #38). gh_permissions does not
+# import this. The runnable example settings list oauth2_provider.
+django-oauth-toolkit==3.4.1
