@@ -19,13 +19,13 @@ The inquiry is ``Organization.objects.authorized`` on that locked row.
 It reads stored ``OrganizationOwnership`` rows. A submitted instance,
 a new ownership row, or a permission bundle is not that evidence.
 
-An active superuser (``is_active`` and ``is_superuser``) skips only
-the inquiry. A persisted inactive actor is denied before that bypass
-and before the ownership inquiry, whether or not an ownership row
-exists. Missing parents, duplicate targets, and a team grant whose
-team and repository organizations differ still fail, including for a
-superuser. ``.authorized`` does not list a superuser who has no
-ownership row.
+The actor needs ``manage_organization`` on each locked organization.
+An active superuser is held to that same ownership row; the flag is
+not a grant. A persisted inactive actor is denied before the inquiry,
+whether or not an ownership row exists. Missing parents, duplicate
+targets, and a team grant whose team and repository organizations
+differ still fail. ``.authorized`` and these writes follow the same
+ownership rows.
 
 Ownership update and delete keep at least one owner on every
 surviving conventional organization. ``delete_user`` locks each
@@ -437,16 +437,6 @@ def _locked_actor(actor):
     return _locked_one(user_model, actor.pk, 'actor')
 
 
-def _inquiry_bypassed(actor):
-    """Same active-superuser rule as ``User.has_perm``.
-
-    This skips only the ``manage_organization`` inquiry. It is not an
-    ownership row, and it does not skip existence or same-organization
-    checks. Inactive actors are rejected before this is consulted.
-    """
-    return bool(actor.is_active and actor.is_superuser)
-
-
 def _manage_permission():
     return Permission.objects.get(
         content_type__app_label='gh_permissions',
@@ -459,13 +449,11 @@ def _require_manage(actor, organizations):
     """Require ``manage_organization`` on each locked organization.
 
     ``actor`` is the row reloaded inside the write. An inactive actor
-    is denied before the active-superuser bypass and before
-    ``Organization.objects.authorized``, matching ``User.has_perm``.
+    is denied before ``Organization.objects.authorized``. An active
+    superuser is not a special case: the same ownership row is required.
     """
     if not actor.is_active:
         raise ManagementDenied(organizations[0].pk)
-    if _inquiry_bypassed(actor):
-        return
     permission = _manage_permission()
     seen = set()
     for organization in organizations:
@@ -1002,7 +990,8 @@ def update_organization_ownership(
     inquiry. Reassigning the user leaves the row on the same
     organization, so the sole owner may be replaced. Moving the row
     off a conventional organization is refused when no other owner
-    would remain. An active superuser skips only the inquiry.
+    would remain. An active superuser needs the same
+    ``manage_organization`` grant as any other actor.
     """
     if user_id is None and organization_id is None:
         raise UndefinedRelationshipWrite('organization ownership update')
@@ -1057,7 +1046,8 @@ def delete_organization_ownership(actor, ownership_id):
     """Delete one stored ownership row.
 
     A conventional organization must still have another owner. An
-    active superuser skips the inquiry and still hits that refusal.
+    active superuser needs ``manage_organization`` and still hits that
+    refusal.
     A personal organization is not conventional; ``delete_user`` is
     what removes it with the user.
     """
@@ -1091,9 +1081,8 @@ def _refuse_organization_boundary_move(
     the replacement would not decide whether the grants follow, are
     deleted, or block the move. Both organizations are locked in
     primary-key order so the refusal is about the persisted rows. An
-    inactive actor is denied before the active-superuser bypass. The
-    bypass is not applied: an active superuser receives the same
-    refusal.
+    inactive actor is denied. An active superuser receives the same
+    refusal as any other active actor.
     """
     parent_pk = _require_pk(parent_id, parent_label)
     organization_pk = _require_pk(organization_id, 'organization')

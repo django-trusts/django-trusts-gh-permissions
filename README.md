@@ -1,5 +1,7 @@
 # django-trusts-gh-permissions
 
+[![Coverage](https://coveralls.io/repos/github/django-trusts/django-trusts-gh-permissions/badge.svg?branch=dev)](https://coveralls.io/github/django-trusts/django-trusts-gh-permissions?branch=dev)
+
 `django-trusts-gh-permissions` is a **bounded reference implementation**
 that shows how permissions can emerge from persisted user,
 organization, team, and repository relationships on
@@ -29,10 +31,21 @@ A direct path is one `RepositoryCollaborator` row: the user, the
 repository, and the selected `permissions`. Organization membership is
 not required, so an outside collaborator is just that row.
 
+A repository may also contain `Issue` rows connected through an optional
+`parent`. An `IssuePermissions` row assigns a user a permission bundle at one
+issue. The `triage_issue` example permission reaches that issue and bounded
+sub-issues. It does not reach an ancestor or a sibling.
+
 Organization alignment and the team's allowed operations constrain a
 complete team path. Direct and team paths OR together. Deleting any
 required persisted relationship removes that path. Malformed,
 incomplete, or revoked paths fail closed.
+
+The [repository delegation example](docs/repository-delegation.md) adds a
+sponsor-selected, organization-approved bridge. It is limited by both its own
+repository/permission scope and the sponsor's live ordinary authority. The
+sponsor's ordinary authority remains the union of direct, team, and owner
+paths; delegation itself is one level only.
 
 `Alias` is the shared current-name ledger (`name` unique). It is not an
 authorization edge and it does not store redirects or older names.
@@ -64,6 +77,64 @@ grant this bundle.
 `Repository.name` is unique per organization and may repeat across
 organizations.
 
+## Bounded sub-issue triage
+
+The sub-issue example is the concrete consumer of provisional `along=`.
+[GitHub documents](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)
+a full parent/sub-issue hierarchy, permits an existing issue to be re-parented,
+and limits nesting to eight levels. Each issue keeps its own repository
+identity while the optional `parent` defines the hierarchy; this also permits
+the cross-repository sub-issues supported by GitHub. GitHub limits those
+cross-repository relationships to repositories with the same owner. This
+bounded example does not reproduce that separate write-time owner check.
+
+`models.py` registers the triage assignment as:
+
+```python
+from gh_permissions.backends import GhAuthorizationBackend
+from gh_permissions.models import IssuePermissions
+
+GhAuthorizationBackend().get_registry().register(
+    trust=IssuePermissions,
+    user="user",
+    permission="permissions",
+    content="issue",
+    along=(
+        lambda t: ((t.issue.reset_inheritance == False) | (t.issue.reset_inheritance == None)) & t.issue.parent,
+        8,
+    ),
+)
+```
+
+Depth zero is the assigned issue. Eight parent edges are included; a ninth is
+denied. That relative query-safety ceiling is not the same as GitHub's
+absolute eight-level tree limit. Valid application writes remain responsible
+for the absolute level rule, rejecting cycles, and the separate same-owner
+rule.
+
+`Issue.reset_inheritance` is nullable. NULL is unset and inherits, and
+false inherits. True cuts grants inherited from ancestors at that issue
+and below it. A grant on that issue still applies.
+
+Forward authorization answers whether one user may triage one issue.
+Reverse inquiry answers who may triage a selected issue:
+
+```python
+user.has_perm("gh_permissions.triage_issue", issue)
+Issue.objects.authorized(user, triage_permission)
+User.objects.permitted(issue, triage_permission)
+issue.get_permitted_users(triage_permission)
+```
+
+Removing the permission from the assignment, or deleting the assignment,
+revokes both directions immediately. The policy lock records the same
+bounded recursive SQL for forward and reverse inquiries.
+
+Re-parenting changes effective authority immediately because the assignment
+follows persisted issue identity and the current parent edges. This is a
+GH-style finer-grained example policy; it does not claim that GitHub's native
+repository-level triage role inherits through sub-issues this way.
+
 ## Changing authorization relationships
 
 Supported writes for authorization-bearing rows are
@@ -74,13 +145,14 @@ organization by primary key, locks that row, and then requires
 a permission being submitted, or an in-memory organization is not
 that authority.
 
-An active superuser skips only that inquiry. A persisted inactive
-actor is denied before that bypass and before the ownership inquiry,
-including an inactive owner and an inactive superuser who already
-owns the organization. The same calls still require every parent row
-to exist, and a team repository grant still has to stay inside one
-organization. A superuser with no ownership row still does not appear
-in `.authorized`.
+An active superuser needs that same ownership row. The superuser
+flag is not a grant, and this package does not register a superuser
+override. A persisted inactive actor is denied before the ownership
+inquiry, including an inactive owner and an inactive superuser who
+already owns the organization. The same calls still require every
+parent row to exist, and a team repository grant still has to stay
+inside one organization. A superuser with no ownership row does not
+appear in `.authorized` or in the permitted-user inquiries.
 
 The functions are:
 
@@ -128,10 +200,10 @@ different organization.
 An ownership update or delete must leave every surviving conventional
 organization with at least one owner. Replacing the user on that same
 organization keeps the row, so the sole owner may be handed to someone
-else. Moving or deleting the last row is refused. An active superuser
-may add the first owner of an organization that has none. The same
-superuser may not remove the last owner. A persisted inactive actor is
-denied before that bypass and before the ownership inquiry.
+else. Moving or deleting the last row is refused. An organization
+with no owner cannot gain its first owner through these calls,
+including when the actor is an active superuser. A persisted inactive
+actor is denied before the ownership inquiry.
 
 `delete_user` omits the user's personal organization from that check
 because the personal organization is deleted in the same transaction
@@ -154,8 +226,7 @@ A raw queryset write does not apply these checks. `register(condition=)`
 reads existing trust rows and does not keep an owner on save or delete.
 Organization-owner admin calls these functions for every
 authorization-bearing edit it still exposes. `OrganizationOwnership`
-stays read-only for anyone who is not a superuser; a superuser add,
-change, or delete calls the ownership service. `Team.organization`
+stays read-only for every actor, including a superuser. `Team.organization`
 and `Repository.organization` cannot be changed from an admin form.
 `LastOrganizationOwner` from user deletion or an ownership delete is
 an admin message, and that write is rolled back.
@@ -192,12 +263,13 @@ use `settings.AUTH_USER_MODEL` and do not import `example`. A project
 that keeps stock `auth.User` still uses `repository.get_permitted_users`.
 
 `GhPermissionsConfig` owns the implementation. The accepted team
-registration (contributed at startup) is:
+registration, called from the end of `models.py`, is:
 
 ```python
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import TeamRepositoryPermission
 
-backend.register(
+GhAuthorizationBackend().get_registry().register(
     trust=TeamRepositoryPermission,
     user="team__members",
     permission="operation",
@@ -214,9 +286,10 @@ registered beside that team path. `permission` is the terminal
 many-to-many to `auth.Permission`:
 
 ```python
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import RepositoryCollaborator
 
-backend.register(
+GhAuthorizationBackend().get_registry().register(
     trust=RepositoryCollaborator,
     user="user",
     permission="permissions",
@@ -238,23 +311,26 @@ the Django permission string as the alias.
 
 ```python
 from example.models import User
-from gh_permissions.apps import CANONICAL_BACKEND
+from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import Repository
-from trusts.apps import implementation_for_path
 
-registry = implementation_for_path(CANONICAL_BACKEND).configured_backend(
-    CANONICAL_BACKEND,
-).registry
-registry.has_permission(user, repository, operation)
+GhAuthorizationBackend().has_perm(
+    user, 'gh_permissions.read_repository', repository,
+)
 Repository.objects.authorized(user, operation)
 user.has_perm('gh_permissions.read_repository', repository)
 User.objects.permitted(repository, 'gh_permissions.read_repository')
 repository.get_permitted_users('gh_permissions.read_repository')
 ```
 
-`Repository.objects` is the stock core `AuthorizedManager`.
-`Repository` mixes in `PermittedUsersMixin`. With the example user
-manager, the same rows are `User.objects.permitted(repository, perm)`.
+`Repository.objects` is `RepositoryQuerySet`. That queryset mixes
+`PermittedQuerySetMixin` onto `AuthorizedQuerySet`, so
+`Repository.objects.permitted(permission, user)` lists rows for a
+permission string and `.authorized(user, permission)` stays the
+lower-level projection. `Organization` and the other models keep the
+stock `AuthorizedManager`. `Repository` mixes in `PermittedUsersMixin`.
+With the example user manager, the same users are
+`User.objects.permitted(repository, perm)`.
 
 ## Install
 
@@ -278,7 +354,7 @@ Django 6.1 and Python 3.12–3.14 in its own classifiers and tox matrix.
 ## Organization-owner admin
 
 Organization administration was `OrganizationOwnerPermission`. That
-model is gone. Ownership is an `OrganizationOwnership` row. Startup
+model is gone. Ownership is an `OrganizationOwnership` row. `models.py`
 registers that row twice, with no condition: once for the organization
 and once for that organization's repositories. A non-owner has no
 ownership row. `Team` does not grant this bundle.
@@ -297,10 +373,12 @@ admin call the domain services. User create, rename, and delete call
 them through `ServiceBackedUserAdmin`. `delete_user` refuses the
 deletion when a surviving conventional organization would have no
 owner, and the admin shows that refusal instead of deleting the user.
-Team, repository, collaborator, team-grant, and superuser ownership
-edits call the relationship services. `OrganizationOwnership` rows
-stay read-only for non-superusers. `Team.organization` and
-`Repository.organization` are immutable in the admin forms.
+Team, repository, collaborator, and team-grant edits call the
+relationship services when the actor has `manage_organization` on
+the organization. `OrganizationOwnership` rows stay read-only.
+`Team.organization` and `Repository.organization` are immutable in
+the admin forms. A superuser sees the same organizations as any
+other user with the same ownership rows.
 
 The runnable example (`tests.settings`, which `manage.py` loads) lists
 both backends:
@@ -339,7 +417,8 @@ python manage.py seed_example
 The value is checked against `Organization.name` before any rows are
 written. The same name with an exact matching graph is safe to run
 again: the command reuses those rows and does not create duplicates.
-A missing, partial, or different graph for that name fails before it
+A seed created before the sub-issue example receives that wholly absent slice
+once. A partial or different base graph or sub-issue slice fails before it
 changes anything. Rows outside that graph are left alone.
 
 The accounts below are development-only. Do not reuse these passwords
@@ -347,9 +426,9 @@ in production.
 
 | Username | Development-only password | What it proves |
 | --- | --- | --- |
-| `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` lists persisted grants only. `has_perm` and the permitted-user inquiries include the active superuser. |
+| `example-superuser` | `example-superuser-dev-only` | Application superuser. `authorized` and the permitted-user inquiries list persisted grants only. Django's own `User.has_perm` still returns true for an active superuser; this package's backend does not, unless the superuser has a grant. |
 | `example-owner` | `example-owner-dev-only` | Staff owner. `OrganizationOwnership` grants `manage_organization` on that organization and `read_repository`, `write_repository`, and `admin_repository` on its repositories. A repository permission on the organization, or `manage_organization` on a repository, is denied. Django model permissions cover those rows, so this account can log in to stock admin and sees only its personal organization and the conventional organizations it owns. |
-| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`. |
+| `example-direct` | `example-direct-dev-only` | One `RepositoryCollaborator` on `shared-repo` with `read_repository` and `write_repository`, plus sub-issue triage authority at issue `#101`. |
 | `example-team` | `example-team-dev-only` | Member of team `readers`. `read_repository` on `shared-repo` through membership, the team ceiling, and the team grant. |
 | `example-outsider` | `example-outsider-dev-only` | No repository access on `shared-repo`. |
 
@@ -362,6 +441,12 @@ Team `readers` allows `read_repository` only. A team grant for
 `write_repository` on `shared-repo` is stored and excluded by that
 ceiling. Repository `shared-repo` carries both the direct collaborator
 and the team path, so those paths can be compared on one repository.
+
+The same repository has issue `#100` with children `#101` and `#103`, and
+`#101` has child `#102`. `example-direct` receives `triage_issue` at `#101`,
+so `#101` and `#102` are permitted while parent `#100` and sibling `#103` are
+denied. Reverse inquiry on `#102` returns `example-direct` among ordinary
+users.
 
 Repeat the default seed with an explicit name:
 
@@ -394,14 +479,13 @@ that string. Serialization reads `id`, `name`, and `organization_id`
 off those rows, so the page does not run a permission query per
 repository.
 
-An active superuser is the Django exception. `has_perm` is true for
-every string, including a repository the superuser was not granted.
-`permitted` still returns only persisted grants, and this API follows
-that queryset. A superuser with no grant gets an empty list and a 404
-for that primary key. `create_repository` still allows an active
-superuser to create in an existing organization. The new row shows up
-for an owner of that organization, and it still does not show up in
-the superuser's list.
+An active superuser is the Django exception on `has_perm`. That call
+is true for every string, including a repository the superuser was
+not granted. `permitted` still returns only persisted grants, and
+this API follows that queryset. A superuser with no grant gets an
+empty list and a 404 for that primary key. `create_repository`
+requires `manage_organization` on the organization for that superuser
+too, so a create with no ownership row is 403 and writes nothing.
 
 Retrieve uses one status for every primary key the caller cannot
 read. A malformed key, a missing key, and a real key outside the
@@ -426,7 +510,8 @@ configuration error and the process does not start. The tokens are not
 in the source and are not in the seed. Comparison walks every
 configured token and uses `hmac.compare_digest` on SHA-256 digests.
 An unknown token fails authentication. An inactive user is rejected
-with `is_active_principal`, the same rule as `has_perm`. The
+because `is_active` is false, the same reason `has_perm` denies that
+user. The
 authenticator returns no credential marker, so `request.auth` does not
 keep the token. A request with no `Authorization` header still uses
 session login.
@@ -469,16 +554,15 @@ with `{"detail": "Not allowed."}` and writes nothing. A direct
 collaborator or a team member does not gain this from a repository
 grant. Team `readers` stores `write_repository` and the read-only
 ceiling excludes it, so that grant is not write authority and it is
-not organization management. An active superuser is allowed by the
-service even without an ownership row. That bypass is the service's
-rule, not a second copy in the view.
+not organization management. An active superuser without an ownership
+row is denied by the same service. The view does not add a bypass.
 
 Pagination slices the permitted queryset. `page_size` defaults to 25
 and can be set up to 100. An unauthorized repository with a lower
 primary key is not the first row of the first page.
 
 These query counts are one already-authenticated JSON request on
-Django 6.1.1, DRF 3.18.1, and SQLite. They do not grow when more
+Django 6.1.3, DRF 3.18.1, and SQLite. They do not grow when more
 visible or hidden repositories are added.
 
 | Request | Queries | What they are |
@@ -509,7 +593,8 @@ invitations, token/app scopes, branch protection, deploy keys, Actions
 secrets, forks, CODEOWNERS, visibility matrix, or org default
 repository permission. Team membership, the team ceiling, collaborator
 bundles, and team grants change through the domain services above. A
-raw queryset write does not.
+raw queryset write does not. The path-review example is not CODEOWNERS and
+does not make repository permissions imply path permissions.
 
 ## Documentation
 

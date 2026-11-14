@@ -13,21 +13,28 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest
 from django.test import TestCase
+import yaml
 
-from trusts.apps import implementation_for_path
-from trusts.decorators import (
-    _declared_authorization_guards,
-    authorization_required,
-)
-from trusts.policy_lock import (
-    _load_policy_sql_document,
-    render_policy_sql_bytes,
-)
+from trusts.decorators import authorization_required
+from trusts.models import AuthorizedQuerySet
 
-from gh_permissions.apps import CANONICAL_BACKEND
-from gh_permissions.models import Alias, Organization, Repository, Team
+from gh_permissions.backends import GhAuthorizationBackend
+from gh_permissions.models import (
+    Alias,
+    Organization,
+    OrganizationOwnership,
+    Repository,
+    RepositoryCollaborator,
+    Team,
+    TeamRepositoryPermission,
+)
 from gh_permissions.services import create_organization, create_user
-from tests.fixtures import repository_permission
+from tests.fixtures import (
+    guard_ok,
+    permission_code,
+    policy_sql_text,
+    repository_permission,
+)
 
 
 _MANAGE = 'gh_permissions.manage_organization'
@@ -39,10 +46,10 @@ _REPO_CODES = {
 }
 
 
-def _startup():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    )
+_org_manage = authorization_required(Organization, _MANAGE)(guard_ok)
+_org_read = authorization_required(Organization, _READ)(guard_ok)
+_repo_read = authorization_required(Repository, _READ)(guard_ok)
+_repo_manage = authorization_required(Repository, _MANAGE)(guard_ok)
 
 
 def _permission(model, codename):
@@ -68,7 +75,6 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.bystander = create_user('bystander')
         self.organization = create_organization('acme')
         self.foreign = create_organization('foreign')
-        from gh_permissions.models import OrganizationOwnership
         OrganizationOwnership.objects.create(
             user=self.owner, organization=self.organization,
         )
@@ -81,7 +87,7 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.alias = Alias.objects.get(name='acme')
         self.manage = _permission('organization', 'manage_organization')
         self.read = repository_permission('read_repository')
-        self.registry = _startup().registry
+        self.backend = GhAuthorizationBackend()
 
     def test_same_model_grants_and_crossed_pairs_deny(self):
         cases = (
@@ -97,7 +103,7 @@ class OwnerContentTypeMatrixTest(TestCase):
                 with self.assertNumQueries(queries):
                     self.assertIs(self.owner.has_perm(code, obj), expected)
                 self.assertIs(
-                    self.registry.has_permission(self.owner, obj, permission),
+                    self.backend.has_perm(self.owner, permission_code(permission), obj),
                     expected,
                 )
                 self.assertIs(self.bystander.has_perm(code, obj), False)
@@ -151,13 +157,13 @@ class OwnerContentTypeMatrixTest(TestCase):
             [],
         )
         self.assertEqual(
-            list(self.registry.filter_authorized(
+            list(AuthorizedQuerySet.authorized(
                 Team.objects.all(), self.owner, self.manage,
             )),
             [],
         )
         self.assertEqual(
-            list(self.registry.filter_authorized(
+            list(AuthorizedQuerySet.authorized(
                 Alias.objects.all(), self.owner, self.read,
             )),
             [],
@@ -220,41 +226,17 @@ class OwnerContentTypeMatrixTest(TestCase):
         self.assertFalse(hasattr(self.organization, 'get_permitted_users'))
 
     def test_authorization_required_denies_the_crossed_pair(self):
-        allowed = authorization_required(Organization, _MANAGE)(
-            lambda request, pk: 'ok',
+        self.assertEqual(
+            _org_manage(_request(self.owner), pk=self.organization.pk), 'ok',
         )
-        denied = authorization_required(Organization, _READ)(
-            lambda request, pk: 'ok',
+        with self.assertRaises(PermissionDenied):
+            _org_read(_request(self.owner), pk=self.organization.pk)
+        self.assertEqual(
+            _repo_read(_request(self.owner), pk=self.repository.pk),
+            'ok',
         )
-        repo_allowed = authorization_required(Repository, _READ)(
-            lambda request, pk: 'ok',
-        )
-        repo_denied = authorization_required(Repository, _MANAGE)(
-            lambda request, pk: 'ok',
-        )
-        try:
-            self.assertEqual(
-                allowed(_request(self.owner), pk=self.organization.pk), 'ok',
-            )
-            with self.assertRaises(PermissionDenied):
-                denied(_request(self.owner), pk=self.organization.pk)
-            self.assertEqual(
-                repo_allowed(_request(self.owner), pk=self.repository.pk),
-                'ok',
-            )
-            with self.assertRaises(PermissionDenied):
-                repo_denied(_request(self.owner), pk=self.repository.pk)
-        finally:
-            for model, permission in (
-                (Organization, _MANAGE),
-                (Organization, _READ),
-                (Repository, _READ),
-                (Repository, _MANAGE),
-            ):
-                try:
-                    _declared_authorization_guards.remove((model, permission, ()))
-                except ValueError:
-                    pass
+        with self.assertRaises(PermissionDenied):
+            _repo_manage(_request(self.owner), pk=self.repository.pk)
 
     def test_active_superuser_has_perm_stays_outside_the_predicate(self):
         root = get_user_model().objects.create_superuser(
@@ -268,14 +250,14 @@ class OwnerContentTypeMatrixTest(TestCase):
             list(Organization.objects.authorized(root, self.read)),
             [],
         )
-        # The reverse inquiry ORs Django's active-superuser rule. The
-        # ordinary owner is still absent from the crossed pair.
+        # No superuser override is registered, so the reverse inquiry
+        # does not add an active superuser. The crossed pair stays empty.
         permitted = set(User.objects.permitted(self.organization, _READ))
-        self.assertIn(root, permitted)
+        self.assertNotIn(root, permitted)
         self.assertNotIn(self.owner, permitted)
 
     def test_policy_sql_requires_the_protected_models_content_type(self):
-        document = _load_policy_sql_document(render_policy_sql_bytes())
+        document = yaml.safe_load(policy_sql_text())
         contents = document['backends'][0]['contents']
         seen = set()
         for content in contents:
@@ -291,8 +273,8 @@ class OwnerContentTypeMatrixTest(TestCase):
                 params = statement['params']
                 with self.subTest(model=model_label, key=key):
                     self.assertIn('django_content_type', sql)
-                    self.assertIn({'const': 'gh_permissions'}, params)
-                    self.assertIn({'const': model_name}, params)
+                    self.assertIn('$content.app_label="gh_permissions"', params)
+                    self.assertIn('$content.model="%s"' % model_name, params)
         self.assertIn('gh_permissions.Organization', seen)
         self.assertIn('gh_permissions.Repository', seen)
 
@@ -301,12 +283,6 @@ class StoredManagePermissionOnRepositoryTest(TestCase):
     """A repository grant that stores an organization permission does not grant it."""
 
     def test_collaborator_and_team_rows_deny_manage_organization_on_repository(self):
-        from gh_permissions.models import (
-            OrganizationOwnership,
-            RepositoryCollaborator,
-            TeamRepositoryPermission,
-        )
-
         owner = create_user('owner')
         collaborator = create_user('collaborator')
         member = create_user('member')

@@ -12,20 +12,27 @@ final core library floor `django-trusts>=1.0.0.dev3,<2`
 ([django-trusts#112](https://github.com/django-trusts/django-trusts/pull/112)
 merge `11058641b533e0f8489598e0b1f5cbe5d42a81db`). Pair CI,
 `requirements.txt`, and `scripts/django-trusts.pin` point at
-django-trusts `dev` commit
-`891a9e817a4a95a55b50a7b4130e0ae69cbce17f`, the merge of
-[#271](https://github.com/django-trusts/django-trusts/pull/271).
-Do not float past that commit. That merge adds
-`queryset.permitted(permission, user)`. It includes
-`47ae25cffcfa542b3e4a2940f528a63fcb32062d`, the merge commit of
-[#269](https://github.com/django-trusts/django-trusts/pull/269)
-(`cursor/content-type-mismatch-denial-6f05`). That commit denies an
-`auth.Permission` whose `content_type` is not the protected object's
-content identity. `user.has_perm` stays a permission string. #269 is based on
-`7503ae83267771abdce920f26ad762a4ee491f36`, the merge of
-[#264](https://github.com/django-trusts/django-trusts/pull/264).
-The #264 merge is what lets `permission=`
-end on one forward to-many step to `auth.Permission`.
+[django-trusts#371](https://github.com/django-trusts/django-trusts/pull/371)
+and [#372](https://github.com/django-trusts/django-trusts/pull/372),
+merged on dev at `a23d2adc22afaf12c423f2dc1ca43c43b586f50f`. That commit
+replaces the `along=` reset field with a path condition. gh-permissions registers
+no user override. An active superuser
+is included in a reverse permitted-user set only with a real grant,
+and does not skip `manage_organization` or the admin scope filter.
+The committed `trusts-policy.lock.yaml` is the MySQL 8.4
+rendering, matching deployment. SQLite CI renders a job-local lockfile
+and points `TRUSTS_POLICY_LOCKFILE` at that path, so `trusts.E009` and
+the byte comparison still run on SQLite. Do not float past this commit.
+The paired Core also contains delegation #280, permission content-type
+enforcement #269, and terminal permission collections #264.
+
+[#46](https://github.com/django-trusts/django-trusts-gh-permissions/issues/46)
+is the consumer acceptance proof: `IssuePermissions` applies `triage_issue`
+at one issue and its sub-issues through a relative eight-edge ceiling. Reverse
+inquiry on a descendant returns its active assignees. A parent, sibling, unrelated
+tree, and depth nine are denied. Re-parenting moves effective authority. This
+is an example policy and does not claim GitHub's repository-level triage role
+natively inherits through sub-issues.
 
 [#27](https://github.com/django-trusts/django-trusts-gh-permissions/issues/27)
 adds `Alias`, personal versus conventional organizations,
@@ -33,7 +40,7 @@ adds `Alias`, personal versus conventional organizations,
 `UserRepositoryPermission` and `OrganizationOwnerPermission`. Team,
 `Team.allowed_operations`, and `TeamRepositoryPermission` are unchanged.
 `OrganizationOwnership` is owners only. The row is the grant, so
-startup registers it with no condition, once for the organization and
+`models.py` registers it with no condition, once for the organization and
 once for `organization__repositories`. A permission in the shared
 owner `Group` grants only when `Permission.content_type` matches the
 object: `manage_organization` on the organization, and
@@ -63,12 +70,12 @@ organization to be the same row, on the stored pair and on any
 replacement. `QuerySet.create` still does not call `clean`, so the
 service performs that comparison itself. Missing, duplicate,
 cross-organization, and undefined shapes raise before any write. An
-active superuser (`is_active and is_superuser`) skips only the
-inquiry. A persisted inactive actor is denied before that bypass and
-before the ownership inquiry, including an inactive owner and an
-inactive superuser who already owns the organization. Existence and
-same-organization checks still apply. `.authorized` does not gain a
-row for that superuser.
+active superuser used to skip only the inquiry. That skip is gone:
+the actor needs `manage_organization`, superuser or not. A persisted
+inactive actor is denied before the inquiry, including an inactive
+owner and an inactive superuser who already owns the organization.
+Existence and same-organization checks still apply. `.authorized`
+does not gain a row for a superuser who has no ownership row.
 
 The next #28 slice adds ownership update and delete, the
 `delete_user` preflight, and a refusal for `Team.organization` and
@@ -83,10 +90,10 @@ recount guards ownership update and delete.
 `LastOrganizationOwner` lists each organization that would be left
 empty, and the transaction rolls the deletion back. The user's
 personal organization is deleted with the user, so it is not one of
-those survivors. An active
-superuser may add the first owner of an organization that has none,
-and may not remove the last one. A persisted inactive actor is still
-denied before that bypass and before the ownership inquiry.
+those survivors. An active superuser may not add the first owner of
+an organization that has none, and may not remove the last one.
+A persisted inactive actor is still denied before the ownership
+inquiry.
 
 `move_team_organization` and `move_repository_organization` lock the
 stored row and both organizations, then refuse. A move would re-scope
@@ -106,9 +113,8 @@ The admin slice calls those services from the stock hooks.
 members, the team ceiling, and a collaborator's permission bundle.
 `delete_model` and `delete_queryset` (the built-in bulk action)
 delete through the same functions. `OrganizationOwnershipAdmin`
-stays read-only for non-superusers. A superuser ownership change
-calls `add_organization_owner`, `update_organization_ownership`, or
-`delete_organization_ownership`. `move_team_organization` and
+stays read-only for every actor, including a superuser.
+`move_team_organization` and
 `move_repository_organization` refuse a new organization from the
 form and again from `save_model` before a name write.
 `ServiceBackedUserAdmin` and personal-organization deletion call
@@ -137,7 +143,9 @@ adds `Organization.manage_organization` and
 `OrganizationOwnerPermission` after that reset. It does not rewrite
 `0002_auth_permission_terminal`.
 
-The earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
+The earlier companion pin `603c4dd505f44ffc4b302af46cbe8f20a463c4ed`
+(`feature/along-complete-surfaces`) is superseded for this pin. The
+earlier companion pin `781a33dfc46fa3ba10a5e8b634de2d47780e857b`
 (django-trusts#241) is superseded for this pin. The earlier
 `handle.register` plus symbolic-condition pin from django-trusts
 [#213](https://github.com/django-trusts/django-trusts/pull/213)
@@ -186,9 +194,8 @@ The previous top-level README described pairing against Step I
 `LookupError` helper, and inventoried CI against that Step I SHA.
 Those statements are false after the final core cut. Final core
 deleted `kernel_config()`, the core `AppConfig`, and
-`trusts.backends.TrustModelBackend`. Supported GH startup still uses
-`implementation_for_path('gh_permissions.backends.GhAuthorizationBackend')`
-and never installs `'trusts'`.
+`trusts.backends.TrustModelBackend`. Supported GH startup never
+installs `'trusts'`.
 
 ## Bounded policy (still true)
 
@@ -205,10 +212,14 @@ and never installs `'trusts'`.
 - Revocation and malformed configuration fail closed
 - `OrganizationOwnership` is the owner grant and a startup Trusts edge.
   Team membership does not grant that bundle
+- `IssuePermissions` carries a terminal permission collection and reaches
+  bounded sub-issue descendants. The registration is in
+  [Bounded sub-issue triage](README.md#bounded-sub-issue-triage).
 
 Public relations used to authorize: `user.teams`,
 `team.allowed_operations`, `repository.organization`, and
-`collaborator.permissions`. Callers pass `AUTH_USER_MODEL` and
+`collaborator.permissions`, plus `issue.parent` and
+`issue_triage_grant.permissions`. Callers pass `AUTH_USER_MODEL` and
 `auth.Permission` **instances**. `Repository.objects.authorized` takes
 the permission instance. `has_perm` and `permitted` accept
 `gh_permissions.read_repository` (and the write and admin codenames)
@@ -216,8 +227,8 @@ as the string alias.
 
 The accepted team registration is `gh_permissions.policy.register_team`.
 Direct repository access is `register_collaborator`. Both take the
-configured `BackendHandle` and call `handle.register` with `trust=`
-plus Django `__` path strings.
+registry from `GhAuthorizationBackend().get_registry()` and call
+`register` with `trust=` plus Django `__` path strings.
 Team adds a one-argument symbolic `condition=` using `.contains`, `==`,
 and `&`. Literal Python `in` is unsupported. There is no aggregate
 `register_gh_policy()`.
@@ -265,17 +276,51 @@ permissions when an object is passed, so organization scope stays on
 `GhAuthorizationBackend` and the admin adapter. A model permission is
 not an organization grant.
 
+## Following current Core
+
+Core lands first. The `latest-core` job follows that Core: a
+django-trusts branch with the same name as this branch, then the
+pinned SHA when that commit is not in Core `dev`, then Core `dev`.
+
+The same-name branch is `GITHUB_HEAD_REF` on a pull request, and
+otherwise `GITHUB_REF_NAME`.
+
+The pinned jobs and deploys keep the exact pin in `requirements.txt`,
+`scripts/django-trusts.pin`, and `COMPANION_KERNEL_SHA`. Those builds
+stay reproducible. `latest-core` is not a required check. If it
+fails, the workflow still succeeds.
+
+The job sets `TRUSTS_FOLLOW_CORE=1`. The pin checks skip only when
+that variable is set. Those checks are the `COMPANION_KERNEL_SHA`
+comparison and the pin file check. Every other run still performs
+them.
+
+The job installs `requirements.txt`, then force-reinstalls Core from
+the chosen revision with `--no-deps`, and logs the Core commit. It
+runs the full test suite, then generates the SQLite policy lockfile.
+If generation fails, the job fails. The file is uploaded as the
+`sqlite-policy-lock` artifact and kept for seven days. The job does
+not comment on pull requests. It also runs from a manual dispatch and
+every night.
+
 ## Verification
 
 ```
 python -m pip install "Django>=6.1,<6.2" coverage
 python -m pip install -e .
+# Committed trusts-policy.lock.yaml is MySQL 8.4. The SQLite suite
+# compares a rendering at its own path.
+export TRUSTS_POLICY_LOCKFILE="$(pwd)/.ci/trusts-policy.sqlite.lock.yaml"
+mkdir -p .ci
+python -m django trusts_policy_sql --lock --settings=tests.settings
 python -m tests.runtests
 python -m django check --settings=tests.settings
 ```
 
 CI is GitHub Actions (`.github/workflows/ci.yml`) on Python 3.12–3.14
-with Django 6.1 against exact paired-core commit `891a9e817a4a95a55b50a7b4130e0ae69cbce17f`.
+with Django 6.1. The pinned jobs install the exact Core commit recorded
+in `scripts/django-trusts.pin` and `COMPANION_KERNEL_SHA`.
+The MySQL 8.4 job checks the committed lockfile with `trusts.E009`.
 The suite, migrate/`check`/`makemigrations --check`, wheel RECORD, and
 package-metadata scripts must run against that revision without
 importing `kernel_config()`, a core `AppConfig`, or
@@ -291,11 +336,11 @@ Counted as physical lines in this tree (generated `0001_initial` is listed with 
 
 | Category | Files | Why consumer-owned |
 |---|---|---|
-| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission. Permission rows are `auth.Permission`, including `manage_organization`. |
+| Domain models | `models.py` + migrations | Alias, Organization, OrganizationOwnership, Team, Repository, RepositoryCollaborator, TeamRepositoryPermission, Issue, and IssuePermissions. Permission rows are `auth.Permission`, including `manage_organization` and `triage_issue`. |
 | Domain writes | `services.py` | Alias reserve/rename/release, personal organization, shared owner group, and the settled authorization-relationship writes. Not admin. |
-| Policy registrations | `policy.py` | Collaborator, team, and owner `handle.register` calls. No aggregate helper |
+| Policy registrations | `policy.py` | Collaborator, team, owner, delegation, and bounded sub-issue `register` calls. No aggregate helper. `models.py` calls them on `get_registry()` |
 | Registry host | `backends.py` | Mixin-only `AUTHENTICATION_BACKENDS` path; object-level `auth.Permission` codenames come from the mixin |
-| Ready contribution | `apps.py` | `register_collaborator`, `register_team`, `register_organization_owner`, then owner-group seed on `post_migrate` |
+| Ready contribution | `apps.py` | Checks the canonical backend, then owner-group seed on `post_migrate` |
 | Admin scope plumbing | `_admin_scope.py` | Private stock-admin mixin. No GH model nouns and no registry or compiler calls |
 | GH admin adapter | `admin.py` | `manage_organization` lookup, `Organization.objects.authorized`, path declarations, alignment |
 | Framework glue copied locally | **0** | Core owns validation, correlated `EXISTS`, `.authorized` control flow, checks |

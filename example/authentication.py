@@ -18,16 +18,13 @@ from django.contrib.auth import get_user_model
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 
-from trusts.query import is_active_principal
-
-
 class BearerTokenAuthentication(BaseAuthentication):
     """``Authorization: Bearer <token>`` against ``EXAMPLE_API_TOKENS``.
 
     Every configured token is compared. ``hmac.compare_digest`` runs on
     SHA-256 digests, so the check does not stop at the first match and
-    unequal lengths do not raise. An inactive principal is rejected
-    with ``is_active_principal``, the same rule ``has_perm`` uses.
+    unequal lengths do not raise. An inactive user is rejected.
+    ``is_active`` is the same flag ``has_perm`` requires.
     """
 
     keyword = 'Bearer'
@@ -63,7 +60,11 @@ class BearerTokenAuthentication(BaseAuthentication):
             })
         except user_model.DoesNotExist:
             raise AuthenticationFailed('Invalid token.')
-        if not is_active_principal(user):
+        if (
+            getattr(user, 'is_anonymous', False)
+            or not getattr(user, 'is_authenticated', True)
+            or not getattr(user, 'is_active', False)
+        ):
             raise AuthenticationFailed('User inactive or deleted.')
         # None, not the presented secret. request.auth keeps this value
         # for the rest of the request.

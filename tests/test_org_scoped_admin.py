@@ -2,9 +2,8 @@
 
 An ``OrganizationOwnership`` row is the owner grant. Staff owners see
 those organizations. A team member with no ownership row does not.
-Non-superusers cannot add, change, or delete ownership rows.
-Superusers bypass the scope mixin. ``_admin_scope`` stays free of GH
-model nouns.
+Nobody can add, change, or delete ownership rows, including a
+superuser. ``_admin_scope`` stays free of GH model nouns.
 """
 
 from html.parser import HTMLParser
@@ -35,7 +34,6 @@ from gh_permissions.admin import (
     TeamAdmin,
     TeamRepositoryPermissionAdmin,
 )
-from gh_permissions.apps import CANONICAL_BACKEND
 from gh_permissions.models import (
     Alias,
     Organization,
@@ -49,7 +47,6 @@ from gh_permissions.services import create_organization, create_user
 from tests.fixtures import repository_permission
 from tests.test_migration_0002 import _ALIAS, _wipe
 from tests.test_org_scoped_requests import OrgScopedAdminRequestTests
-from trusts.apps import implementation_for_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,12 +72,6 @@ SCOPE_HOOKS = (
     'get_actions',
     'check',
 )
-
-
-def _registry():
-    return implementation_for_path(CANONICAL_BACKEND).configured_backend(
-        CANONICAL_BACKEND,
-    ).registry
 
 
 class _SelectParser(HTMLParser):
@@ -307,30 +298,52 @@ class OrganizationAdminServiceTests(TestCase):
         self.client = Client()
         self.client.force_login(self.superuser, backend=MODEL_BACKEND)
 
-    def test_superuser_add_reserves_the_alias(self):
+    def test_superuser_without_a_grant_cannot_add_an_organization(self):
         response = self.client.post(
             reverse('admin:gh_permissions_organization_add'),
             {'name': 'acme'},
         )
-        self.assertEqual(response.status_code, 302, response.content[:500])
-        organization = Organization.objects.get(name='acme')
-        self.assertIsNone(organization.personal_user_id)
-        self.assertEqual(organization.owner_group.name, 'organization-owners')
-        self.assertTrue(Alias.objects.filter(name='acme').exists())
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Organization.objects.filter(name='acme').exists())
+        self.assertFalse(Alias.objects.filter(name='acme').exists())
 
     def test_blank_conventional_name_stays_on_the_form(self):
-        response = self.client.post(
-            reverse('admin:gh_permissions_organization_add'),
+        owner = create_user('ada-owner', is_staff=True)
+        _grant_scoped(owner)
+        organization = create_organization('acme')
+        OrganizationOwnership.objects.create(
+            user=owner, organization=organization,
+        )
+        client = Client()
+        client.force_login(owner, backend=MODEL_BACKEND)
+        response = client.post(
+            reverse(
+                'admin:gh_permissions_organization_change',
+                args=[organization.pk],
+            ),
             {'name': '   '},
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'needs a name')
-        self.assertFalse(Organization.objects.filter(personal_user__isnull=True).exists())
+        organization.refresh_from_db()
+        self.assertEqual(organization.name, 'acme')
 
     def test_personal_organization_change_does_not_assign_a_name(self):
-        user = create_user('ada')
+        user = create_user('ada', is_staff=True)
+        _grant_scoped(user)
         organization = user.personal_organization
-        response = self.client.post(
+        denied = self.client.post(
+            reverse(
+                'admin:gh_permissions_organization_change',
+                args=[organization.pk],
+            ),
+            {'name': 'renamed'},
+        )
+        self.assertEqual(denied.status_code, 302)
+        self.assertEqual(denied['Location'], reverse('admin:index'))
+        client = Client()
+        client.force_login(user, backend=MODEL_BACKEND)
+        response = client.post(
             reverse(
                 'admin:gh_permissions_organization_change',
                 args=[organization.pk],
@@ -347,6 +360,9 @@ class OrganizationAdminServiceTests(TestCase):
 
     def test_bulk_delete_releases_the_alias(self):
         organization = create_organization('acme')
+        OrganizationOwnership.objects.create(
+            user=self.superuser, organization=organization,
+        )
         changelist = reverse('admin:gh_permissions_organization_changelist')
         response = self.client.post(changelist, {
             'action': 'delete_selected',
@@ -359,16 +375,41 @@ class OrganizationAdminServiceTests(TestCase):
 
     def test_duplicate_name_stays_on_the_form(self):
         create_organization('acme')
-        response = self.client.post(
-            reverse('admin:gh_permissions_organization_add'),
+        owner = create_user('ada-owner', is_staff=True)
+        _grant_scoped(owner)
+        owned = create_organization('owned')
+        OrganizationOwnership.objects.create(user=owner, organization=owned)
+        client = Client()
+        client.force_login(owner, backend=MODEL_BACKEND)
+        response = client.post(
+            reverse(
+                'admin:gh_permissions_organization_change',
+                args=[owned.pk],
+            ),
             {'name': 'acme'},
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'already reserved')
         self.assertEqual(Organization.objects.filter(name='acme').count(), 1)
+        owned.refresh_from_db()
+        self.assertEqual(owned.name, 'owned')
 
-    def test_superuser_rename_and_delete_follow_the_alias(self):
+    def test_superuser_with_a_grant_renames_and_deletes_like_any_owner(self):
         organization = create_organization('old-name')
+        denied = self.client.post(
+            reverse(
+                'admin:gh_permissions_organization_change',
+                args=[organization.pk],
+            ),
+            {'name': 'new-name'},
+        )
+        self.assertEqual(denied.status_code, 302)
+        self.assertEqual(denied['Location'], reverse('admin:index'))
+        organization.refresh_from_db()
+        self.assertEqual(organization.name, 'old-name')
+        OrganizationOwnership.objects.create(
+            user=self.superuser, organization=organization,
+        )
         response = self.client.post(
             reverse(
                 'admin:gh_permissions_organization_change',
@@ -394,9 +435,22 @@ class OrganizationAdminServiceTests(TestCase):
         self.assertFalse(Alias.objects.filter(name='new-name').exists())
 
     def test_deleting_a_personal_organization_deletes_the_user(self):
-        user = create_user('ada')
+        user = create_user('ada', is_staff=True)
+        _grant_scoped(user)
         organization = user.personal_organization
-        response = self.client.post(
+        denied = self.client.post(
+            reverse(
+                'admin:gh_permissions_organization_delete',
+                args=[organization.pk],
+            ),
+            {'post': 'yes'},
+        )
+        self.assertEqual(denied.status_code, 302)
+        self.assertEqual(denied['Location'], reverse('admin:index'))
+        self.assertTrue(get_user_model().objects.filter(username='ada').exists())
+        client = Client()
+        client.force_login(user, backend=MODEL_BACKEND)
+        response = client.post(
             reverse(
                 'admin:gh_permissions_organization_delete',
                 args=[organization.pk],
@@ -428,9 +482,10 @@ class OrganizationAdminServiceTests(TestCase):
         visible = self.client.get(
             reverse('admin:gh_permissions_organization_changelist'),
         )
-        self.assertContains(visible, 'acme')
-        self.assertContains(visible, 'ada-owner')
-        self.assertContains(visible, 'other')
+        self.assertEqual(visible.status_code, 200)
+        self.assertNotContains(visible, 'acme')
+        self.assertNotContains(visible, 'ada-owner')
+        self.assertNotContains(visible, 'other')
 
     def test_staff_save_is_still_rejected_by_the_scope_mixin(self):
         staff = create_user('staff', is_staff=True)
@@ -486,6 +541,16 @@ class OrganizationAdminServiceTests(TestCase):
         self.assertFalse(Alias.objects.filter(name='ada').exists())
         self.assertTrue(Alias.objects.filter(name='ada-renamed').exists())
 
+        denied = self.client.post(
+            reverse('admin:example_user_delete', args=[user.pk]),
+            {'post': 'yes'},
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertTrue(get_user_model().objects.filter(pk=user.pk).exists())
+        self.assertTrue(Alias.objects.filter(name='ada-renamed').exists())
+        OrganizationOwnership.objects.create(
+            user=self.superuser, organization=user.personal_organization,
+        )
         response = self.client.post(
             reverse('admin:example_user_delete', args=[user.pk]),
             {'post': 'yes'},

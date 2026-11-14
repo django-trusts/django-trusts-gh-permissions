@@ -1,5 +1,6 @@
 # Reviewed django-trusts commit required by this GH tree.
-# Paired with django-trusts#271 merge 891a9e81 (queryset.permitted).
-# Includes #269 merge 47ae25cf (content-type mismatch denial).
-# Never pin django-trusts-zero. Do not float past this commit.
-ref=891a9e817a4a95a55b50a7b4130e0ae69cbce17f
+# Paired with django-trusts dev a23d2adc (path conditions, #371 and #372).
+# Request-time caller input fails closed.
+# gh-permissions registers no user override. Never pin django-trusts-zero.
+# Do not float past this commit.
+ref=a23d2adc22afaf12c423f2dc1ca43c43b586f50f

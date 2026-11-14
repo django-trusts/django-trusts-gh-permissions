@@ -8,7 +8,7 @@ keys and does not import this model. Stock ``auth.User`` has no
 
 from django.contrib.auth.models import AbstractUser, UserManager
 
-from trusts.query import PermittedUsersManagerMixin
+from trusts.models import PermittedUsersManagerMixin
 
 
 class ExampleUserManager(PermittedUsersManagerMixin, UserManager):

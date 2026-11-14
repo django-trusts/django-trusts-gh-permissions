@@ -20,7 +20,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.db import connection
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils.module_loading import import_string
 from rest_framework.authentication import SessionAuthentication
@@ -60,7 +60,11 @@ from gh_permissions.services import (
     ensure_owner_group,
     replace_team_members_and_ceiling,
 )
-from trusts.query import is_active_principal
+from tests.settings import (
+    EXAMPLE_API_TOKEN_MIN_LENGTH,
+    _EXAMPLE_API_TOKEN_USERS,
+    _example_api_tokens,
+)
 
 
 # Steady-state query counts for one already-authenticated JSON request
@@ -217,7 +221,6 @@ class RepositoryApiTests(TestCase):
                 self.assertNotIn(repo.name, response.content.decode())
 
     def test_action_map_is_the_only_permission_spelling(self):
-        from example.api import RepositoryViewSet
         mapping = RepositoryViewSet.action_permissions
         self.assertEqual(mapping['list'], READ_REPOSITORY)
         self.assertEqual(mapping['retrieve'], READ_REPOSITORY)
@@ -317,11 +320,11 @@ class RepositoryApiTests(TestCase):
         self.assertFalse(Repository.objects.filter(name='nope-repo').exists())
         self._assert_reads(self.owner_b, (self.repo_b,))
 
-    def test_inactive_principals_match_has_perm_not_the_raw_queryset(self):
-        # ``authorized()`` still skips inactivity. ``permitted()`` applies
-        # it, and the API uses ``permitted()``.
-        self.assertFalse(is_active_principal(self.inactive_owner))
-        self.assertIn(
+    def test_inactive_principals_match_has_perm(self):
+        # Both inquiries apply the built-in is_active condition.
+        # The API uses permitted().
+        self.assertFalse(self.inactive_owner.is_active)
+        self.assertNotIn(
             self.repo_a,
             list(Repository.objects.authorized(self.inactive_owner, self.read)),
         )
@@ -329,11 +332,11 @@ class RepositoryApiTests(TestCase):
             list(Repository.objects.permitted(READ_REPOSITORY, self.inactive_owner)),
             [],
         )
-        self.assertIn(
+        self.assertNotIn(
             self.repo_a,
             list(Repository.objects.authorized(self.inactive_reader, self.read)),
         )
-        self.assertIn(
+        self.assertNotIn(
             self.repo_a,
             list(Repository.objects.authorized(self.inactive_member, self.read)),
         )
@@ -352,7 +355,7 @@ class RepositoryApiTests(TestCase):
         self.assertFalse(Repository.objects.filter(name='inactive-repo').exists())
 
     def test_active_superuser_list_follows_permitted_not_has_perm(self):
-        self.assertTrue(is_active_principal(self.superuser))
+        self.assertTrue(self.superuser.is_active)
         self.assertTrue(self.superuser.has_perm(READ_REPOSITORY, self.repo_b))
         self.assertNotIn(
             self.repo_b,
@@ -367,15 +370,9 @@ class RepositoryApiTests(TestCase):
             'name': 'super-repo',
             'organization_id': self.org_a.pk,
         })
-        self.assertEqual(response.status_code, 201, response.content)
-        created = Repository.objects.get(name='super-repo')
-        self.assertEqual(created.organization_id, self.org_a.pk)
-        self.assertNotIn(created.pk, self._ids(self.superuser))
-        self.assertTrue(self.superuser.has_perm(READ_REPOSITORY, created))
-        denied = self._retrieve(self.superuser, created.pk)
-        self.assertEqual(denied.status_code, 404)
-        self.assertEqual(denied.data, {'detail': 'Not found.'})
-        self.assertIn(created.pk, self._ids(self.owner))
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data, {'detail': 'Not allowed.'})
+        self.assertFalse(Repository.objects.filter(name='super-repo').exists())
 
     def test_model_backend_permission_does_not_grant_the_object(self):
         self.assertTrue(self.model_user.has_perm(READ_REPOSITORY))
@@ -450,10 +447,6 @@ class RepositoryApiTests(TestCase):
         self.assertIsNone(follow.data['next'])
 
     def test_list_queryset_is_the_permitted_queryset(self):
-        from django.test import RequestFactory
-
-        from example.api import RepositoryViewSet
-
         request = RequestFactory().get('/api/repositories/')
         request.user = self.owner
         view = RepositoryViewSet()
@@ -755,17 +748,6 @@ class BearerTokenApiTests(TestCase):
         blob = ' '.join(query['sql'] for query in captured)
         self.assertNotIn('gh_permissions_repository', blob)
 
-    def test_is_active_principal_rejects_a_mapped_user(self):
-        token = secrets.token_hex(32)
-        with override_settings(EXAMPLE_API_TOKENS={token: self.owner.username}):
-            with patch(
-                'example.authentication.is_active_principal',
-                return_value=False,
-            ):
-                response = _bearer_client(token).get('/api/repositories/')
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.data, {'detail': 'User inactive or deleted.'})
-
     def test_session_login_still_works_without_a_bearer_header(self):
         self.owner.set_password('session-password')
         self.owner.save(update_fields=['password'])
@@ -795,8 +777,6 @@ class BearerTokenSettingsTests(SimpleTestCase):
     """Environment variables populate the mapping. Tokens are generated."""
 
     def test_seeded_usernames_are_the_mapping_targets(self):
-        from tests.settings import _EXAMPLE_API_TOKEN_USERS
-
         self.assertEqual(
             _EXAMPLE_API_TOKEN_USERS,
             (
@@ -807,8 +787,6 @@ class BearerTokenSettingsTests(SimpleTestCase):
         )
 
     def test_unset_and_empty_variables_add_no_entry(self):
-        from tests.settings import _example_api_tokens
-
         owner = secrets.token_hex(16)
         direct = secrets.token_hex(16)
         outsider = secrets.token_hex(16)
@@ -829,8 +807,6 @@ class BearerTokenSettingsTests(SimpleTestCase):
             self.assertEqual(_example_api_tokens(), {})
 
     def test_environment_populates_the_three_seeded_users(self):
-        from tests.settings import _example_api_tokens
-
         owner = secrets.token_urlsafe(32)
         direct = secrets.token_urlsafe(32)
         outsider = secrets.token_urlsafe(32)
@@ -846,8 +822,6 @@ class BearerTokenSettingsTests(SimpleTestCase):
             })
 
     def test_one_token_in_two_variables_is_a_configuration_error(self):
-        from tests.settings import _example_api_tokens
-
         shared = secrets.token_urlsafe(32)
         with patch.dict(os.environ, {
             'EXAMPLE_API_TOKEN_OWNER': shared,
@@ -859,16 +833,12 @@ class BearerTokenSettingsTests(SimpleTestCase):
         self.assertNotIn(shared, str(ctx.exception))
 
     def test_minimum_length_matches_token_urlsafe_32(self):
-        from tests.settings import EXAMPLE_API_TOKEN_MIN_LENGTH
-
         self.assertEqual(
             EXAMPLE_API_TOKEN_MIN_LENGTH,
             len(secrets.token_urlsafe(32)),
         )
 
     def test_short_token_is_a_configuration_error(self):
-        from tests.settings import EXAMPLE_API_TOKEN_MIN_LENGTH, _example_api_tokens
-
         short = 'x' * (EXAMPLE_API_TOKEN_MIN_LENGTH - 1)
         one = 'y'
         for value in (one, short):

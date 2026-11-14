@@ -1,4 +1,4 @@
-"""GH-shaped domain models. Authorization paths are registered in policy.
+"""GH-shaped domain models. Authorization paths are registered below.
 
 Public relations used to authorize:
 
@@ -6,6 +6,8 @@ Public relations used to authorize:
     team.allowed_operations
     repository.organization
     collaborator.permissions
+    issue.parent
+    issue_triage_grant.permissions
 
 ``organization.teams`` and ``organization.repositories`` are containment.
 ``Alias`` reserves the shared current name. Authorization does not
@@ -22,7 +24,7 @@ from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from trusts.query import (
+from trusts.models import (
     AuthorizedManager,
     AuthorizedQuerySet,
     PermittedQuerySetMixin,
@@ -199,6 +201,78 @@ class Repository(PermittedUsersMixin, models.Model):
         return self.name
 
 
+class Issue(PermittedUsersMixin, models.Model):
+    """GH-style issue that may be nested under another issue.
+
+    The modeled service permits sub-issues to cross repository boundaries.
+    The repository therefore identifies the issue, while ``parent`` alone
+    defines the hierarchy traversed by the authorization policy. Application
+    writes are responsible for rejecting cycles and enforcing any owner rule;
+    the bounded authorization walk still terminates if malformed rows exist.
+    """
+
+    repository = models.ForeignKey(
+        Repository, related_name='issues', on_delete=models.CASCADE,
+    )
+    parent = models.ForeignKey(
+        'self',
+        related_name='sub_issues',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    number = models.PositiveIntegerField()
+    title = models.CharField(max_length=255)
+    reset_inheritance = models.BooleanField(null=True)
+
+    objects = AuthorizedManager()
+
+    class Meta:
+        permissions = (
+            ('triage_issue', 'Can triage issue'),
+        )
+        constraints = (
+            models.UniqueConstraint(
+                fields=('repository', 'number'),
+                name='unique_issue_number_per_repository',
+            ),
+        )
+
+    def __str__(self):
+        return '#%s %s' % (self.number, self.title)
+
+
+class IssuePermissions(models.Model):
+    """A user's permission bundle at one issue/sub-issue subtree."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='issue_permissions',
+        on_delete=models.CASCADE,
+    )
+    issue = models.ForeignKey(
+        Issue,
+        related_name='permission_assignments',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='issue_permissions',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'issue'),
+                name='unique_issue_permissions',
+            ),
+        )
+
+    def __str__(self):
+        return '%s @ %s' % (self.user_id, self.issue_id)
+
+
 class RepositoryCollaborator(models.Model):
     """Direct user access to one repository.
 
@@ -234,6 +308,136 @@ class RepositoryCollaborator(models.Model):
         return '%s @ %s' % (self.user_id, self.repository_id)
 
 
+class RepositoryDelegation(models.Model):
+    """A sponsor-selected bridge from one user to one repository.
+
+    The selected ``sponsor_ownership`` is part of the delegation path,
+    not an ordinary permission grant. Deleting that ownership cascades
+    this row and revokes the bridge even if the sponsor keeps repository
+    authority through a collaborator or team path.
+
+    Organization approval is recorded independently from the sponsor
+    selection. Until ``approved_organization`` is set to the repository's
+    organization, this row grants nothing. ``permissions`` is the
+    delegation ceiling; the sponsor must also hold the requested permission
+    through an ordinary registered GH path.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor_ownership = models.ForeignKey(
+        OrganizationOwnership,
+        related_name='repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    repository = models.ForeignKey(
+        Repository,
+        related_name='delegations',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='repository_delegations',
+        blank=True,
+    )
+    approved_organization = models.ForeignKey(
+        Organization,
+        related_name='approved_repository_delegations',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='approved_repository_delegations',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor_ownership', 'repository'),
+                name='unique_repository_delegation',
+            ),
+        )
+
+
+class PersonalRepositoryDelegation(models.Model):
+    """A user's delegation of authority over one personal repository.
+
+    The sponsor is matched to the repository's personal organization. Unlike
+    ``RepositoryDelegation``, this relationship needs no independent
+    organization approval. It remains a delegated bridge rather than an
+    ordinary grant: the sponsor must still hold the requested permission.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_personal_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='sponsored_personal_repository_delegations',
+        on_delete=models.CASCADE,
+    )
+    repository = models.ForeignKey(
+        Repository,
+        related_name='personal_delegations',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='personal_repository_delegations',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor', 'repository'),
+                name='unique_personal_repository_delegation',
+            ),
+        )
+
+
+class AllPersonalRepositoriesDelegation(models.Model):
+    """A user's delegation over every repository in their personal org.
+
+    This relationship deliberately has no repository field. Its registered
+    content path reaches repositories through ``sponsor.personal_organization``.
+    """
+
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='received_all_personal_repositories_delegations',
+        on_delete=models.CASCADE,
+    )
+    sponsor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='sponsored_all_personal_repositories_delegations',
+        on_delete=models.CASCADE,
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        related_name='all_personal_repositories_delegations',
+        blank=True,
+    )
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=('delegate', 'sponsor'),
+                name='unique_all_personal_repositories_delegation',
+            ),
+        )
+
+
 class TeamRepositoryPermission(models.Model):
     """Team → repository permission. Alignment compares team and repository orgs."""
 
@@ -264,3 +468,25 @@ class TeamRepositoryPermission(models.Model):
                 raise ValidationError(
                     'Repository grants must stay inside one organization.'
                 )
+
+
+from gh_permissions.backends import GhAuthorizationBackend
+from gh_permissions.policy import (
+    register_all_personal_repositories_delegation,
+    register_collaborator,
+    register_delegation,
+    register_issue_permissions,
+    register_organization_owner,
+    register_personal_delegation,
+    register_team,
+)
+
+_registry = GhAuthorizationBackend().get_registry()
+register_collaborator(_registry)
+register_team(_registry)
+register_organization_owner(_registry)
+register_personal_delegation(_registry)
+register_all_personal_repositories_delegation(_registry)
+register_delegation(_registry)
+register_issue_permissions(_registry)
+del _registry

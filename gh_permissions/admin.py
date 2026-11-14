@@ -41,14 +41,12 @@ from gh_permissions.models import (
 from gh_permissions.services import (
     AliasConflict,
     RelationshipWriteError,
-    add_organization_owner,
     create_organization,
     create_repository,
     create_repository_collaborator,
     create_team_repository_permission,
     create_user,
     delete_organization,
-    delete_organization_ownership,
     delete_repository,
     delete_repository_collaborator,
     delete_team,
@@ -61,7 +59,6 @@ from gh_permissions.services import (
     rename_user,
     replace_collaborator_permissions,
     replace_team_members_and_ceiling,
-    update_organization_ownership,
     update_repository_collaborator,
     update_team_repository_permission,
 )
@@ -230,9 +227,8 @@ class ImmutableOrganizationForm(forms.ModelForm):
 
     ``clean`` runs before ``_post_clean`` copies submitted values onto
     the instance, so ``instance.organization_id`` is the stored
-    boundary. The service refuses every actor, including an active
-    superuser, and writes nothing. ``save_model`` calls it again
-    before a name write.
+    boundary. The service refuses every active actor, and writes
+    nothing. ``save_model`` calls it again before a name write.
     """
 
     move_boundary = None
@@ -457,12 +453,19 @@ class TeamRepositoryPermissionAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
 
 
 class OrganizationOwnershipAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
-    """Non-superusers cannot add, change, or delete an ownership row.
+    """Nobody can add, change, or delete an ownership row here.
 
-    That disablement is the scoped owner admin. A superuser bypasses
-    it, and those writes call the ownership services. The retain-one
-    owner rule is the service's, so removing the last owner is a
-    refusal rather than a raw delete.
+    ``scope_allows_add``, ``scope_allows_change``, and
+    ``scope_allows_delete`` are false, and a superuser does not skip
+    them. The ownership services remain the supported write path for
+    an actor who already has ``manage_organization``.
+
+    Django's delete collector still asks whether each related
+    ownership row may be deleted with its parent. The scope mixin
+    answers yes for an in-scope row, so an organization or user
+    delete is not refused for lack of that permission.
+    ``delete_model`` still refuses a direct delete of the ownership
+    row itself.
     """
 
     authorization_scope_paths = 'organization'
@@ -473,35 +476,10 @@ class OrganizationOwnershipAdmin(ServiceRoutedAdmin, OrgScopedAdmin):
     ordering = ('pk',)
 
     def save_model(self, request, obj, form, change):
-        if not self.bypasses_scope(request):
-            raise PermissionDenied
-        actor = request.user
-        if not change:
-            created = add_organization_owner(
-                actor, obj.organization_id, obj.user_id,
-            )
-            obj.pk = created.pk
-            return
-        stored = OrganizationOwnership.objects.get(pk=obj.pk)
-        user_id = obj.user_id if obj.user_id != stored.user_id else None
-        organization_id = (
-            obj.organization_id
-            if obj.organization_id != stored.organization_id
-            else None
-        )
-        if user_id is None and organization_id is None:
-            return
-        update_organization_ownership(
-            actor,
-            stored.pk,
-            user_id=user_id,
-            organization_id=organization_id,
-        )
+        raise PermissionDenied
 
     def delete_model(self, request, obj):
-        if not self.bypasses_scope(request):
-            raise PermissionDenied
-        delete_organization_ownership(request.user, obj.pk)
+        raise PermissionDenied
 
 
 class ServiceUserCreationForm(AdminUserCreationForm):

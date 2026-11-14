@@ -115,9 +115,9 @@ class RepositoryViewSet(
     by authentication before either path.
 
     Create has no repository object. ``create_repository`` locks the
-    submitted organization and requires ``manage_organization``,
-    including the active-superuser rule that ``permitted`` does not
-    copy. A denied or missing parent is 403 and writes nothing.
+    submitted organization and requires ``manage_organization``.
+    An active superuser is not a special case of that service.
+    A denied or missing parent is 403 and writes nothing.
     """
 
     serializer_class = RepositorySerializer
