@@ -8,7 +8,7 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase
 
-from trusts.models import AuthorizedManager, AuthorizedQuerySet
+from trusts.models import AuthorizedQuerySet, PermittedQuerySetMixin
 
 import gh_permissions.models as gh_models
 from gh_permissions.apps import gh_config
@@ -27,12 +27,15 @@ class KernelIdentityTest(SimpleTestCase):
         self.assertNotIn('trusts', names)
         self.assertNotIn('trusts.zero', names)
 
-    def test_repository_uses_stock_authorized_manager(self):
-        self.assertIs(type(Repository.objects), AuthorizedManager)
-        self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
+    def test_repository_queryset_adds_permitted_on_authorized(self):
+        queryset_class = gh_models.RepositoryQuerySet
+        self.assertIs(Repository.objects._queryset_class, queryset_class)
+        self.assertTrue(issubclass(queryset_class, PermittedQuerySetMixin))
+        self.assertTrue(issubclass(queryset_class, AuthorizedQuerySet))
+        self.assertTrue(hasattr(Repository.objects, 'permitted'))
+        self.assertTrue(hasattr(Repository.objects, 'authorized'))
         self.assertFalse(hasattr(gh_models, 'GhAuthorizedQuerySet'))
         self.assertFalse(hasattr(gh_models, 'GhAuthorizedManager'))
-        self.assertFalse(hasattr(Repository.objects, 'permitted'))
         self.assertFalse(hasattr(Repository.objects, 'get_permission'))
 
 

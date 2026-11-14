@@ -1,9 +1,9 @@
 """Reverse inquiry agrees with has_perm and with authorized listings.
 
 ``authorized`` takes the ``auth.Permission`` instance. ``has_perm`` and
-``permitted`` accept the Django permission string as the alias. The
-example user manager supplies ``User.objects.permitted``. ``Repository``
-supplies ``get_permitted_users``.
+the user-manager ``permitted`` accept the Django permission string.
+``Repository.objects.permitted`` is the content-row inquiry.
+``Repository`` also supplies ``get_permitted_users``.
 """
 
 from django.contrib.auth import get_user_model
@@ -28,7 +28,7 @@ class PermittedUsersAgreementTest(GhFixtureMixin, TestCase):
         self.assertNotIn('example.models', source)
         self.assertTrue(hasattr(get_user_model().objects, 'permitted'))
         self.assertTrue(hasattr(self.repo_a, 'get_permitted_users'))
-        self.assertFalse(hasattr(Repository.objects, 'permitted'))
+        self.assertTrue(hasattr(Repository.objects, 'permitted'))
 
     def test_direct_and_team_grants_agree_across_the_four_spellings(self):
         User = get_user_model()

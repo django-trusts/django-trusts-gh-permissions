@@ -3,15 +3,20 @@
 from django.db.models.query import QuerySet
 from django.test import TransactionTestCase
 
-from trusts.models import AuthorizedManager, AuthorizedQuerySet
+from trusts.models import (
+    AuthorizedManager,
+    AuthorizedQuerySet,
+    PermittedQuerySetMixin,
+)
 
 from gh_permissions.backends import GhAuthorizationBackend
 from gh_permissions.models import (
+    IssuePermissions,
     Organization,
     OrganizationOwnership,
     Repository,
     RepositoryCollaborator,
-    IssuePermissions,
+    RepositoryQuerySet,
     TeamRepositoryPermission,
 )
 from tests.fixtures import GhFixtureMixin, gh_trusts, permission_code
@@ -244,13 +249,18 @@ class GhAuthorizationTest(GhFixtureMixin, TransactionTestCase):
 
 
 class StockAuthorizedManagerTest(GhFixtureMixin, TransactionTestCase):
-    """Stock core manager reaches this implementation's registered handles."""
+    """Registered handles answer ``authorized`` on the repository queryset.
+
+    ``Organization`` stays on the stock ``AuthorizedManager``.
+    ``Repository`` mixes ``permitted`` onto ``AuthorizedQuerySet``.
+    """
 
     reset_sequences = True
 
-    def test_stock_manager_reads_the_gh_policy(self):
-        self.assertIs(type(Repository.objects), AuthorizedManager)
-        self.assertIs(Repository.objects._queryset_class, AuthorizedQuerySet)
+    def test_repository_queryset_reads_the_gh_policy(self):
+        self.assertIs(Repository.objects._queryset_class, RepositoryQuerySet)
+        self.assertTrue(issubclass(RepositoryQuerySet, PermittedQuerySetMixin))
+        self.assertTrue(issubclass(RepositoryQuerySet, AuthorizedQuerySet))
         self.assertIs(type(Organization.objects), AuthorizedManager)
 
         roots = [trust['root'] for _model, trust in gh_trusts()]

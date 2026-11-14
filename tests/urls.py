@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.models import Permission
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
+from example.api import RepositoryViewSet
 from example.models import User
 from gh_permissions.admin import ServiceBackedUserAdmin
 
@@ -12,6 +14,10 @@ from gh_permissions.admin import ServiceBackedUserAdmin
 admin.site.register(User, ServiceBackedUserAdmin)
 admin.site.register(Permission)
 
+router = DefaultRouter()
+router.register('repositories', RepositoryViewSet, basename='repository')
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/', include(router.urls)),
 ]
